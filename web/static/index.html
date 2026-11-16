@@ -70,9 +70,14 @@
         </section>
 
         <section class="options-row" aria-label="Routing and listening options">
-          <label class="checkbox">
-            <input type="checkbox" id="route-toggle" checked>
-            Route via tools
+          <label class="mode-select" for="home-mode">
+            Mode
+            <select id="home-mode" title="One mode for Home and Agent chats (voice and text)">
+            <option value="agent">Agent (orchestrator + tools)</option>
+            <option value="route">Tools (quick router)</option>
+            <option value="stream">Chat (plain model)</option>
+            <option value="cursor">Cursor (coding agent)</option>
+            </select>
           </label>
           <label class="checkbox" title="No wake word in the browser: any speech starts a request">
             <input type="checkbox" id="always-listen-toggle" aria-describedby="wake-word-note">
@@ -81,10 +86,6 @@
           <label class="checkbox">
             <input type="checkbox" id="speak-replies-toggle" checked>
             Speak replies
-          </label>
-          <label class="checkbox">
-            <input type="checkbox" id="route-cursor-toggle">
-            Route all via advanced AI (Cursor)
           </label>
         </section>
 
@@ -255,11 +256,11 @@
                 <div id="agent-activity" class="ag-activity hidden" aria-live="polite" aria-label="Agent activity"></div>
                 <div id="messages" class="ag-messages" role="log" aria-live="polite" aria-relevant="additions" aria-label="Agent conversation"></div>
                 <form id="agent-chat-form" class="ag-composer">
-                  <select id="chat-mode" aria-label="Mode" title="agent = orchestrator with workers; route = legacy tool router; chat = plain LLM">
-                    <option value="stream">chat (streaming)</option>
-                    <option value="agent" selected>agent (orchestrator)</option>
-                    <option value="route">route (tools)</option>
-                    <option value="cursor">cursor</option>
+                  <select id="chat-mode" aria-label="Mode" title="Shared with the Home mode selector">
+                    <option value="agent" selected>Agent (orchestrator + tools)</option>
+            <option value="route">Tools (quick router)</option>
+            <option value="stream">Chat (plain model)</option>
+            <option value="cursor">Cursor (coding agent)</option>
                   </select>
                   <textarea id="chat-input" rows="2" autocomplete="off" placeholder="Message the agent… (Enter send, Ctrl+Enter → Cursor, Shift+Enter newline)" aria-label="Message"></textarea>
                   <button type="submit" id="chat-send">Send</button>

@@ -10,7 +10,7 @@ const TOUR_STEPS = [
   {
     title: "Navigation",
     body:
-      "Use the left sidebar to switch between Home (voice and chat), Logs (request history), and Config (voice commands and settings).",
+      "Use the left sidebar to switch between Home (voice and chat), Logs (request history), Config (voice commands), Models (chat model, fallback and benchmark) and Agent (chats, memory, documents, live voice, tasks). Arrow keys move between sections.",
     target: ".nav-sidebar",
   },
   {
@@ -32,9 +32,9 @@ const TOUR_STEPS = [
     target: ".voice-buttons-row",
   },
   {
-    title: "Routing options",
+    title: "Mode",
     body:
-      "Route via tools sends requests through the local intent router. Route all via advanced AI (Cursor) sends every message to Cursor CLI instead.",
+      "One mode for Home and Agent: Agent (orchestrator with tools and memory), Tools (quick local router), Chat (plain model) or Cursor (coding agent). Speak replies turns spoken answers on or off.",
     target: ".options-row",
   },
   {
@@ -54,6 +54,18 @@ const TOUR_STEPS = [
     body:
       "Define keyword shortcuts (e.g. \"stop\") that work while the assistant is speaking or processing. Open Config in the sidebar.",
     target: "#nav-btn-config",
+  },
+  {
+    title: "Models",
+    body:
+      "Pick the active chat model, load or eject models, set the big fallback model, and run the benchmark.",
+    target: "#nav-btn-models",
+  },
+  {
+    title: "Agent",
+    body:
+      "Browse and export past chats, review memories, index documents for retrieval, use streaming Live voice with barge-in, and see delegated tasks.",
+    target: "#nav-btn-agent",
   },
   {
     title: "Request log",

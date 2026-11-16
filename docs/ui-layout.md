@@ -43,7 +43,7 @@ Cache-bust JS in `index.html`: `app.js?v=...` — bump when changing frontend lo
 ## UX goals (done Nov 2026)
 
 - [x] Mic permission prompt when enabling microphone — `promptForMicPermission()` queries the Permissions API before `getUserMedia` and explains prompt/denied states; `watchMicPermission()` reports revocation
-- [x] Remember UI toggles and mic preference in `localStorage` — keys `voice-assistant-route-tools`, `voice-assistant-always-listen`, `voice-assistant-route-cursor`, `voice-assistant-mic-enabled`; `restoreMicPreference()` re-enables the mic on load if permission is `granted`
+- [x] Remember UI toggles and mic preference in `localStorage` — keys `sahir-chat-mode` (shared Home/Agent mode; migrated from the old `voice-assistant-route-tools` / `voice-assistant-route-cursor`), `voice-assistant-always-listen`, `voice-assistant-speak-replies`, `voice-assistant-mic-enabled`; `restoreMicPreference()` re-enables the mic on load if permission is `granted`
 - [x] Auto-refresh UI after server deploy / error recovery — `refreshHealth()` compares `/api/health` `build_id`, reloads via `reloadForNewBuild()` (deferred while busy/recording/speaking), retries every 5 s when the server is down and announces recovery; `index.html` is served `Cache-Control: no-cache`
 - [x] Cursor task completion always surfaces a message in chat — `reportCursorCompletion()` after Send to Cursor, the Cursor toggle, and routed `run_cursor_agent` replies
 

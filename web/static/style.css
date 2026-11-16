@@ -284,6 +284,23 @@ header h1 {
   padding: 0.65rem 0.85rem;
 }
 
+.mode-select {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.mode-select select {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.25rem 0.4rem;
+}
+
 .checkbox {
   display: flex;
   align-items: center;

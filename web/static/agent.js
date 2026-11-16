@@ -225,6 +225,11 @@
     });
   }
 
+  // Mode is shared with Home (#38).
+  const savedMode = localStorage.getItem("sahir-chat-mode");
+  if (savedMode && $("#chat-mode")) $("#chat-mode").value = savedMode;
+  $("#chat-mode")?.addEventListener("change", (e) => window.sahirSetChatMode?.(e.target.value));
+
   agentChatForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const text = $("#chat-input").value.trim();

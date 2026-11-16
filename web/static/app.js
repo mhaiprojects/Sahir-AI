@@ -1,8 +1,8 @@
 const chatLog = document.getElementById("chat-log");
 const chatForm = document.getElementById("chat-form");
 const messageInput = document.getElementById("message-input");
-const routeToggle = document.getElementById("route-toggle");
-const routeCursorToggle = document.getElementById("route-cursor-toggle");
+// One mode control shared by Home and Agent (#38): agent | route | stream | cursor.
+const homeModeSelect = document.getElementById("home-mode");
 const alwaysListenToggle = document.getElementById("always-listen-toggle");
 const speakRepliesToggle = document.getElementById("speak-replies-toggle");
 const sendBtn = document.getElementById("send-btn");
@@ -47,8 +47,10 @@ const CHAT_HISTORY_LIMIT = 20;
 const MIN_UPLOAD_BYTES = 256;
 
 const ALWAYS_LISTEN_KEY = "voice-assistant-always-listen";
-const ROUTE_CURSOR_KEY = "voice-assistant-route-cursor";
-const ROUTE_TOOLS_KEY = "voice-assistant-route-tools";
+const ROUTE_CURSOR_KEY = "voice-assistant-route-cursor"; // legacy, migrated to CHAT_MODE_KEY
+const ROUTE_TOOLS_KEY = "voice-assistant-route-tools"; // legacy, migrated to CHAT_MODE_KEY
+const CHAT_MODE_KEY = "sahir-chat-mode";
+const CHAT_MODES = ["agent", "route", "stream", "cursor"];
 const SPEAK_REPLIES_KEY = "voice-assistant-speak-replies";
 const MIC_ENABLED_KEY = "voice-assistant-mic-enabled";
 const CONV_ID_KEY = "voice-assistant-conversation-id";
@@ -168,11 +170,31 @@ if (activityClearBtn) {
   activityClearBtn.addEventListener("click", clearActivityFeed);
 }
 
+function currentChatMode() {
+  const v = homeModeSelect?.value;
+  return CHAT_MODES.includes(v) ? v : "agent";
+}
+
 function homeChatMode({ forceCursor = false } = {}) {
-  if (forceCursor || routeCursorToggle?.checked) return "cursor";
-  if (routeToggle.checked) return "route";
+  if (forceCursor) return "cursor";
+  return currentChatMode();
+}
+
+function initialChatMode() {
+  const saved = localStorage.getItem(CHAT_MODE_KEY);
+  if (CHAT_MODES.includes(saved)) return saved;
+  if (localStorage.getItem(ROUTE_CURSOR_KEY) === "1") return "cursor";
+  if (localStorage.getItem(ROUTE_TOOLS_KEY) === "1") return "route";
   return "agent";
 }
+
+window.sahirSetChatMode = function sahirSetChatMode(mode) {
+  if (!CHAT_MODES.includes(mode)) return;
+  localStorage.setItem(CHAT_MODE_KEY, mode);
+  if (homeModeSelect && homeModeSelect.value !== mode) homeModeSelect.value = mode;
+  const agentSelect = document.getElementById("chat-mode");
+  if (agentSelect && agentSelect.value !== mode) agentSelect.value = mode;
+};
 
 function focusHomeChatInput() {
   if (messageInput && !messageInput.disabled && !busy) {
@@ -1532,8 +1554,8 @@ async function sendAudioBlob(blob, mode = "ptt", livePreview = "") {
     form.append("audio", blob, ext);
 
     const params = new URLSearchParams({
-      route: String(routeToggle.checked),
-      force_cursor: String(routeCursorToggle?.checked ?? false),
+      route: String(currentChatMode() !== "stream"),
+      force_cursor: String(currentChatMode() === "cursor"),
       mode,
       phase: "final",
     });
@@ -1577,7 +1599,7 @@ async function sendAudioBlob(blob, mode = "ptt", livePreview = "") {
       input_type: "voice",
       user_message: finalText || draftText || "[voice input]",
       ai_reply: data.reply,
-      routed: routeToggle.checked,
+      routed: currentChatMode() !== "stream",
       action: data.action,
       action_details: data.action_details || {},
       duration_ms: null,
@@ -1683,7 +1705,7 @@ function reportCursorCompletion(data, startedAt, { always = false } = {}) {
 }
 
 async function sendChat(message, { forceCursor = false } = {}) {
-  const useCursor = forceCursor || Boolean(routeCursorToggle?.checked);
+  const useCursor = forceCursor || currentChatMode() === "cursor";
   const mode = homeChatMode({ forceCursor: useCursor });
   const startedAt = Date.now();
   setBusy(true);
@@ -2146,12 +2168,8 @@ if (commandForm) {
 const savedAlwaysListen = localStorage.getItem(ALWAYS_LISTEN_KEY) === "1";
 alwaysListenToggle.checked = savedAlwaysListen;
 
-if (routeCursorToggle) {
-  routeCursorToggle.checked = localStorage.getItem(ROUTE_CURSOR_KEY) === "1";
-  routeCursorToggle.addEventListener("change", () => {
-    localStorage.setItem(ROUTE_CURSOR_KEY, routeCursorToggle.checked ? "1" : "0");
-  });
-}
+window.sahirSetChatMode(initialChatMode());
+homeModeSelect?.addEventListener("change", () => window.sahirSetChatMode(homeModeSelect.value));
 
 if (speakRepliesToggle) {
   speakRepliesToggle.checked = localStorage.getItem(SPEAK_REPLIES_KEY) !== "0";
@@ -2161,11 +2179,6 @@ if (speakRepliesToggle) {
   });
 }
 
-const savedRouteTools = localStorage.getItem(ROUTE_TOOLS_KEY);
-if (savedRouteTools !== null) routeToggle.checked = savedRouteTools === "1";
-routeToggle.addEventListener("change", () => {
-  localStorage.setItem(ROUTE_TOOLS_KEY, routeToggle.checked ? "1" : "0");
-});
 
 async function restoreMicPreference() {
   if (localStorage.getItem(MIC_ENABLED_KEY) !== "1") return;
