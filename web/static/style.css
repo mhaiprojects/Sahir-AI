@@ -302,6 +302,22 @@ header h1 {
 
 .mic-hint.hidden { display: none; }
 
+.voice-mode-note {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0.25rem 0 0.5rem;
+}
+
+button.linklike {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #93c5fd;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .main-content {
   flex: 1 1 auto;
   display: flex;

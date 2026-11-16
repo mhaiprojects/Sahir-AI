@@ -60,7 +60,7 @@
           </div>
         </section>
 
-        <section class="voice-buttons-row" aria-label="Microphone controls">
+        <section class="voice-buttons-row" aria-label="Quick voice controls">
           <button type="button" id="toggle-mic-btn" class="secondary btn-voice" title="Enable or disable microphone access">
             Enable microphone
           </button>
@@ -83,6 +83,13 @@
             Route all via advanced AI (Cursor)
           </label>
         </section>
+
+        <p class="voice-mode-note" id="voice-mode-note">
+          <strong>Quick voice</strong>: hold to talk, or turn on Always listening.
+          For a streaming back-and-forth you can interrupt, use
+          <button type="button" class="linklike" id="open-live-voice-btn">Agent → Live voice</button>.
+          Only one of them uses the microphone at a time.
+        </p>
 
         <p id="mic-hint" class="mic-hint hidden"></p>
 
@@ -292,8 +299,9 @@
             </section>
             <section id="tab-voice" class="ag-panel" role="tabpanel" aria-labelledby="ag-tab-voice">
               <div class="ag-col">
-                <p class="hint">Streaming mic → server-side Silero VAD → Whisper → orchestrator → sentence-by-sentence TTS.
-                  Start talking while it answers to <b>barge in</b>. Needs HTTPS (or localhost) for the microphone.</p>
+                <p class="hint"><b>Live voice (streaming conversation)</b>: streaming mic → server-side Silero VAD → Whisper → orchestrator → sentence-by-sentence TTS.
+                  Start talking while it answers to <b>barge in</b>. Needs HTTPS (or localhost) for the microphone.
+                  For quick push-to-talk use <b>Home</b>. Starting Live voice turns off Home's Always listening (they share one microphone).</p>
                 <div class="row">
                   <button type="button" id="voice-toggle" class="primary">Start live voice</button>
                   <button type="button" id="voice-interrupt" disabled>Interrupt</button>

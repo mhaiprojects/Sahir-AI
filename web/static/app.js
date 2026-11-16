@@ -1316,6 +1316,7 @@ function abortConversationRecording() {
 
 function startAlwaysListening() {
   if (!micReady || !alwaysListenToggle.checked || busy || pttActive) return;
+  window.sahirStopLiveVoice?.("Home always listening");
 
   listenState = "waiting";
   lastSpeechAt = null;
@@ -1581,6 +1582,7 @@ async function startPttRecording() {
     return;
   }
 
+  window.sahirStopLiveVoice?.("Home push-to-talk");
   pauseAlwaysListening();
   pttActive = true;
   liveDraft = "";
@@ -1941,6 +1943,26 @@ micBtn.addEventListener("touchend", (e) => {
   e.preventDefault();
   stopPttRecording();
 }, { passive: false });
+
+// Shared microphone state between Home quick voice and Agent live voice (#33).
+// Agent live voice calls this before it opens the mic.
+window.sahirReleaseHomeMic = function sahirReleaseHomeMic() {
+  if (pttActive) stopPttRecording();
+  if (alwaysListenToggle.checked) {
+    alwaysListenToggle.checked = false;
+    localStorage.setItem(ALWAYS_LISTEN_KEY, "0");
+    stopAlwaysListening();
+    micBtn.disabled = busy || !micReady;
+    addMessage("system", "Always listening turned off: Agent live voice is using the microphone.");
+    updateMicUi();
+  }
+};
+
+document.getElementById("open-live-voice-btn")?.addEventListener("click", () => {
+  document.getElementById("nav-btn-agent")?.click();
+  document.querySelector('.ag-tab[data-tab="voice"]')?.click();
+  document.getElementById("voice-toggle")?.focus();
+});
 
 refreshLogsBtn.addEventListener("click", refreshLogs);
 

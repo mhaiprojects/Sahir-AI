@@ -400,7 +400,15 @@
     src.onended = () => { voice.playing = voice.playing.filter((x) => x !== src); };
   }
 
+  // Shared microphone state with Home quick voice (#33).
+  window.sahirStopLiveVoice = (reason) => {
+    if (!voice.ws) return;
+    stopVoice();
+    toast(`Live voice stopped: ${reason || "microphone in use"} started.`);
+  };
+
   async function startVoice() {
+    window.sahirReleaseHomeMic?.();
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     voice.ws = new WebSocket(`${proto}//${location.host}/ws/voice`);
     voice.ws.binaryType = "arraybuffer";
