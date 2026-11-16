@@ -1,8 +1,9 @@
 :root { --bg:#0f1419; --surface:#1a2332; --surface2:#141c28; --border:#2d3a4f; --text:#e7ecf3; --muted:#8b9cb3;
   --accent:#3b82f6; --user-bg:#1e3a5f; --assistant-bg:#1f2937; --ok:#22c55e; --bad:#ef4444; --warn:#f59e0b; }
 * { box-sizing: border-box; }
-body { margin:0; font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--text);
-  height:100vh; height:100dvh; display:flex; flex-direction:column; }
+.view-agent { display:flex; flex-direction:column; min-height:0; overflow:hidden; }
+.view-agent .ag-shell { flex:1; min-height:0; display:flex; flex-direction:column; font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color:var(--text); }
+.view-agent .ag-panels { flex:1; min-height:0; display:flex; flex-direction:column; }
 button, .btn, select, input { font:inherit; color:var(--text); background:var(--surface); border:1px solid var(--border);
   border-radius:8px; padding:.45rem .7rem; }
 button, .btn { cursor:pointer; text-decoration:none; white-space:nowrap; }
@@ -18,17 +19,19 @@ input { min-width:0; }
 .hidden { display:none !important; }
 /* Author display rules (e.g. .row { display:flex }) otherwise override the hidden attribute. */
 [hidden] { display:none !important; }
-.ag-header { display:flex; align-items:center; gap:1rem; padding:.6rem 1rem; border-bottom:1px solid var(--border); background:var(--surface2); }
-.ag-header h1 { font-size:1.15rem; margin:0; }
-.ag-back { color:var(--muted); text-decoration:none; }
-.ag-status { margin-left:auto; color:var(--muted); font-size:.8rem; text-align:right; }
+.ag-header { display:flex; align-items:center; gap:.75rem; padding:.6rem 1rem; border-bottom:1px solid var(--border); background:var(--surface2); flex-wrap:wrap; }
+.ag-header h1 { font-size:1.15rem; margin:0; flex:0 0 auto; }
+.ag-why { flex:1 1 200px; margin:0; font-size:.78rem; max-width:36rem; }
+.ag-why code { font-size:.75rem; }
+.ag-status { color:var(--muted); font-size:.8rem; text-align:right; margin-left:auto; }
+#conv-new-top { flex:0 0 auto; }
+.ag-header .ag-status { flex:0 0 auto; max-width:40%; }
 .ag-tabs { display:flex; gap:.25rem; padding:.4rem 1rem 0; border-bottom:1px solid var(--border); overflow-x:auto; }
 .ag-tab { border:none; border-bottom:2px solid transparent; border-radius:0; background:none; color:var(--muted); }
 .ag-tab.active { color:var(--text); border-bottom-color:var(--accent); }
 .badge { background:var(--warn); color:#111; border-radius:999px; padding:0 .45rem; font-size:.75rem; margin-left:.2rem; }
-main { flex:1; min-height:0; }
-.ag-panel { display:none; height:100%; }
-.ag-panel.active { display:flex; }
+.view-agent .ag-panel { display:none; flex:1; min-height:0; }
+.view-agent .ag-panel.active { display:flex; }
 .ag-col { flex:1; max-width:1000px; margin:0 auto; padding:1rem; overflow:auto; }
 .ag-sidebar { width:300px; border-right:1px solid var(--border); padding:.6rem; display:flex; flex-direction:column; min-height:0; }
 .ag-list { list-style:none; padding:0; margin:.3rem 0 0; overflow:auto; flex:1; }
@@ -52,7 +55,13 @@ main { flex:1; min-height:0; }
 .chip { font-size:.72rem; border:1px solid var(--border); border-radius:999px; padding:.05rem .45rem; color:var(--muted); }
 .chip.mem { border-color:#6d28d9; color:#c4b5fd; } .chip.doc { border-color:#0e7490; color:#67e8f9; } .chip.task { border-color:#a16207; color:#fde68a; }
 .ag-composer { display:flex; gap:.5rem; padding:.6rem 1rem; border-top:1px solid var(--border); }
-.ag-composer input { flex:1; }
+.ag-composer textarea { flex:1; resize:vertical; min-height:2.5rem; max-height:12rem; font:inherit; }
+.ag-activity { margin:0 1rem; padding:.45rem .65rem; border:1px solid var(--border); border-radius:8px; background:var(--surface2); max-height:7rem; overflow:auto; font-size:.78rem; color:var(--muted); }
+.ag-activity:not(.hidden) + .ag-messages { padding-top:.4rem; }
+.ag-activity .line { padding:.15rem 0; border-bottom:1px solid var(--border); }
+.ag-activity .line:last-child { border-bottom:none; }
+.ag-activity .line.stage-cursor { color:#93c5fd; }
+.ag-activity .line.stage-model, .ag-activity .line.stage-tool { color:#fde68a; }
 .ag-cards { list-style:none; padding:0; display:flex; flex-direction:column; gap:.5rem; }
 .card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:.6rem .8rem; }
 .card.pending { border-color:var(--warn); } .card.rejected { opacity:.6; }

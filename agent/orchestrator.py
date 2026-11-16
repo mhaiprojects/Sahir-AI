@@ -10,7 +10,10 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
+from collections.abc import Callable
 from typing import Any
+
+ProgressFn = Callable[[dict[str, Any]], None]
 
 import ollama
 
@@ -27,6 +30,8 @@ For each user turn decide ONE of:
   2. call a PC tool (open_app, run_command, set_volume) for simple desktop actions;
   3. call `delegate` to hand work to a specialised worker. Workers available:
 {workers}
+For questions about the Cursor CLI, workspace files, agent transcripts, or "ask cursor" requests,
+delegate to the `code` worker — do not claim you lack access to the user's machine.
 You may call `delegate` several times in one turn for independent sub-tasks. After workers
 report back you will see their results; then either delegate a follow-up (e.g. file the research
 result in ClickUp) or call `answer` with a short spoken reply (1-3 sentences) summarising the outcome.
@@ -95,8 +100,9 @@ class Orchestrator:
         calls: list[dict[str, Any]] = []
         if "research" in self.dispatcher.workers and _RESEARCH_RE.search(text):
             calls.append({"type": "research", "description": text})
-        if "code" in self.dispatcher.workers and router._looks_like_code_task(text) and not calls:
-            calls.append({"type": "code", "description": text})
+        if "code" in self.dispatcher.workers and not calls:
+            if router._looks_like_cursor_cli_query(text) or router._looks_like_code_task(text):
+                calls.append({"type": "code", "description": text})
         if "clickup" in self.dispatcher.workers and _CLICKUP_RE.search(text):
             if calls:
                 calls[-1]["track_in_clickup"] = True
@@ -121,23 +127,27 @@ class Orchestrator:
                            priority=args.get("priority") or "normal", callback="orchestrator")
 
     def run(self, text: str, *, history: list[dict[str, str]], context_block: str = "",
-            base_context: dict[str, Any] | None = None) -> OrchestrationResult:
+            base_context: dict[str, Any] | None = None, on_progress: ProgressFn | None = None) -> OrchestrationResult:
         mgr = get_manager()
         model, reason = mgr.initial_model(text) if mgr else (self.settings.ollama_model, None)
         self._model = model
         meta: dict[str, Any] = {"model": model, "requested_model": self.settings.ollama_model}
         if reason:
             meta["escalated"] = reason
+        if on_progress:
+            on_progress({"type": "progress", "stage": "orchestrator", "message": "Orchestrator planning…",
+                         "model": model, "escalated": reason})
         try:
             res = self._run(text, history=history, context_block=context_block, base_context=base_context,
-                            meta=meta, mgr=mgr)
+                            meta=meta, mgr=mgr, on_progress=on_progress)
         finally:
             self._model = None
         res.action_details = {**res.action_details, **meta}
         return res
 
     def _run(self, text: str, *, history: list[dict[str, str]], context_block: str,
-             base_context: dict[str, Any] | None, meta: dict[str, Any], mgr: Any) -> OrchestrationResult:
+             base_context: dict[str, Any] | None, meta: dict[str, Any], mgr: Any,
+             on_progress: ProgressFn | None = None) -> OrchestrationResult:
         base_ctx = {"history": history[-12:], **(base_context or {})}
         messages: list[dict[str, Any]] = [{"role": "system", "content": self._system(context_block)},
                                           *history, {"role": "user", "content": text}]
@@ -156,6 +166,9 @@ class Orchestrator:
                     meta.update({"escalated": f"invalid_output:{bad}", "small_model": self.model,
                                  "model": mgr.fallback_model})
                     self._model = mgr.fallback_model
+                    if on_progress:
+                        on_progress({"type": "model", "message": f"Switching to fallback model {mgr.fallback_model}",
+                                     "model": mgr.fallback_model, "reason": bad})
                     resp = self._chat(messages, tools=tools, options={"temperature": 0.2, "num_predict": 300})
             except Exception as exc:
                 logger.exception("Orchestrator LLM call failed")
@@ -173,6 +186,10 @@ class Orchestrator:
                     except json.JSONDecodeError:
                         args = {}
                 parsed.append((fn.get("name", ""), args))
+
+            if on_progress and parsed:
+                on_progress({"type": "tool_calls", "round": round_no + 1,
+                             "calls": [{"name": n, "args": a} for n, a in parsed]})
 
             if round_no == 0 and (not parsed or all(n == "answer" for n, _ in parsed)):
                 forced = self._heuristic_delegation(text)
@@ -192,14 +209,31 @@ class Orchestrator:
 
             if pc_calls and not delegations:
                 n, a = pc_calls[0]
+                if on_progress:
+                    on_progress({"type": "progress", "stage": "tool", "message": f"Running PC tool: {n}", "tool": n})
                 r = router._execute_tool_call({"function": {"name": n, "arguments": a}}, self.settings)
                 return OrchestrationResult(reply=r.reply, action=r.action, action_details=r.action_details,
                                            tasks=task_log)
             if answer is not None and not delegations:
                 if results:  # final answer after worker results: compose from the actual results
                     return self._result("", results, summaries, task_log, request=text)
-                return OrchestrationResult(reply=str(answer.get("reply") or "Okay."), action="direct_answer",
-                                           tasks=task_log)
+                reply_text = str(answer.get("reply") or "Okay.")
+                if round_no == 0 and "code" in self.dispatcher.workers:
+                    if router._looks_like_cursor_cli_query(text) or (
+                        router._reply_suggests_incomplete(reply_text)
+                        and router._looks_like_code_task(text)
+                    ):
+                        logger.info("Overriding direct answer — delegating to code worker")
+                        forced = [{"type": "code", "description": text}]
+                        parsed = [("delegate", f) for f in forced]
+                        delegations = forced
+                        answer = None
+                    else:
+                        return OrchestrationResult(reply=reply_text, action="direct_answer", tasks=task_log)
+                else:
+                    return OrchestrationResult(reply=reply_text, action="direct_answer", tasks=task_log)
+                if not delegations:
+                    continue
 
             # Delegate: independent tasks in one round run in parallel; each later round sees earlier results.
             # Workers that consume other workers' output (e.g. clickup) run after the producers in the
@@ -208,6 +242,9 @@ class Orchestrator:
             producers = [a for a in delegations if not self._consumes(a)]
             consumers = [a for a in delegations if self._consumes(a)]
             tasks = [self._make_task(a, base_ctx, summaries) for a in producers]
+            if on_progress and tasks:
+                on_progress({"type": "delegate", "message": "Delegating to workers…",
+                             "workers": [t.type for t in tasks]})
             round_results = self.dispatcher.dispatch_many(tasks) if tasks else []
             for a in consumers:
                 fresh = summaries + [
@@ -226,6 +263,9 @@ class Orchestrator:
                 summaries.append(s)
                 task_log.append({"task": {k: v for k, v in t.to_dict().items() if k != "context"},
                                  "result": r.to_dict()})
+                if on_progress:
+                    on_progress({"type": "worker_result", "worker": t.type, "status": r.status,
+                                 "task_id": t.id})
                 messages.append({"role": "tool", "content": json.dumps(s, ensure_ascii=False)[:6000]})
             # Single-worker, non-ClickUp follow-up is unlikely; let the model decide next round.
 

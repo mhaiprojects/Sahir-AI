@@ -131,8 +131,11 @@ def test_legacy_chat_persists_with_context(client, monkeypatch):
 
 
 def test_agent_page_served(client):
-    html = client.get("/agent").text
-    assert "Agent" in html and "agent.js" in html
+    r = client.get("/agent", follow_redirects=False)
+    assert r.status_code == 302
+    assert "view=agent" in r.headers.get("location", "")
+    html = client.get("/").text
+    assert "view-agent" in html and "agent.js" in html
     assert 'id="conv-actions" hidden' in html
     css = client.get("/static/agent.css").text
     assert "[hidden]" in css and "display:none" in css

@@ -18,6 +18,7 @@ Top-to-bottom on **Home** view:
 | **Logs** | Request / activity log |
 | **Models** | Chat model selector (Select / Load / Eject), fallback toggles, benchmark |
 | **Config** | Settings, voice commands CRUD, tunables |
+| **Agent** | Chats, memory, RAG documents, live voice, delegation tasks (single SPA view) |
 
 Secondary status panels and detailed logs should be collapsible or on Logs/Config views, not competing with live transcription on Home.
 
@@ -46,4 +47,21 @@ Cache-bust JS in `index.html`: `app.js?v=...` — bump when changing frontend lo
 - [x] Auto-refresh UI after server deploy / error recovery — `refreshHealth()` compares `/api/health` `build_id`, reloads via `reloadForNewBuild()` (deferred while busy/recording/speaking), retries every 5 s when the server is down and announces recovery; `index.html` is served `Cache-Control: no-cache`
 - [x] Cursor task completion always surfaces a message in chat — `reportCursorCompletion()` after Send to Cursor, the Cursor toggle, and routed `run_cursor_agent` replies
 
-Current cache-bust: `app.js?v=20261116a`, `models.js?v=20261116a`, `style.css?v=20261116a`.
+## Why Agent is one section (not separate apps)
+
+**Home** is the quick voice + chat control panel. **Agent** is the operator console for the same runtime:
+persistent chats in `data/agent.db`, long-term **Memory**, **Documents** (RAG), **Live voice** (WebSocket orchestrator), and **Tasks** (worker delegation log). Those surfaces all read/write the agent store and orchestrator, so they belong together rather than as unrelated top-level nav items.
+
+## SPA navigation
+
+The shell is a single page (`index.html`). Views switch via the left rail and `?view=` query (e.g. `/?view=agent`). `/agent` redirects to `/?view=agent` for old bookmarks.
+
+## Chat UX (Nov 2026)
+
+- **Enter** sends; **Shift+Enter** inserts a newline; **Ctrl+Enter** (or **Cmd+Enter**) sends to Cursor (Home and Agent composer).
+- Chat textareas are focused on load and refocused after each send (Home and Agent when that view is active).
+- **Activity feed** on Home and Agent Chats shows streaming progress: context retrieval, model/fallback switches, tool calls, worker delegation, Cursor CLI handoff.
+- **Chat history** is stored server-side; Home and Agent open the latest conversation by default (with `localStorage` preference when still valid).
+- **New chat** button (top right of Agent) starts a fresh conversation.
+
+Current cache-bust: `app.js?v=20261116c`, `agent.js?v=20261116c`, `models.js?v=20261116b`, `style.css?v=20261116b`, `agent.css?v=20261116b`.

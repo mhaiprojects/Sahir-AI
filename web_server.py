@@ -15,7 +15,7 @@ import numpy as np
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -915,10 +915,8 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/agent")
-    def agent_page() -> FileResponse:
-        return FileResponse(
-            STATIC_DIR / "agent.html", headers={"Cache-Control": "no-cache"}
-        )
+    def agent_page() -> RedirectResponse:
+        return RedirectResponse(url="/?view=agent", status_code=302)
 
     @app.get("/")
     def index() -> FileResponse:

@@ -49,7 +49,7 @@ class RagSearchRequest(BaseModel):
 class AgentChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=8000)
     conversation_id: int | None = None
-    mode: str = Field(default="agent", pattern="^(agent|route|chat|cursor)$")
+    mode: str = Field(default="agent", pattern="^(agent|route|chat|cursor|stream)$")
 
 
 def _md_export(conv: dict[str, Any], messages: list[dict[str, Any]]) -> str:
@@ -256,7 +256,10 @@ def create_agent_router(get_agent: Callable[[], Agent], request_lock: threading.
                 yield f"data: {json.dumps({'type': 'error', 'error': 'Assistant is busy. Try again shortly.'})}\n\n"
                 return
             try:
-                for ev in agent.stream(body.message, conversation_id=body.conversation_id):
+                mode = "chat" if body.mode == "stream" else body.mode
+                for ev in agent.respond_events(
+                    body.message, conversation_id=body.conversation_id, mode=mode
+                ):
                     yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
             except Exception as exc:  # pragma: no cover - defensive
                 yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"

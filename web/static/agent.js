@@ -7,6 +7,68 @@
   const when = (iso) => { try { return new Date(iso).toLocaleString(); } catch { return iso; } };
   const state = { convId: null, convs: [], busy: false };
 
+  function activityEl() {
+    return $("#agent-activity");
+  }
+
+  function clearActivity() {
+    const el = activityEl();
+    if (!el) return;
+    el.innerHTML = "";
+    el.classList.add("hidden");
+  }
+
+  function pushActivity(message, stage = "") {
+    const el = activityEl();
+    if (!el || !message) return;
+    el.classList.remove("hidden");
+    const line = document.createElement("div");
+    line.className = "line" + (stage ? ` stage-${stage}` : "");
+    line.textContent = message;
+    el.appendChild(line);
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function describeToolCalls(ev) {
+    (ev.calls || []).forEach((c) => {
+      const name = c.name || "tool";
+      pushActivity(`Tool call: ${name}`, "tool");
+    });
+  }
+
+  async function consumeSseResponse(res, { pending, box, accRef }) {
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const line = buf.slice(0, i);
+        buf = buf.slice(i + 2);
+        if (!line.startsWith("data: ")) continue;
+        let ev;
+        try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+        if (ev.type === "meta") state.convId = ev.conversation_id;
+        if (ev.type === "progress") pushActivity(ev.message, ev.stage || "progress");
+        if (ev.type === "model") pushActivity(ev.message || `Model: ${ev.model}`, "model");
+        if (ev.type === "tool_calls") describeToolCalls(ev);
+        if (ev.type === "delegate") pushActivity(ev.message || `Workers: ${(ev.workers || []).join(", ")}`, "delegate");
+        if (ev.type === "worker_result") {
+          pushActivity(`Worker ${ev.worker}: ${ev.status}`, "delegate");
+        }
+        if (ev.type === "token") {
+          accRef.v += ev.text;
+          pending.querySelector(".body").innerHTML = md(accRef.v);
+          box.scrollTop = 1e9;
+        }
+        if (ev.type === "error") toast(ev.error, true);
+      }
+    }
+  }
+
   function toast(msg, bad = false) {
     const el = $("#toast");
     el.textContent = msg;
@@ -87,6 +149,7 @@
     $("#messages").innerHTML = c.messages.map(renderMessage).join("");
     $("#messages").scrollTop = 1e9;
     localStorage.setItem("agentConv", id);
+    localStorage.setItem("voice-assistant-conversation-id", id);
     loadConversations();
   }
 
@@ -96,11 +159,14 @@
   });
   let searchT;
   $("#conv-search").addEventListener("input", () => { clearTimeout(searchT); searchT = setTimeout(loadConversations, 250); });
-  $("#conv-new").addEventListener("click", async () => {
+  async function startNewChat() {
     const c = await api("/api/conversations", { method: "POST", json: {} });
     await openConversation(c.id);
-    $("#chat-input").focus();
-  });
+    $("#chat-input")?.focus();
+  }
+
+  $("#conv-new")?.addEventListener("click", () => { startNewChat().catch((e) => toast(e.message, true)); });
+  $("#conv-new-top")?.addEventListener("click", () => { startNewChat().catch((e) => toast(e.message, true)); });
   $("#conv-rename").addEventListener("click", async () => {
     const cur = $("#conv-title").textContent;
     const title = prompt("Rename conversation", cur);
@@ -126,47 +192,66 @@
     } catch (e) { toast(e.message, true); }
   });
 
-  $("#chat-form").addEventListener("submit", async (e) => {
+  function focusAgentChatInput() {
+    const el = $("#chat-input");
+    if (el && !el.disabled && !state.busy) el.focus();
+  }
+  window.focusAgentChatInput = focusAgentChatInput;
+
+  let agentSubmitModeOverride = null;
+
+  const agentChatForm = $("#agent-chat-form");
+  const chatInput = $("#chat-input");
+  if (chatInput) {
+    chatInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        if (!chatInput.value.trim() || state.busy) return;
+        agentSubmitModeOverride = "cursor";
+        agentChatForm?.requestSubmit();
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        agentChatForm?.requestSubmit();
+      }
+    });
+  }
+
+  agentChatForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const text = $("#chat-input").value.trim();
     if (!text || state.busy) return;
-    const mode = $("#chat-mode").value;
+    const mode = agentSubmitModeOverride || $("#chat-mode").value;
+    agentSubmitModeOverride = null;
     $("#chat-input").value = "";
+    clearActivity();
     state.busy = true; $("#chat-send").disabled = true;
     const box = $("#messages");
     box.insertAdjacentHTML("beforeend", renderMessage({ role: "user", content: text }));
     box.insertAdjacentHTML("beforeend", `<div class="msg assistant pending"><div class="body">…</div><div class="meta"></div></div>`);
     const pending = box.lastElementChild;
     box.scrollTop = 1e9;
+    pushActivity(`Mode: ${mode}`, "progress");
     try {
-      if (mode === "stream") {
-        const res = await fetch("/api/agent/chat/stream", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: text, conversation_id: state.convId }) });
-        const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = "", acc = "";
-        for (;;) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buf += dec.decode(value, { stream: true });
-          let i;
-          while ((i = buf.indexOf("\n\n")) >= 0) {
-            const line = buf.slice(0, i); buf = buf.slice(i + 2);
-            if (!line.startsWith("data: ")) continue;
-            const ev = JSON.parse(line.slice(6));
-            if (ev.type === "meta") state.convId = ev.conversation_id;
-            if (ev.type === "token") { acc += ev.text; pending.querySelector(".body").innerHTML = md(acc); box.scrollTop = 1e9; }
-            if (ev.type === "error") toast(ev.error, true);
-          }
-        }
-      } else {
-        const r = await api("/api/agent/chat", { method: "POST", json: { message: text, conversation_id: state.convId, mode } });
-        state.convId = r.conversation_id;
+      const res = await fetch("/api/agent/chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, conversation_id: state.convId, mode }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || res.statusText);
       }
+      const accRef = { v: "" };
+      await consumeSseResponse(res, { pending, box, accRef });
       await openConversation(state.convId);
     } catch (err) {
       pending.querySelector(".body").textContent = "Error: " + err.message;
       toast(err.message, true);
     } finally {
       state.busy = false; $("#chat-send").disabled = false; loadStatus();
+      focusAgentChatInput();
     }
   });
 
@@ -360,13 +445,22 @@
   $("#voice-interrupt").addEventListener("click", () => { stopPlayback(); voice.ws && voice.ws.send(JSON.stringify({ type: "interrupt" })); });
 
   // ---------------------------------------------------------------- init
-  (async () => {
+  window.refreshAgentView = async function refreshAgentView() {
     await loadStatus();
     await loadConversations();
-    const saved = Number(localStorage.getItem("agentConv"));
-    if (saved && state.convs.some((c) => c.id === saved)) openConversation(saved);
+  };
+
+  (async () => {
+    await refreshAgentView();
+    const saved = Number(localStorage.getItem("agentConv") || localStorage.getItem("voice-assistant-conversation-id"));
+    if (saved && state.convs.some((c) => c.id === saved)) {
+      await openConversation(saved);
+    } else if (state.convs.length) {
+      await openConversation(state.convs[0].id);
+    }
     const tab = localStorage.getItem("agentTab");
     if (tab) document.querySelector(`.ag-tab[data-tab="${tab}"]`)?.click();
+    focusAgentChatInput();
     setInterval(loadStatus, 15000);
   })();
 })();

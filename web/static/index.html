@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Sahir</title>
-  <link rel="stylesheet" href="/static/style.css?v=20261116a">
+  <link rel="stylesheet" href="/static/style.css?v=20261116b">
+  <link rel="stylesheet" href="/static/agent.css?v=20261116b">
 </head>
 <body>
   <div class="layout">
@@ -27,10 +28,10 @@
           <span class="nav-icon" aria-hidden="true">◈</span>
           <span class="nav-label">Models</span>
         </button>
-        <a class="nav-item" href="/agent" id="nav-link-agent" title="Agent manager: chats, memory, documents, live voice, tasks" style="text-decoration:none">
+        <button type="button" class="nav-item" role="tab" aria-selected="false" data-view="agent" id="nav-btn-agent" title="Agent manager: chats, memory, documents, live voice, tasks">
           <span class="nav-icon" aria-hidden="true">✦</span>
           <span class="nav-label">Agent</span>
-        </a>
+        </button>
       </nav>
     </aside>
 
@@ -86,13 +87,20 @@
         <p id="mic-hint" class="mic-hint hidden"></p>
 
         <main class="main-content">
+          <section id="activity-feed" class="activity-feed hidden" aria-live="polite" aria-label="Behind the scenes">
+            <div class="activity-feed-head">
+              <span class="activity-feed-title">Working…</span>
+              <button type="button" id="activity-clear-btn" class="secondary small" title="Clear activity log">Clear</button>
+            </div>
+            <ol id="activity-list" class="activity-list"></ol>
+          </section>
           <section id="chat-log" class="chat-log" aria-live="polite"></section>
 
           <form id="chat-form" class="chat-form">
             <textarea
               id="message-input"
               rows="3"
-              placeholder="Ask a question, control the PC, or request a coding task…"
+              placeholder="Ask a question, control the PC, or request a coding task… (Ctrl+Enter → Cursor)"
               required
             ></textarea>
             <div class="chat-actions">
@@ -191,14 +199,132 @@
           </div>
         </details>
       </div>
+
+      <!-- Agent manager (SPA view) -->
+      <div id="view-agent" class="view view-agent" role="tabpanel" aria-labelledby="nav-btn-agent" hidden>
+        <div class="ag-shell">
+          <header class="ag-header">
+            <h1>Agent Manager</h1>
+            <p class="ag-why hint" title="Why these tools live here">Chats, memory, documents, live voice, and delegated tasks share one agent store (<code>agent.db</code>) and orchestrator — they are operator surfaces for the same brain, not separate apps.</p>
+            <button type="button" id="conv-new-top" class="primary small">New chat</button>
+            <span id="ag-status" class="ag-status">loading…</span>
+          </header>
+          <nav class="ag-tabs" role="tablist">
+            <button class="ag-tab active" data-tab="chats" role="tab">Chats</button>
+            <button class="ag-tab" data-tab="memory" role="tab">Memory <span id="pending-badge" class="badge hidden"></span></button>
+            <button class="ag-tab" data-tab="docs" role="tab">Documents</button>
+            <button class="ag-tab" data-tab="voice" role="tab">Live voice</button>
+            <button class="ag-tab" data-tab="tasks" role="tab">Tasks</button>
+          </nav>
+          <div class="ag-panels">
+            <section id="tab-chats" class="ag-panel active">
+              <aside class="ag-sidebar">
+                <div class="row">
+                  <input id="conv-search" type="search" placeholder="Search chats…" aria-label="Search chats">
+                  <button id="conv-new" type="button" title="New chat">＋</button>
+                </div>
+                <ul id="conv-list" class="ag-list" aria-label="Conversations"></ul>
+              </aside>
+              <div class="ag-main">
+                <div class="ag-conv-head">
+                  <h2 id="conv-title">Select or start a chat</h2>
+                  <div class="row" id="conv-actions" hidden>
+                    <button type="button" id="conv-rename">Rename</button>
+                    <a id="conv-export-md" class="btn">Export .md</a>
+                    <a id="conv-export-json" class="btn">Export .json</a>
+                    <button type="button" id="conv-extract">Extract memories</button>
+                    <button type="button" id="conv-delete" class="danger">Delete</button>
+                  </div>
+                </div>
+                <div id="agent-activity" class="ag-activity hidden" aria-live="polite" aria-label="Agent activity"></div>
+                <div id="messages" class="ag-messages" aria-live="polite"></div>
+                <form id="agent-chat-form" class="ag-composer">
+                  <select id="chat-mode" aria-label="Mode" title="agent = orchestrator with workers; route = legacy tool router; chat = plain LLM">
+                    <option value="stream">chat (streaming)</option>
+                    <option value="agent" selected>agent (orchestrator)</option>
+                    <option value="route">route (tools)</option>
+                    <option value="cursor">cursor</option>
+                  </select>
+                  <textarea id="chat-input" rows="2" autocomplete="off" placeholder="Message the agent… (Enter send, Ctrl+Enter → Cursor, Shift+Enter newline)" aria-label="Message"></textarea>
+                  <button type="submit" id="chat-send">Send</button>
+                </form>
+              </div>
+            </section>
+            <section id="tab-memory" class="ag-panel">
+              <div class="ag-col">
+                <form id="mem-form" class="row">
+                  <select id="mem-category">
+                    <option>fact</option><option>preference</option><option>person</option>
+                    <option>project</option><option>task</option><option>other</option>
+                  </select>
+                  <input id="mem-content" placeholder="Add a long-term fact, e.g. “User prefers metric units”" required>
+                  <button type="submit">Add</button>
+                </form>
+                <div class="row">
+                  <label>Show <select id="mem-filter">
+                    <option value="">all</option><option value="pending">pending review</option>
+                    <option value="active" selected>active</option><option value="rejected">rejected</option>
+                  </select></label>
+                  <input id="mem-search" type="search" placeholder="Filter…">
+                  <button type="button" id="mem-test-btn" title="Semantic search over active memories">Test recall</button>
+                </div>
+                <p class="hint">Auto-extracted memories land in <b>pending review</b> — approve, edit or reject them.</p>
+                <ul id="mem-list" class="ag-cards"></ul>
+              </div>
+            </section>
+            <section id="tab-docs" class="ag-panel">
+              <div class="ag-col">
+                <form id="doc-form" class="drop" tabindex="0">
+                  <p>Drop .txt / .md / .pdf files here or</p>
+                  <input id="doc-files" type="file" multiple accept=".txt,.md,.markdown,.pdf,.rst,.csv,.json,.log,.py,.js,.html">
+                  <button type="submit">Upload &amp; index</button>
+                  <p id="doc-upload-status" class="hint"></p>
+                </form>
+                <div class="row">
+                  <input id="rag-query" placeholder="Test retrieval: ask something about your documents">
+                  <button type="button" id="rag-search-btn">Search</button>
+                </div>
+                <ol id="rag-results" class="ag-cards"></ol>
+                <h3>Indexed documents</h3>
+                <ul id="doc-list" class="ag-cards"></ul>
+              </div>
+            </section>
+            <section id="tab-voice" class="ag-panel">
+              <div class="ag-col">
+                <p class="hint">Streaming mic → server-side Silero VAD → Whisper → orchestrator → sentence-by-sentence TTS.
+                  Start talking while it answers to <b>barge in</b>. Needs HTTPS (or localhost) for the microphone.</p>
+                <div class="row">
+                  <button type="button" id="voice-toggle" class="primary">Start live voice</button>
+                  <button type="button" id="voice-interrupt" disabled>Interrupt</button>
+                  <label><input type="checkbox" id="voice-tts" checked> Speak replies</label>
+                  <span id="voice-state" class="pill">idle</span>
+                </div>
+                <div class="meter"><div id="voice-meter"></div></div>
+                <div id="voice-log" class="ag-messages small"></div>
+              </div>
+            </section>
+            <section id="tab-tasks" class="ag-panel">
+              <div class="ag-col">
+                <div class="row"><button type="button" id="tasks-refresh">Refresh</button><span id="tasks-info" class="hint"></span></div>
+                <table class="ag-table">
+                  <thead><tr><th>When</th><th>Type</th><th>Description</th><th>Status</th><th>Time</th><th>Output</th></tr></thead>
+                  <tbody id="tasks-body"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+      <div id="toast" class="toast hidden" role="status"></div>
     </div>
   </div>
 
   <script src="/static/vendor/marked.min.js"></script>
   <script src="/static/vendor/purify.min.js"></script>
   <script src="/static/markdown.js"></script>
-  <script src="/static/app.js?v=20261116a"></script>
-  <script src="/static/models.js?v=20261116a"></script>
+  <script src="/static/app.js?v=20261116c"></script>
+  <script src="/static/agent.js?v=20261116c"></script>
+  <script src="/static/models.js?v=20261116b"></script>
   <script src="/static/tour.js"></script>
 </body>
 </html>

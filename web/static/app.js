@@ -49,6 +49,8 @@ const ALWAYS_LISTEN_KEY = "voice-assistant-always-listen";
 const ROUTE_CURSOR_KEY = "voice-assistant-route-cursor";
 const ROUTE_TOOLS_KEY = "voice-assistant-route-tools";
 const MIC_ENABLED_KEY = "voice-assistant-mic-enabled";
+const CONV_ID_KEY = "voice-assistant-conversation-id";
+const VIEW_KEY = "voice-assistant-view";
 
 const HEALTH_POLL_MS = 30000;
 const HEALTH_RETRY_MS = 5000;
@@ -86,6 +88,7 @@ let currentTtsAudio = null;
 let lastAssistantReply = "";
 let voiceCommandsCache = [];
 let chatHistory = [];
+let homeConversationId = null;
 let conversationChunkStart = -1;
 let noiseFloor = 0.008;
 let speechCandidateStartedAt = null;
@@ -119,11 +122,7 @@ function rememberChatTurn(role, text) {
   }
 }
 
-function getChatHistoryForApi() {
-  return chatHistory.map(({ role, content }) => ({ role, content }));
-}
-
-function addMessage(role, text) {
+function addMessage(role, text, { skipRemember = false } = {}) {
   const el = document.createElement("div");
   el.className = `msg ${role}`;
   if ((role === "user" || role === "assistant") && typeof renderMarkdown === "function") {
@@ -131,12 +130,145 @@ function addMessage(role, text) {
     content.className = "msg-content markdown-body";
     content.innerHTML = renderMarkdown(text);
     el.appendChild(content);
-    rememberChatTurn(role, text);
+    if (!skipRemember) rememberChatTurn(role, text);
   } else {
     el.textContent = text;
   }
   chatLog.appendChild(el);
   chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function getChatHistoryForApi() {
+  return chatHistory.map(({ role, content }) => ({ role, content }));
+}
+
+const activityFeed = document.getElementById("activity-feed");
+const activityList = document.getElementById("activity-list");
+const activityClearBtn = document.getElementById("activity-clear-btn");
+
+function clearActivityFeed() {
+  if (!activityList) return;
+  activityList.innerHTML = "";
+  activityFeed?.classList.add("hidden");
+}
+
+function pushActivityFeed(text, kind = "") {
+  if (!activityList || !text) return;
+  activityFeed?.classList.remove("hidden");
+  const li = document.createElement("li");
+  if (kind) li.className = `ev-${kind}`;
+  li.textContent = text;
+  activityList.appendChild(li);
+  activityList.scrollTop = activityList.scrollHeight;
+}
+
+if (activityClearBtn) {
+  activityClearBtn.addEventListener("click", clearActivityFeed);
+}
+
+function homeChatMode({ forceCursor = false } = {}) {
+  if (forceCursor || routeCursorToggle?.checked) return "cursor";
+  if (routeToggle.checked) return "route";
+  return "agent";
+}
+
+function focusHomeChatInput() {
+  if (messageInput && !messageInput.disabled && !busy) {
+    messageInput.focus();
+  }
+}
+
+function isCursorSendChord(e) {
+  return e.key === "Enter" && (e.ctrlKey || e.metaKey);
+}
+
+async function consumeAgentSse(res, { onToken, onMeta } = {}) {
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  let reply = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf("\n\n")) >= 0) {
+      const line = buf.slice(0, i);
+      buf = buf.slice(i + 2);
+      if (!line.startsWith("data: ")) continue;
+      let ev;
+      try {
+        ev = JSON.parse(line.slice(6));
+      } catch {
+        continue;
+      }
+      if (ev.type === "meta" && ev.conversation_id) {
+        homeConversationId = ev.conversation_id;
+        localStorage.setItem(CONV_ID_KEY, String(homeConversationId));
+        onMeta?.(ev);
+      }
+      if (ev.type === "progress") pushActivityFeed(ev.message, ev.stage === "cursor" ? "cursor" : "progress");
+      if (ev.type === "model") pushActivityFeed(ev.message || `Model: ${ev.model}`, "model");
+      if (ev.type === "tool_calls") {
+        (ev.calls || []).forEach((c) => pushActivityFeed(`Tool call: ${c.name || "tool"}`, "tool"));
+      }
+      if (ev.type === "delegate") {
+        pushActivityFeed(ev.message || `Workers: ${(ev.workers || []).join(", ")}`, "tool");
+      }
+      if (ev.type === "worker_result") {
+        pushActivityFeed(`Worker ${ev.worker}: ${ev.status}`, "tool");
+      }
+      if (ev.type === "token") {
+        reply += ev.text;
+        onToken?.(reply);
+      }
+      if (ev.type === "done") {
+        reply = ev.reply || reply;
+        if (ev.conversation_id) {
+          homeConversationId = ev.conversation_id;
+          localStorage.setItem(CONV_ID_KEY, String(homeConversationId));
+        }
+        return { reply, ...ev };
+      }
+      if (ev.type === "error") throw new Error(ev.error || "Stream error");
+    }
+  }
+  return { reply };
+}
+
+function renderHomeMessagesFromHistory(messages) {
+  if (!chatLog) return;
+  chatLog.innerHTML = "";
+  chatHistory = [];
+  for (const m of messages) {
+    if (m.role === "user" || m.role === "assistant") {
+      addMessage(m.role, m.content, { skipRemember: false });
+    }
+  }
+}
+
+async function loadHomeConversation() {
+  const saved = Number(localStorage.getItem(CONV_ID_KEY));
+  try {
+    const listRes = await fetch("/api/conversations?limit=50");
+    const listData = await listRes.json();
+    const convs = listData.conversations || [];
+    let id = saved || Number(localStorage.getItem("agentConv"));
+    if (!id || !convs.some((c) => c.id === id)) {
+      id = convs.length ? convs[0].id : null;
+    }
+    if (!id) return;
+    const convRes = await fetch(`/api/conversations/${id}`);
+    if (!convRes.ok) return;
+    const conv = await convRes.json();
+    homeConversationId = conv.id;
+    localStorage.setItem(CONV_ID_KEY, String(homeConversationId));
+    localStorage.setItem("agentConv", String(homeConversationId));
+    const msgs = (conv.messages || []).filter((m) => m.role === "user" || m.role === "assistant");
+    renderHomeMessagesFromHistory(msgs.slice(-CHAT_HISTORY_LIMIT));
+  } catch (err) {
+    console.warn("Could not restore home chat", err);
+  }
 }
 
 function addModelTag(data) {
@@ -1519,23 +1651,33 @@ function reportCursorCompletion(data, startedAt, { always = false } = {}) {
 }
 
 async function sendChat(message, { forceCursor = false } = {}) {
-  const history = getChatHistoryForApi();
   const useCursor = forceCursor || Boolean(routeCursorToggle?.checked);
+  const mode = homeChatMode({ forceCursor: useCursor });
   const startedAt = Date.now();
   setBusy(true);
+  clearActivityFeed();
+  pushActivityFeed(`Mode: ${mode}`, "progress");
   addMessage("user", message);
   if (useCursor) addMessage("system", "Sending task to Cursor CLI…");
   activeRequestController = new AbortController();
 
+  const pending = document.createElement("div");
+  pending.className = "msg assistant";
+  const pendingBody = document.createElement("div");
+  pendingBody.className = "msg-content markdown-body";
+  pendingBody.textContent = "…";
+  pending.appendChild(pendingBody);
+  chatLog.appendChild(pending);
+  chatLog.scrollTop = chatLog.scrollHeight;
+
   try {
-    const res = await fetch("/api/chat", {
+    const res = await fetch("/api/agent/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message,
-        route: routeToggle.checked,
-        history,
-        force_cursor: useCursor,
+        conversation_id: homeConversationId,
+        mode,
       }),
       signal: activeRequestController.signal,
     });
@@ -1545,14 +1687,33 @@ async function sendChat(message, { forceCursor = false } = {}) {
       throw new Error(err.detail || res.statusText);
     }
 
-    const data = await res.json();
-    addMessage("assistant", data.reply || "(no reply text)");
-    addModelTag(data);
-    lastAssistantReply = data.reply || "";
-    reportCursorCompletion(data, startedAt, { always: useCursor });
+    const data = await consumeAgentSse(res, {
+      onToken: (partial) => {
+        if (typeof renderMarkdown === "function") {
+          pendingBody.innerHTML = renderMarkdown(partial);
+        } else {
+          pendingBody.textContent = partial;
+        }
+        chatLog.scrollTop = chatLog.scrollHeight;
+      },
+    });
+    const reply = data.reply || "(no reply text)";
+    if (typeof renderMarkdown === "function") {
+      pendingBody.innerHTML = renderMarkdown(reply);
+    } else {
+      pendingBody.textContent = reply;
+    }
+    rememberChatTurn("assistant", reply);
+    addModelTag({ action_details: data.action_details || {} });
+    lastAssistantReply = reply;
+    reportCursorCompletion(
+      { action: data.action, action_details: data.action_details },
+      startedAt,
+      { always: useCursor },
+    );
 
     prependLogEntry({
-      id: data.log_id,
+      id: data.assistant_message_id || 0,
       created_at: new Date().toISOString(),
       client_ip: null,
       input_type: "text",
@@ -1566,8 +1727,9 @@ async function sendChat(message, { forceCursor = false } = {}) {
       error_message: null,
     });
 
-    await maybePlayTts(data.reply);
+    await maybePlayTts(reply);
   } catch (err) {
+    pending.remove();
     if (err.name === "AbortError") {
       addMessage("system", useCursor ? "Cursor request cancelled." : "Request cancelled.");
     } else {
@@ -1576,6 +1738,7 @@ async function sendChat(message, { forceCursor = false } = {}) {
   } finally {
     activeRequestController = null;
     setBusy(false);
+    focusHomeChatInput();
   }
 }
 
@@ -1631,6 +1794,7 @@ async function sendToCursor(message) {
   } finally {
     activeRequestController = null;
     setBusy(false);
+    focusHomeChatInput();
   }
 }
 
@@ -1642,15 +1806,31 @@ chatForm.addEventListener("submit", (e) => {
   sendChat(text);
 });
 
+messageInput.addEventListener("keydown", (e) => {
+  if (isCursorSendChord(e)) {
+    e.preventDefault();
+    const text = messageInput.value.trim();
+    if (!text) return;
+    messageInput.value = "";
+    sendToCursor(text).finally(() => focusHomeChatInput());
+    return;
+  }
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    chatForm.requestSubmit();
+  }
+});
+
 if (cursorBtn) {
   cursorBtn.addEventListener("click", () => {
     const text = messageInput.value.trim();
     if (!text) {
       addMessage("system", "Type a task first, then click Send to Cursor.");
+      focusHomeChatInput();
       return;
     }
     messageInput.value = "";
-    sendToCursor(text);
+    sendToCursor(text).finally(() => focusHomeChatInput());
   });
 }
 
@@ -1743,12 +1923,21 @@ micBtn.addEventListener("touchend", (e) => {
 
 refreshLogsBtn.addEventListener("click", refreshLogs);
 
+function parseInitialView() {
+  const params = new URLSearchParams(window.location.search);
+  const fromQuery = params.get("view");
+  if (fromQuery) return fromQuery;
+  const hash = window.location.hash.replace(/^#\/?/, "");
+  if (hash) return hash.split("/")[0];
+  return localStorage.getItem(VIEW_KEY) || "home";
+}
+
 function initViewNav() {
   const navButtons = document.querySelectorAll(".nav-item[data-view]");
   const views = document.querySelectorAll(".view");
   if (!navButtons.length) return;
 
-  function activateView(viewName) {
+  function activateView(viewName, { updateUrl = true, replaceUrl = false } = {}) {
     navButtons.forEach((btn) => {
       const active = btn.dataset.view === viewName;
       btn.classList.toggle("active", active);
@@ -1759,20 +1948,49 @@ function initViewNav() {
       panel.classList.toggle("active", active);
       panel.hidden = !active;
     });
+    localStorage.setItem(VIEW_KEY, viewName);
+    if (updateUrl) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("view", viewName);
+      url.hash = "";
+      const state = { view: viewName };
+      if (replaceUrl) {
+        window.history.replaceState(state, "", url);
+      } else {
+        window.history.pushState(state, "", url);
+      }
+    }
     if (viewName === "logs") {
       refreshLogs();
     }
     if (viewName === "models" && typeof refreshModels === "function") {
       refreshModels();
     }
+    if (viewName === "agent" && typeof window.refreshAgentView === "function") {
+      window.refreshAgentView();
+    }
+    if (viewName === "home") {
+      focusHomeChatInput();
+    }
+    if (viewName === "agent" && typeof window.focusAgentChatInput === "function") {
+      window.focusAgentChatInput();
+    }
   }
 
   navButtons.forEach((btn) => {
     btn.addEventListener("click", () => activateView(btn.dataset.view));
   });
+
+  window.addEventListener("popstate", () => {
+    activateView(parseInitialView(), { updateUrl: false });
+  });
+
+  const initial = parseInitialView();
+  activateView(initial, { replaceUrl: true });
 }
 
 initViewNav();
+loadHomeConversation();
 
 const commandForm = document.getElementById("command-form");
 const commandKeywordInput = document.getElementById("command-keyword");
@@ -1920,3 +2138,4 @@ updateToggleMicButton();
 updateMicHint();
 refreshLiveTranscriptIdle();
 restoreMicPreference();
+focusHomeChatInput();

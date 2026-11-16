@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import logging
+import queue
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Iterator
+
+ProgressFn = Callable[[dict[str, Any]], None]
 
 from agent.config import AgentConfig
 from agent.llm import ChatLLM, Embedder
@@ -141,20 +145,32 @@ class Agent:
     # --------------------------------------------------------------- main
     def respond(self, text: str, *, conversation_id: int | None = None, mode: str = "agent",
                 source: str = "web", input_type: str = "text", auto_session: bool = False,
-                extra_meta: dict[str, Any] | None = None) -> AgentReply:
+                extra_meta: dict[str, Any] | None = None, on_progress: ProgressFn | None = None) -> AgentReply:
         text = text.strip()
         if not text:
             raise ValueError("Message is empty")
         if mode not in MODES:
             raise ValueError(f"mode must be one of {MODES}")
         conv = self.resolve_conversation(conversation_id, source=source, auto_session=auto_session)
+        if on_progress:
+            on_progress({"type": "meta", "conversation_id": conv["id"], "mode": mode})
         history = self.history(conv["id"])
+        if mode != "cursor" and on_progress:
+            on_progress({"type": "progress", "stage": "context", "message": "Retrieving memories and documents…"})
         ctx = self.retrieve(text) if mode != "cursor" else RetrievedContext()
+        if on_progress and ctx.memories:
+            on_progress({"type": "progress", "stage": "context",
+                         "message": f"Found {len(ctx.memories)} relevant memories"})
+        if on_progress and ctx.chunks:
+            on_progress({"type": "progress", "stage": "context",
+                         "message": f"Found {len(ctx.chunks)} document excerpts"})
         block = ctx.to_block()
         user_id = self.store.add_message(conv["id"], "user", text, {"input_type": input_type, **(extra_meta or {})})
         self._auto_title(conv, text)
 
         if mode == "agent" and self.orchestrator is None:
+            if on_progress:
+                on_progress({"type": "progress", "stage": "mode", "message": "Orchestrator unavailable — using tool router"})
             mode = "route"
         if mode == "agent":
             result = self.orchestrator.run(
@@ -162,12 +178,19 @@ class Agent:
                 base_context={"conversation_id": conv["id"],
                               "memories": [m["content"] for m in ctx.memories],
                               "rag_sources": [c["filename"] for c in ctx.chunks]},
+                on_progress=on_progress,
             )
         elif mode == "cursor":
-            result = router.run_cursor_task_detailed(text, self.settings, history=history)
+            result = router.run_cursor_task_detailed(text, self.settings, history=history, on_progress=on_progress)
         elif mode == "route":
-            result = router.route_utterance_detailed(text, self.settings, history=history, context=block)
+            if on_progress:
+                on_progress({"type": "progress", "stage": "route", "message": "Routing via tool layer…"})
+            result = router.route_utterance_detailed(text, self.settings, history=history, context=block,
+                                                     on_progress=on_progress)
         else:
+            if on_progress:
+                on_progress({"type": "progress", "stage": "chat", "message": "Generating reply…",
+                             "model": self.llm.model})
             result = router.chat_text_only_detailed(text, self.settings, history=history, context=block)
 
         sources = ctx.sources()
@@ -219,3 +242,46 @@ class Agent:
         if not error:
             self._schedule_memory_extraction(conv["id"])
         yield {"type": "done", "reply": reply, "conversation_id": conv["id"], "assistant_message_id": assistant_id}
+
+    def respond_events(self, text: str, *, conversation_id: int | None = None, mode: str = "chat",
+                       source: str = "web", input_type: str = "text", auto_session: bool = False,
+                       extra_meta: dict[str, Any] | None = None) -> Iterator[dict[str, Any]]:
+        """Run respond() (or stream() for mode chat) and yield progress events for the web UI."""
+        if mode == "chat":
+            yield from self.stream(text, conversation_id=conversation_id, source=source)
+            return
+
+        event_q: queue.SimpleQueue[dict[str, Any] | None] = queue.SimpleQueue()
+        holder: list[AgentReply] = []
+        errors: list[BaseException] = []
+
+        def emit(ev: dict[str, Any]) -> None:
+            event_q.put(ev)
+
+        def work() -> None:
+            try:
+                holder.append(self.respond(
+                    text, conversation_id=conversation_id, mode=mode, source=source,
+                    input_type=input_type, auto_session=auto_session, extra_meta=extra_meta,
+                    on_progress=emit,
+                ))
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                event_q.put(None)
+
+        threading.Thread(target=work, name="agent-respond-events", daemon=True).start()
+        while True:
+            ev = event_q.get()
+            if ev is None:
+                break
+            yield ev
+        if errors:
+            yield {"type": "error", "error": str(errors[0])}
+            return
+        r = holder[0]
+        yield {
+            "type": "done", "reply": r.reply, "conversation_id": r.conversation_id,
+            "action": r.action, "action_details": r.action_details, "routed": r.routed,
+            "sources": r.sources, "assistant_message_id": r.assistant_message_id,
+        }

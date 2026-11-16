@@ -81,6 +81,15 @@ def test_heuristic_fallback_when_model_just_answers():
     assert w["research"].tasks and r.action == "delegated"
 
 
+def test_cursor_cli_query_delegates_to_code_worker():
+    o, w, _ = make([
+        call("answer", reply="I'm not connected to the cursor CLI on your PC."),
+        {"message": {"content": "Last task was the voice assistant UI."}},
+    ], "code")
+    r = o.run("what was the last task ran in cursror CLI", history=[])
+    assert w["code"].tasks and r.action == "delegated"
+
+
 def test_same_round_consumer_runs_after_producer():
     o, w, _ = make([
         {"message": {"content": "", "tool_calls": [

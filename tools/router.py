@@ -27,6 +27,7 @@ Rules:
 - Use local_chat for general knowledge with no PC or code actions.
 - Use pc tools for opening apps, volume, or simple system info.
 - Use run_cursor_agent for anything involving code, files, git, tests, refactoring, or the workspace.
+- Use run_cursor_agent when the user asks about Cursor CLI itself (last task, history, sessions, or "ask cursor").
 - If the user refers to earlier messages ("that", "it", "the file"), use conversation history.
 - Keep local_chat answers to 1-2 short spoken sentences.
 - For cursor tasks, pass a clear prompt including relevant context from the conversation.
@@ -43,6 +44,18 @@ _CODE_TASK_RE = re.compile(
     r"function|class|script|python|javascript|typescript|cursor|workspace|commit|"
     r"compile|build|deploy|endpoint|module|package|import|syntax|lint|merge|branch|"
     r"pull request|error in|stack trace|debug|readme|config\.|\.py\b|\.js\b|\.ts\b"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Cursor CLI history / meta (typos like "cursror" included — common in speech-to-text).
+_CURSOR_CLI_RE = re.compile(
+    r"\b("
+    r"cursor|cursror|curser|cursor\s*cli|cursor-agent|cursor\s+agent|"
+    r"ask\s+cursor|tell\s+cursor|send\s+to\s+cursor|"
+    r"last\s+(task|job|run|command)\b.*\b(cli|cursor|agent)|"
+    r"(cli|cursor|agent)\b.*\blast\s+(task|job|run|command)|"
+    r"agent\s+transcript|chats/\s*|\.cursor/"
     r")\b",
     re.IGNORECASE,
 )
@@ -158,6 +171,10 @@ def _looks_like_code_task(text: str) -> bool:
     return bool(_CODE_TASK_RE.search(text))
 
 
+def _looks_like_cursor_cli_query(text: str) -> bool:
+    return bool(_CURSOR_CLI_RE.search(text))
+
+
 def _reply_suggests_incomplete(reply: str) -> bool:
     lower = reply.lower()
     return any(phrase in lower for phrase in _INCOMPLETE_REPLY_PHRASES)
@@ -220,8 +237,10 @@ def _maybe_delegate_to_cursor(
     should_delegate = False
     delegated_from = result.action
 
-    if result.action in {"local_chat", "fallback_chat", "direct_chat"}:
-        if _reply_suggests_incomplete(result.reply):
+    if result.action in {"local_chat", "fallback_chat", "direct_chat", "direct_answer"}:
+        if _looks_like_cursor_cli_query(text):
+            should_delegate = True
+        elif _reply_suggests_incomplete(result.reply):
             should_delegate = True
         elif _looks_like_code_task(text) and result.action != "run_cursor_agent":
             should_delegate = True
@@ -248,6 +267,7 @@ def run_cursor_task_detailed(
     history: list[ChatTurn] | None = None,
     plan_mode: bool = False,
     on_long_task: Callable[[], None] | None = None,
+    on_progress: Callable[[dict[str, Any]], None] | None = None,
 ) -> RouteResult:
     """Force a task through Cursor CLI."""
     prompt = text.strip()
@@ -265,12 +285,21 @@ def run_cursor_task_detailed(
             action_details={"success": False, "reason": "cursor_unavailable"},
             routed=True,
         )
+
+    def _long() -> None:
+        if on_progress:
+            on_progress({"type": "progress", "stage": "cursor", "message": "Cursor CLI agent running…"})
+        if on_long_task:
+            on_long_task()
+
+    if on_progress:
+        on_progress({"type": "progress", "stage": "cursor", "message": "Starting Cursor CLI agent…"})
     return _run_cursor_task(
         prompt,
         settings,
         history=history,
         plan_mode=plan_mode,
-        on_long_task=on_long_task,
+        on_long_task=_long,
     )
 
 
@@ -391,6 +420,7 @@ def route_utterance_detailed(
     history: list[ChatTurn] | None = None,
     force_cursor: bool = False,
     on_long_task: Callable[[], None] | None = None,
+    on_progress: Callable[[dict[str, Any]], None] | None = None,
     context: str | None = None,
 ) -> RouteResult:
     """Route an utterance and return reply plus action metadata."""
@@ -404,6 +434,8 @@ def route_utterance_detailed(
 
     client = _client(settings)
     model, meta = _pick_model(text, settings)
+    if on_progress:
+        on_progress({"type": "model", "message": f"Routing with {model}", "model": model, **meta})
     messages = _build_messages(
         system=_with_context(ROUTER_SYSTEM, context),
         user_text=text,
@@ -415,6 +447,9 @@ def route_utterance_detailed(
         model, response = _maybe_escalate(client, model, messages, response, meta,
                                           tools=_tools_schema(),
                                           options={"num_predict": 256, "temperature": 0.2})
+        if on_progress and meta.get("escalated"):
+            on_progress({"type": "model", "message": f"Switching to fallback model {model}",
+                         "model": model, "reason": meta.get("escalated")})
     except Exception as exc:
         logger.exception("Ollama routing failed")
         return RouteResult(
@@ -431,6 +466,9 @@ def route_utterance_detailed(
     tool_calls = message.get("tool_calls") or []
 
     if tool_calls:
+        fn = tool_calls[0].get("function", {})
+        if on_progress:
+            on_progress({"type": "tool_calls", "calls": [{"name": fn.get("name", ""), "args": fn.get("arguments")}]})
         result = _execute_tool_call(
             tool_calls[0],
             settings,
@@ -446,12 +484,18 @@ def route_utterance_detailed(
             routed=True,
         )
 
+    def _cursor_long() -> None:
+        if on_progress:
+            on_progress({"type": "progress", "stage": "cursor", "message": "Handing off to Cursor CLI agent…"})
+        if on_long_task:
+            on_long_task()
+
     result = _maybe_delegate_to_cursor(
         text,
         result,
         settings,
         history=history,
-        on_long_task=on_long_task,
+        on_long_task=_cursor_long,
     )
     result.action_details = {**result.action_details, **meta}
     return result
