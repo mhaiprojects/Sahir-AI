@@ -74,8 +74,8 @@
             <input type="checkbox" id="route-toggle" checked>
             Route via tools
           </label>
-          <label class="checkbox">
-            <input type="checkbox" id="always-listen-toggle">
+          <label class="checkbox" title="No wake word in the browser: any speech starts a request">
+            <input type="checkbox" id="always-listen-toggle" aria-describedby="wake-word-note">
             Always listening
           </label>
           <label class="checkbox">
@@ -93,6 +93,10 @@
           For a streaming back-and-forth you can interrupt, use
           <button type="button" class="linklike" id="open-live-voice-btn">Agent → Live voice</button>.
           Only one of them uses the microphone at a time.
+        </p>
+
+        <p id="wake-word-note" class="voice-mode-note">
+          Wake word: <strong>off in the browser</strong>. With Always listening on, any speech starts a request.
         </p>
 
         <p id="mic-hint" class="mic-hint hidden"></p>

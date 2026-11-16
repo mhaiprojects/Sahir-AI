@@ -400,6 +400,28 @@ async function refreshLogs() {
   }
 }
 
+function updateWakeWordNote(cfg) {
+  const note = document.getElementById("wake-word-note");
+  if (!note || !cfg) return;
+  const phrase = String(cfg.wakeword_model || "").replaceAll("_", " ");
+  const desktop = cfg.wakeword_enabled && phrase
+    ? ` The desktop app (bot.py) listens for “${phrase}”.`
+    : "";
+  if (cfg.web_wakeword) {
+    note.innerHTML = "";
+    note.append("Wake word: ");
+    const strong = document.createElement("strong");
+    strong.textContent = phrase ? `“${phrase}”` : "on";
+    note.append(strong, ". Always listening waits for it before recording.");
+    return;
+  }
+  note.innerHTML = "";
+  note.append("Wake word: ");
+  const strong = document.createElement("strong");
+  strong.textContent = "off in the browser";
+  note.append(strong, `. With Always listening on, any speech starts a request.${desktop}`);
+}
+
 async function loadWebConfig() {
   try {
     const res = await fetch("/api/config");
@@ -410,6 +432,7 @@ async function loadWebConfig() {
     VAD.liveIntervalMs = Math.round(
       (data.live_transcribe_interval_seconds || 2) * 1000
     );
+    updateWakeWordNote(data);
   } catch (_) {
     /* defaults */
   }

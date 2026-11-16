@@ -416,6 +416,11 @@ def create_app() -> FastAPI:
             "live_transcribe_interval_seconds": settings.web_live_transcribe_interval_seconds,
             "whisper_live_model": settings.whisper_live_model,
             "whisper_final_model": settings.whisper_final_model,
+            # The browser pipeline has no wake word; the desktop/CLI one may (#34).
+            "web_wakeword": False,
+            "wakeword_enabled": settings.wakeword_enabled,
+            "wakeword_model": settings.wakeword_model,
+            "web_port": settings.web_port,
         }
 
     @app.get("/api/logs")
