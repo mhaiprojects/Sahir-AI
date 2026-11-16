@@ -59,7 +59,12 @@ const VIEW_KEY = "voice-assistant-view";
 const HEALTH_POLL_MS = 30000;
 const HEALTH_RETRY_MS = 5000;
 
-portLabel.textContent = window.location.port || "8765";
+// Real port (#42): the page's own port, else the server's WEB_PORT from /api/config.
+let webPort = window.location.port || "";
+function currentWebPort() {
+  return webPort || (window.location.protocol === "https:" ? "443" : "80");
+}
+portLabel.textContent = currentWebPort();
 
 let micStream = null;
 let mediaRecorder = null;
@@ -455,6 +460,10 @@ async function loadWebConfig() {
       (data.live_transcribe_interval_seconds || 2) * 1000
     );
     updateWakeWordNote(data);
+    if (!window.location.port && data.web_port) {
+      webPort = String(data.web_port);
+      portLabel.textContent = currentWebPort();
+    }
   } catch (_) {
     /* defaults */
   }
@@ -1029,7 +1038,7 @@ async function ensureMicAccess() {
   if (!window.isSecureContext && !onLocalhost) {
     throw new Error(
       isMobileBrowser()
-        ? "Mobile requires HTTPS for the microphone. On your PC: bash scripts/generate_web_cert.sh, set WEB_SSL_CERT and WEB_SSL_KEY in .env, restart, then open https://<pc-ip>:8765 on this phone."
+        ? "Mobile requires HTTPS for the microphone. On your PC: bash scripts/generate_web_cert.sh, set WEB_SSL_CERT and WEB_SSL_KEY in .env, restart, then open https://<pc-ip>:" + currentWebPort() + " on this phone."
         : "Microphone requires HTTPS when opened from a LAN IP. Enable WEB_SSL_CERT/WEB_SSL_KEY."
     );
   }
