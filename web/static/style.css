@@ -9,7 +9,7 @@
   --user-bg: #1e3a5f;
   --assistant-bg: #1f2937;
   --ok: #22c55e;
-  --bad: #ef4444;
+  --bad: #f87171; /* 5.7:1 on --surface, passes WCAG AA (#45) */
   --warn: #f59e0b;
   --nav-width: 4.25rem;
 }
