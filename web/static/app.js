@@ -4,6 +4,7 @@ const messageInput = document.getElementById("message-input");
 const routeToggle = document.getElementById("route-toggle");
 const routeCursorToggle = document.getElementById("route-cursor-toggle");
 const alwaysListenToggle = document.getElementById("always-listen-toggle");
+const speakRepliesToggle = document.getElementById("speak-replies-toggle");
 const sendBtn = document.getElementById("send-btn");
 const cursorBtn = document.getElementById("cursor-btn");
 const micBtn = document.getElementById("mic-btn");
@@ -48,6 +49,7 @@ const MIN_UPLOAD_BYTES = 256;
 const ALWAYS_LISTEN_KEY = "voice-assistant-always-listen";
 const ROUTE_CURSOR_KEY = "voice-assistant-route-cursor";
 const ROUTE_TOOLS_KEY = "voice-assistant-route-tools";
+const SPEAK_REPLIES_KEY = "voice-assistant-speak-replies";
 const MIC_ENABLED_KEY = "voice-assistant-mic-enabled";
 const CONV_ID_KEY = "voice-assistant-conversation-id";
 const VIEW_KEY = "voice-assistant-view";
@@ -1615,7 +1617,9 @@ async function stopPttRecording() {
 }
 
 async function maybePlayTts(text) {
-  if (!routeToggle.checked) return;
+  // Spoken replies are controlled only by "Speak replies" (#35), not by routing.
+  if (speakRepliesToggle && !speakRepliesToggle.checked) return;
+  if (!String(text || "").trim()) return;
   stopCurrentTts();
   try {
     const audioRes = await fetch("/api/speak", {
@@ -2173,6 +2177,14 @@ if (routeCursorToggle) {
   routeCursorToggle.checked = localStorage.getItem(ROUTE_CURSOR_KEY) === "1";
   routeCursorToggle.addEventListener("change", () => {
     localStorage.setItem(ROUTE_CURSOR_KEY, routeCursorToggle.checked ? "1" : "0");
+  });
+}
+
+if (speakRepliesToggle) {
+  speakRepliesToggle.checked = localStorage.getItem(SPEAK_REPLIES_KEY) !== "0";
+  speakRepliesToggle.addEventListener("change", () => {
+    localStorage.setItem(SPEAK_REPLIES_KEY, speakRepliesToggle.checked ? "1" : "0");
+    if (!speakRepliesToggle.checked) stopCurrentTts();
   });
 }
 

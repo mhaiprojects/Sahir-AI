@@ -28,7 +28,7 @@ const TOUR_STEPS = [
   {
     title: "Voice controls",
     body:
-      "Toggle the mic, hold to listen, and choose routing options below. Always listening keeps the mic open for hands-free conversations.",
+      "Toggle the mic, hold to listen, and choose routing options below. Always listening keeps the mic open for hands-free conversations. Speak replies turns spoken answers on or off.",
     target: ".voice-buttons-row",
   },
   {
