@@ -514,10 +514,15 @@ async function refreshHealth() {
     statusBar.innerHTML = "";
 
     const tx = healthData.transcription || {};
+    // Label the TTS badge with the active backend (#43).
+    const tts = healthData.tts || {};
+    const ttsBackend = String(tts.backend || "piper").toLowerCase();
+    const ttsName = `${ttsBackend.charAt(0).toUpperCase()}${ttsBackend.slice(1)} TTS`;
+    const ttsOk = ttsBackend === "kokoro" ? Boolean(tts.kokoro_model_present) : healthData.piper?.ok;
     const items = [
       ["Ollama", healthData.ollama?.ok, healthData.ollama?.target_loaded ? "model ready" : "check model"],
       ["Cursor CLI", healthData.cursor_cli?.ok],
-      ["Piper TTS", healthData.piper?.ok],
+      [ttsName, ttsOk],
       ["Whisper STT", healthData.whisper?.ok],
       ["HTTPS", healthData.https_enabled, healthData.https_enabled ? "enabled" : "off"],
       ["Live STT", true, tx.whisper_live_model || "tiny"],
