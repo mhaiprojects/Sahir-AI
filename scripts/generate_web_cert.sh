@@ -30,7 +30,7 @@ openssl req -x509 -newkey rsa:4096 \
   -keyout "${CERT_DIR}/web.key" \
   -out "${CERT_DIR}/web.crt" \
   -days "${DAYS}" -nodes \
-  -subj "/CN=${HOST}/O=Voice Assistant/C=AU" \
+  -subj "/CN=${HOST}/O=Sahir/C=AU" \
   -addext "subjectAltName=${SAN}"
 
 chmod 600 "${CERT_DIR}/web.key"

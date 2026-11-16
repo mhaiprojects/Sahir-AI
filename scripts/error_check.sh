@@ -48,7 +48,7 @@ if [[ -n "$errors" ]]; then
   echo "=== ERRORS FOUND ==="
   echo "$errors"
   if [[ "$NOTIFY" == "--notify" ]]; then
-    notify_user "Voice Assistant Error" "$(echo "$errors" | head -3 | tr '\n' ' ' | cut -c1-240)"
+    notify_user "Sahir Error" "$(echo "$errors" | head -3 | tr '\n' ' ' | cut -c1-240)"
   fi
   exit 2
 fi

@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 MODES = ("agent", "route", "chat", "cursor")
 
 STREAM_SYSTEM = (
-    "You are a helpful local voice assistant running entirely on the user's PC. "
+    "You are Sahir, a helpful local voice assistant running entirely on the user's PC. "
     "Answer concisely (a few sentences unless asked for detail) in plain language suitable for speech. "
     "Use the conversation history, the remembered facts about the user, and the document excerpts "
     "below when relevant. If you use a document excerpt, mention the file name."

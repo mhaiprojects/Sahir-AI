@@ -21,7 +21,7 @@ if [[ ! -f "${CERT_DIR}/web.crt" || ! -f "${CERT_DIR}/web.key" ]]; then
     -keyout "${CERT_DIR}/web.key" \
     -out "${CERT_DIR}/web.crt" \
     -days "${WEB_CERT_DAYS:-825}" -nodes \
-    -subj "/CN=${WEB_CERT_CN:-voice-assistant}/O=Voice Assistant/C=AU" \
+    -subj "/CN=${WEB_CERT_CN:-voice-assistant}/O=Sahir/C=AU" \
     -addext "subjectAltName=${SAN}"
 fi
 

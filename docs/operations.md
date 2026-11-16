@@ -3,7 +3,7 @@
 ## Service management (native)
 
 ```bash
-cd MH-VoiceAssistant-A   # your clone directory
+cd Sahir-AI   # your clone directory
 bash scripts/voice-assistant.sh start    # binds WEB_HOST=0.0.0.0
 bash scripts/voice-assistant.sh stop
 bash scripts/voice-assistant.sh restart

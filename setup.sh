@@ -42,7 +42,7 @@ case "$MODE" in
     ;;
 esac
 
-echo "==> MH Voice Assistant setup (${MODE})"
+echo "==> Sahir setup (${MODE})"
 mkdir -p data/logs data/certs models/piper
 
 echo "==> Generating secrets (.env)"

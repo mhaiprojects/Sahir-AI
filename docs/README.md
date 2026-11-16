@@ -1,4 +1,4 @@
-# MH Voice Assistant — documentation index
+# Sahir — documentation index
 
 Internal docs extracted from development sessions for programmers and AI agents.
 
@@ -24,8 +24,8 @@ Internal docs extracted from development sessions for programmers and AI agents.
 | [plans/voice-assistant-resume.md](./plans/voice-assistant-resume.md) | Issues found when the project was moved, fixes, and a move/clone checklist |
 | [plans/voice-assistant-github-prep.md](./plans/voice-assistant-github-prep.md) | Secret/privacy audit and public release prep |
 
-**Tasks** are tracked as [GitHub issues](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues) on the [MH Voice Assistant project board](https://github.com/users/mhaiprojects/projects/1), not in these docs.
+**Tasks** are tracked as [GitHub issues](https://github.com/mhaiprojects/Sahir-AI/issues) on the [Sahir project board](https://github.com/users/mhaiprojects/projects/1), not in these docs.
 
 **Public docs:** [README.md](../README.md) (user-facing), [DOCKER.md](../DOCKER.md) (container deploy).
 
-**Repository:** https://github.com/mhaiprojects/MH-VoiceAssistant-A
+**Repository:** https://github.com/mhaiprojects/Sahir-AI

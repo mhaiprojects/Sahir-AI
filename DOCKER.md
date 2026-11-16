@@ -15,12 +15,12 @@ Browser microphone capture is client-side; the container serves HTTPS so LAN dev
 
 ## Quick start (another PC)
 
-1. Copy the entire repository folder (e.g. `MH-VoiceAssistant-A/`) to the target machine.
+1. Copy the entire repository folder (e.g. `Sahir-AI/`) to the target machine.
 
 2. Create config:
 
    ```bash
-   cd MH-VoiceAssistant-A
+   cd Sahir-AI
    cp .env.docker.example .env
    ```
 

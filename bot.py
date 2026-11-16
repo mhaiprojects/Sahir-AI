@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Custom local voice assistant with push-to-talk, wake word, and Cursor CLI."""
+"""Sahir: custom local voice assistant with push-to-talk, wake word, and Cursor CLI."""
 
 from __future__ import annotations
 
@@ -106,7 +106,7 @@ class VoiceAssistant:
         hotkey = self.settings.ptt_hotkey
         wake = self.settings.wakeword_model if self.settings.wakeword_enabled else "disabled"
         self.pipeline.speak(
-            f"Voice assistant ready. Hold {hotkey} to talk, or say {wake}."
+            f"Sahir ready. Hold {hotkey} to talk, or say {wake}."
         )
         logger.info("Running. PTT=%s wake_word=%s", hotkey, wake)
 
@@ -157,7 +157,7 @@ def run_text_mode(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Local voice assistant")
+    parser = argparse.ArgumentParser(description="Sahir: local voice assistant")
     parser.add_argument(
         "--text",
         nargs="?",

@@ -1,14 +1,14 @@
-# GitHub Projects v2 research for MH-VoiceAssistant-A
+# GitHub Projects v2 research for Sahir-AI
 
 **Date:** 16 November 2026 (Australia/Sydney, UTC+11)  
 **Scope:** Research written before setup; see the outcome note below.  
-**Target:** Public repo [mhaiprojects/MH-VoiceAssistant-A](https://github.com/mhaiprojects/MH-VoiceAssistant-A), owned by the personal user account `mhaiprojects` (not an organization).  
+**Target:** Public repo [mhaiprojects/Sahir-AI](https://github.com/mhaiprojects/Sahir-AI), owned by the personal user account `mhaiprojects` (not an organization).  
 
-> **Outcome (16 Nov 2026):** the Project was created as [MH Voice Assistant](https://github.com/users/mhaiprojects/projects/1), linked to this repo, and made **public** (the maintainer chose a public board over the private option recommended below). It uses Status (Todo / In Progress / Done), Priority (P0–P2), Size (S/M/L), Area and Target date fields, with Table, Board and Roadmap views. Because the board is public, it holds no ClickUp IDs, estimates or private notes. As an experiment, task tracking for this project has moved to GitHub Issues on this board; ClickUp stays in use for other work.
+> **Outcome (16 Nov 2026):** the Project was created as "MH Voice Assistant" (since renamed [Sahir](https://github.com/users/mhaiprojects/projects/1), along with the repo, now `Sahir-AI`), linked to this repo, and made **public** (the maintainer chose a public board over the private option recommended below). It uses Status (Todo / In Progress / Done), Priority (P0–P2), Size (S/M/L), Area and Target date fields, with Table, Board and Roadmap views. Because the board is public, it holds no ClickUp IDs, estimates or private notes. As an experiment, task tracking for this project has moved to GitHub Issues on this board; ClickUp stays in use for other work.
 
 ## Summary and recommendation
 
-Keep **ClickUp as the source of truth** for private planning (one task per feature). Use a **user-owned GitHub Project** as a complement for this public repo: a board of GitHub issues and pull requests, auto-added from `MH-VoiceAssistant-A`, so code-level work sits next to the code.
+Keep **ClickUp as the source of truth** for private planning (one task per feature). Use a **user-owned GitHub Project** as a complement for this public repo: a board of GitHub issues and pull requests, auto-added from `Sahir-AI`, so code-level work sits next to the code.
 
 Do not replace ClickUp. The native ClickUp GitHub integration links commits, branches, and pull requests by task ID, but it does not sync GitHub Projects fields. Paid two-way sync tools also do not treat a Project as a sync target. Start the Project **private** even though the repo is public, so estimates, ClickUp IDs, and internal notes stay off the public internet. Convert drafts to issues only when a task is ready to be public.
 
@@ -27,7 +27,7 @@ From the [quickstart](https://docs.github.com/en/issues/planning-and-tracking-wi
 1. Click the profile picture, then **Your profile**.
 2. Open the **Projects** tab, then **New project**.
 3. Start from scratch (**Table**, **Board**, or **Roadmap**) or pick a built-in template. Review the fields, views, workflows, and insights if a template is used.
-4. Name it, for example `MH Voice Assistant`.
+4. Name it, for example `Sahir`.
 5. Click **Create project**. (The organization flow can also import existing repo items and set a default repository in this dialog. The user-project flow does not show that import checkbox; set the default repository afterwards.)
 
 Optional: add a short description and a Markdown README under **… → Settings**.
@@ -35,29 +35,29 @@ Optional: add a short description and a Markdown README under **… → Settings
 CLI equivalent :
 
 ```bash
-gh project create --owner mhaiprojects --title "MH Voice Assistant"
+gh project create --owner mhaiprojects --title "Sahir"
 ```
 
-### 1.2 Link it to MH-VoiceAssistant-A
+### 1.2 Link it to Sahir-AI
 
 You can only list Projects owned by the same user or organization that owns the repository. For this repo, that means a Project owned by `mhaiprojects`.
 
 From the [linking docs](https://docs.github.com/en/issues/planning-and-tracking-with-projects/managing-your-project/adding-your-project-to-a-repository):
 
-1. Open [https://github.com/mhaiprojects/MH-VoiceAssistant-A](https://github.com/mhaiprojects/MH-VoiceAssistant-A).
+1. Open [https://github.com/mhaiprojects/Sahir-AI](https://github.com/mhaiprojects/Sahir-AI).
 2. Click **Projects**, then **Link a project**.
 3. Search for the new Project and click it.
 
 Set the **default repository** so new issues created from the Project (and drafts converted to issues) land in this repo, and so the Project also appears on the repo's Projects tab:
 
 1. Open the Project → **… → Settings**.
-2. Under **Default repository**, choose `mhaiprojects/MH-VoiceAssistant-A`.
+2. Under **Default repository**, choose `mhaiprojects/Sahir-AI`.
 3. **Save changes**.
 
 CLI:
 
 ```bash
-gh project link 1 --owner mhaiprojects --repo MH-VoiceAssistant-A
+gh project link 1 --owner mhaiprojects --repo Sahir-AI
 ```
 
 (`1` is a placeholder for the Project number returned by `gh project create` or `gh project list`.)
@@ -116,13 +116,13 @@ You can also create a real issue from the Project with **Create new issue**. If 
 
 ### 2.4 Sub-issues
 
-From [Adding sub-issues](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/adding-sub-issues): an issue can have up to **100 sub-issues** and **eight** nesting levels. Parent issue and sub-issue progress can be shown as Project fields, used to group or filter (`parent-issue:"mhaiprojects/MH-VoiceAssistant-A#12"`). These are repository issues, not Project-only drafts.
+From [Adding sub-issues](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/adding-sub-issues): an issue can have up to **100 sub-issues** and **eight** nesting levels. Parent issue and sub-issue progress can be shown as Project fields, used to group or filter (`parent-issue:"mhaiprojects/Sahir-AI#12"`). These are repository issues, not Project-only drafts.
 
 CLI:
 
 ```bash
-gh issue create --repo mhaiprojects/MH-VoiceAssistant-A --title "…" --body "…" --parent 12
-gh issue edit 12 --repo mhaiprojects/MH-VoiceAssistant-A --add-sub-issue 13
+gh issue create --repo mhaiprojects/Sahir-AI --title "…" --body "…" --parent 12
+gh issue edit 12 --repo mhaiprojects/Sahir-AI --add-sub-issue 13
 ```
 
 ### 2.5 Issue types
@@ -130,7 +130,7 @@ gh issue edit 12 --repo mhaiprojects/MH-VoiceAssistant-A --add-sub-issue 13
 [Issue types](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/managing-issue-types) work on **user accounts** as well as organizations. The account owner can manage them under profile **Settings → Planning → Issue types**. Defaults are **task**, **bug**, and **feature**. Up to 25 types. They appear on issues and can be used in Project filters and views. They classify issues; they do not replace sub-issues.
 
 ```bash
-gh issue create --repo mhaiprojects/MH-VoiceAssistant-A --title "…" --type Feature
+gh issue create --repo mhaiprojects/Sahir-AI --title "…" --type Feature
 ```
 
 ### 2.6 Pull requests as items
@@ -231,7 +231,7 @@ Built-in workflows can set **Status**. They cannot set Priority, Size, Estimate,
 [Adding items automatically](https://docs.github.com/en/issues/planning-and-tracking-with-projects/automating-your-project/adding-items-automatically):
 
 1. **Workflows → Auto-add to project → Edit**.
-2. Choose the repository (`mhaiprojects/MH-VoiceAssistant-A`).
+2. Choose the repository (`mhaiprojects/Sahir-AI`).
 3. Add a filter, then **Save and turn on workflow**.
 
 Supported filter qualifiers: `is` (`open`, `closed`, `merged`, `draft`, `issue`, `pr`), `label`, `reason` (`completed`, `reopened`, `"not planned"`), `assignee`, `no` (`label`, `assignee`, `reason`). All except `no` can be negated (`-label:wontfix`).
@@ -249,7 +249,7 @@ Each auto-add workflow watches one repository. You can duplicate it, with a uniq
 | GitHub Team | 5 |
 | GitHub Enterprise Cloud / Server | 20 |
 
-`mhaiprojects` is a personal user account. On **GitHub Free**, this Project gets **one** auto-add workflow, which is enough if it only watches `MH-VoiceAssistant-A`. A typical filter is `is:issue,pr` (everything new) or `is:issue,pr -label:wontfix`. If the maintainer is on Pro, up to five filters are available (for example one for issues and one for PRs).
+`mhaiprojects` is a personal user account. On **GitHub Free**, this Project gets **one** auto-add workflow, which is enough if it only watches `Sahir-AI`. A typical filter is `is:issue,pr` (everything new) or `is:issue,pr -label:wontfix`. If the maintainer is on Pro, up to five filters are available (for example one for issues and one for PRs).
 
 ### 5.3 Auto-archive
 
@@ -267,7 +267,7 @@ For anything the built-in workflows cannot do (extra auto-add on Free, set Prior
 
 **Important:** `GITHUB_TOKEN` is scoped to the repository and **cannot** access Projects. For a user-owned Project, GitHub recommends a **personal access token** (classic) with `project` and `repo`, stored as a repository secret. A GitHub App is the recommended path for organization Projects.
 
-A workflow lives in one repository, so for a multi-repo Project you would add the file to each repo. That does not apply while this Project only tracks `MH-VoiceAssistant-A`.
+A workflow lives in one repository, so for a multi-repo Project you would add the file to each repo. That does not apply while this Project only tracks `Sahir-AI`.
 
 The `projects_v2_item` webhook can also drive automation on a server you control.
 
@@ -351,18 +351,18 @@ For headless or Actions use, a classic PAT needs `repo` and `project` (and `read
 
 ### 7.3 Commands, with examples for this repo
 
-Placeholder: Project number `1` and title `MH Voice Assistant`. Replace `1` with the real number after create. These are examples only — none of them were run.
+Placeholder: Project number `1` and title `Sahir`. Replace `1` with the real number after create. These are examples only — none of them were run.
 
 ```bash
 # Create and inspect
-gh project create --owner mhaiprojects --title "MH Voice Assistant"
+gh project create --owner mhaiprojects --title "Sahir"
 gh project list --owner mhaiprojects
 gh project view 1 --owner mhaiprojects
 gh project view 1 --owner mhaiprojects --web
 gh project field-list 1 --owner mhaiprojects
 
 # Link to the repo
-gh project link 1 --owner mhaiprojects --repo MH-VoiceAssistant-A
+gh project link 1 --owner mhaiprojects --repo Sahir-AI
 
 # Custom fields (Iteration must be created in the UI)
 gh project field-create 1 --owner mhaiprojects \
@@ -378,21 +378,21 @@ gh project field-create 1 --owner mhaiprojects \
 gh project item-create 1 --owner mhaiprojects \
   --title "Model selector UI" --body "Pick, load, and eject local Ollama models; include a benchmark harness."
 
-gh issue create --repo mhaiprojects/MH-VoiceAssistant-A \
+gh issue create --repo mhaiprojects/Sahir-AI \
   --title "Document microphone and audio devices" \
   --body "Document the supported input devices and the HTTPS secure-context requirement." \
-  --project "MH Voice Assistant"
+  --project "Sahir"
 
 gh project item-add 1 --owner mhaiprojects \
-  --url https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/1
+  --url https://github.com/mhaiprojects/Sahir-AI/issues/1
 
 # Edit a field (Status, Priority, and so on) by issue URL
 gh project item-edit 1 --owner mhaiprojects \
-  --url https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/1 \
+  --url https://github.com/mhaiprojects/Sahir-AI/issues/1 \
   --field "Status" --value "Todo"
 
 gh project item-edit 1 --owner mhaiprojects \
-  --url https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/1 \
+  --url https://github.com/mhaiprojects/Sahir-AI/issues/1 \
   --field "Priority" --value "High"
 
 # List
@@ -401,7 +401,7 @@ gh project item-list 1 --owner mhaiprojects --query "assignee:@me -status:Done"
 
 # Copy or close (rarely needed)
 gh project copy 1 --source-owner mhaiprojects --target-owner mhaiprojects \
-  --title "MH Voice Assistant (copy)"
+  --title "Sahir (copy)"
 gh project close 1 --owner mhaiprojects
 gh project close 1 --owner mhaiprojects --undo
 ```
@@ -432,13 +432,13 @@ Slice-by Priority or Type is useful on the backlog table. Save each view after s
 
 - Leave the default **closed → Done** and **PR merged → Done** workflows on.
 - Turn on **Item added to project → Status: Todo**.
-- Turn on the single Free-plan **Auto-add** workflow for `mhaiprojects/MH-VoiceAssistant-A` with `is:issue,pr`. Manually add anything already open (likely nothing today).
+- Turn on the single Free-plan **Auto-add** workflow for `mhaiprojects/Sahir-AI` with `is:issue,pr`. Manually add anything already open (likely nothing today).
 - Turn on **Auto-archive** with `is:closed,merged updated:<@today-1m`.
 - Skip Actions and a PAT until a built-in workflow is not enough.
 
 ### Initial items
 
-The open work now lives as issues on the [MH Voice Assistant project board](https://github.com/users/mhaiprojects/projects/1); see also the [issue list](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues).
+The open work now lives as issues on the [Sahir project board](https://github.com/users/mhaiprojects/projects/1); see also the [issue list](https://github.com/mhaiprojects/Sahir-AI/issues).
 
 ## Sources
 

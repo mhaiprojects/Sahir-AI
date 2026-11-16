@@ -29,7 +29,7 @@
 ## Desktop mode (`python bot.py`)
 
 - Push-to-talk (`PTT_HOTKEY`, default Right Ctrl)
-- Wake word (`WAKEWORD_MODEL`, default `hey_jarvis`)
+- Wake word (`WAKEWORD_MODEL`, default `hey_jarvis`; a custom "Hey Sahir" model is planned)
 - Local mic/speaker via sounddevice
 - Not used in Docker web-only deployment
 

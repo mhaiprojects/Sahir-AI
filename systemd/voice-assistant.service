@@ -1,5 +1,5 @@
 [Unit]
-Description=Voice Assistant (Wake Word + PTT + Cursor CLI)
+Description=Sahir voice assistant (wake word + PTT + Cursor CLI)
 After=network.target ollama.service graphical-session.target
 
 [Service]

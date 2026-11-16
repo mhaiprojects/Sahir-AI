@@ -3,8 +3,8 @@
 ## GitHub repository
 
 ```
-git@github.com:mhaiprojects/MH-VoiceAssistant-A.git
-https://github.com/mhaiprojects/MH-VoiceAssistant-A
+git@github.com:mhaiprojects/Sahir-AI.git
+https://github.com/mhaiprojects/Sahir-AI
 ```
 
 ### Committed
@@ -25,8 +25,8 @@ Application source, web static files, Docker files, example env templates, scrip
 ## New machine — one command setup
 
 ```bash
-git clone git@github.com:mhaiprojects/MH-VoiceAssistant-A.git
-cd MH-VoiceAssistant-A
+git clone git@github.com:mhaiprojects/Sahir-AI.git
+cd Sahir-AI
 
 bash setup.sh native    # Arch/Manjaro: venv + Ollama + Piper + TLS
 # or

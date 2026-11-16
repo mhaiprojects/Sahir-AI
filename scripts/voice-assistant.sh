@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start/stop/restart the voice assistant web UI (LAN accessible).
+# Start/stop/restart the Sahir web UI (LAN accessible).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -122,7 +122,7 @@ cmd_start() {
   require_setup
 
   if is_running; then
-    echo "Voice assistant already running (pid $(pid_of))."
+    echo "Sahir already running (pid $(pid_of))."
     print_urls
     exit 0
   fi
@@ -135,7 +135,7 @@ cmd_start() {
   echo $! >"$PID_FILE"
 
   if wait_for_health; then
-    echo "Voice assistant started (pid $(pid_of))."
+    echo "Sahir started (pid $(pid_of))."
     print_urls
   else
     exit 1
@@ -144,14 +144,14 @@ cmd_start() {
 
 cmd_stop() {
   if ! is_running; then
-    echo "Voice assistant is not running."
+    echo "Sahir is not running."
     rm -f "$PID_FILE"
     exit 0
   fi
 
   local pid
   pid="$(pid_of)"
-  echo "Stopping voice assistant (pid $pid)..."
+  echo "Stopping Sahir (pid $pid)..."
 
   kill "$pid" 2>/dev/null || true
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-MH Voice Assistant is a **local-first voice agent**. Everything — speech, models, chat history,
+Sahir is a **local-first voice agent**. Everything — speech, models, chat history,
 long-term memory, document index, task log — runs and is stored on this PC (`data/` SQLite files).
 The only optional network integration is ClickUp (REST v2, token in `.env`).
 

@@ -1,4 +1,4 @@
-# Voice Assistant stack: web UI + Ollama LLM
+# Sahir stack: web UI + Ollama LLM
 #
 # Quick start:
 #   cp .env.docker.example .env

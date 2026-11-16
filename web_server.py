@@ -1,4 +1,4 @@
-"""Web interface for the voice assistant (LAN accessible)."""
+"""Web interface for Sahir, the local voice assistant (LAN accessible)."""
 
 from __future__ import annotations
 
@@ -395,7 +395,7 @@ def _resample(audio: np.ndarray, src_rate: int, dst_rate: int) -> np.ndarray:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Voice Assistant", version="1.1.0")
+    app = FastAPI(title="Sahir", version="1.1.0")
     app.add_middleware(MicPermissionMiddleware)
     app.add_middleware(
         CORSMiddleware,

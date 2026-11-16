@@ -1,4 +1,8 @@
-# MH Voice Assistant
+# Sahir (ساهر)
+
+**Sahir** (Arabic ساهر, said *sah-HEER*) means "the wakeful one, who keeps watch": a local-first,
+private voice assistant that stays listening on your own machine and hands off coding, research and
+tasks to agents. Repository: `Sahir-AI`.
 
 > [!WARNING]
 > **No authentication.** The web UI has no login and binds to all network interfaces
@@ -12,7 +16,8 @@ Custom local voice assistant using trusted open-source components:
 - **TTS:** Piper
 - **Router:** Ollama (local)
 - **Dev tasks:** Cursor CLI (`cursor-agent -p`)
-- **Activation:** push-to-talk (Right Ctrl) + wake word (`hey_jarvis`)
+- **Activation:** push-to-talk (Right Ctrl) + wake word (`hey_jarvis` for now; a custom "Hey Sahir"
+  wake word model is planned)
 - **Local-first agent:** persistent chat history, long-term memory with review, document RAG
   (SQLite + sqlite-vec, all under `data/`), an Ollama orchestrator that delegates to workers
   (research summarizer, Cursor code agent, ClickUp), realtime voice over WebSocket with Silero VAD
@@ -63,8 +68,8 @@ Docs: [docs/architecture.md](docs/architecture.md) · [docs/upgrade-research.md]
 ### New machine (recommended)
 
 ```bash
-git clone git@github.com:mhaiprojects/MH-VoiceAssistant-A.git
-cd MH-VoiceAssistant-A
+git clone git@github.com:mhaiprojects/Sahir-AI.git
+cd Sahir-AI
 bash setup.sh native    # Arch/Manjaro: venv + Ollama + models + TLS certs
 # or
 bash setup.sh docker    # Docker Compose stack (Ollama + web UI)
@@ -75,14 +80,14 @@ Certs and `.env` are generated locally (never committed). Regenerate TLS: `FORCE
 ### Manual install (Arch/Manjaro)
 
 ```bash
-cd MH-VoiceAssistant-A           # your clone directory
+cd Sahir-AI           # your clone directory
 bash scripts/install.sh          # system deps, Ollama, venv, models
 source venv/bin/activate
 cp .env.example .env             # if install.sh did not create it
 python bot.py
 ```
 
-Hold **Right Ctrl** while speaking, then release. Or say **hey jarvis** and speak after the prompt.
+Hold **Right Ctrl** while speaking, then release. Or say **hey jarvis** and speak after the prompt (a custom "Hey Sahir" wake word is planned).
 
 ## Web UI (local network)
 
@@ -186,7 +191,7 @@ See `.env.example` for all settings: Ollama model, Whisper size, hotkey, Cursor 
 ## Project layout
 
 ```
-MH-VoiceAssistant-A/
+Sahir-AI/
 ├── bot.py                 # Main entry point
 ├── audio_pipeline.py      # STT/TTS/recording
 ├── config.py
@@ -199,7 +204,7 @@ MH-VoiceAssistant-A/
 
 ## License
 
-Copyright (C) 2026 the MH Voice Assistant contributors.
+Copyright (C) 2026 the Sahir contributors.
 
 This project is licensed under the **GNU General Public License v3.0 only** (SPDX: `GPL-3.0-only`).
 See [LICENSE](LICENSE) for the full text. Third-party components (models, vendored JS such as

@@ -32,7 +32,7 @@ report back you will see their results; then either delegate a follow-up (e.g. f
 result in ClickUp) or call `answer` with a short spoken reply (1-3 sentences) summarising the outcome.
 Always use the conversation history and the context below. Never invent worker results."""
 
-FINAL_SYSTEM = """You are a local voice assistant. Using the worker results below, answer the user's
+FINAL_SYSTEM = """You are Sahir, a local voice assistant. Using the worker results below, answer the user's
 request directly in 1-3 short spoken sentences, stating the key facts from the results (not just that
 work was done). Mention failures honestly. No markdown."""
 

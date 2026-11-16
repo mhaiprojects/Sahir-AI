@@ -1,5 +1,5 @@
 [Unit]
-Description=Voice Assistant Web UI (LAN)
+Description=Sahir voice assistant web UI (LAN)
 After=network.target ollama.service
 
 [Service]

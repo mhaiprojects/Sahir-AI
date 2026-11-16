@@ -4,9 +4,9 @@ Quick orientation when continuing work on this project.
 
 ## Project identity
 
-- **Name:** MH Voice Assistant
+- **Name:** Sahir
 - **Path (dev):** the repository root (any directory) (`CURSOR_WORKSPACE` falls back to the parent folder if the configured path is missing)
-- **Remote:** `git@github.com:mhaiprojects/MH-VoiceAssistant-A.git`
+- **Remote:** `git@github.com:mhaiprojects/Sahir-AI.git`
 - **Primary mode for LAN/Docker:** `python bot.py --web` (FastAPI + static SPA)
 
 ## Before changing code

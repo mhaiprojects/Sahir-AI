@@ -20,6 +20,6 @@ How this repository was prepared for public release on GitHub, and what is still
 
 ## Still open
 
-- README and docs polish for public readers (non-Arch install, internal-flavoured wording): [#26](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/26)
-- Authentication in front of the web UI before any internet-facing deployment: [#23](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/23)
+- README and docs polish for public readers (non-Arch install, internal-flavoured wording): [#26](https://github.com/mhaiprojects/Sahir-AI/issues/26)
+- Authentication in front of the web UI before any internet-facing deployment: [#23](https://github.com/mhaiprojects/Sahir-AI/issues/23)
 - Re-run the secret scan on every new contribution before pushing (manual for now).

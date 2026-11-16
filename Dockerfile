@@ -1,4 +1,4 @@
-# Voice Assistant — web UI + STT/TTS (CPU). Ollama runs in a separate compose service.
+# Sahir — web UI + STT/TTS (CPU). Ollama runs in a separate compose service.
 FROM python:3.12-slim-bookworm
 
 ARG PRELOAD_WHISPER=0

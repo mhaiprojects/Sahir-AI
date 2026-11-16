@@ -2,7 +2,7 @@ const TOUR_STORAGE_KEY = "voice-assistant-tour-done";
 
 const TOUR_STEPS = [
   {
-    title: "Welcome to Voice Assistant",
+    title: "Welcome to Sahir",
     body:
       "This control panel runs on your PC and lets you chat, control the machine, and run coding tasks from any device on your home network.",
     target: null,

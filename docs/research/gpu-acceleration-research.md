@@ -1,4 +1,4 @@
-# GPU acceleration research: MH Voice Assistant on an entry-level 4 GB AMD GPU
+# GPU acceleration research: Sahir on an entry-level 4 GB AMD GPU
 
 Research only; no code or configuration was changed. Date: 2026-11-16.
 Builds on [`docs/upgrade-research.md`](../upgrade-research.md) and its roadmap.
@@ -165,12 +165,12 @@ Speed-ups are estimates from the cited sources plus today's measured baseline. N
 
 | Upgrade path item | Issue |
 |---|---|
-| Model selector and benchmark harness | [#1](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/1), [#2](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/2) (shipped), follow-ups [#32](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/32) |
-| 1. Small default model fully on the GPU, 8B as fallback | [#3](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/3) |
-| 2. Embeddings on the CPU | [#4](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/4) |
-| 3. Ollama memory tuning for 4 GB cards | [#5](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/5) |
-| 4. Trim the orchestrator prompt | [#6](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/6) |
-| 5. Optional llama.cpp server (Vulkan) backend | [#7](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/7) |
-| 6. Moonshine streaming STT | [#8](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/8) |
-| Fix the stale CPU-only claim in `docs/upgrade-research.md` | [#19](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/19) |
-| Move Ollama model storage off the root disk | [#31](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/31) |
+| Model selector and benchmark harness | [#1](https://github.com/mhaiprojects/Sahir-AI/issues/1), [#2](https://github.com/mhaiprojects/Sahir-AI/issues/2) (shipped), follow-ups [#32](https://github.com/mhaiprojects/Sahir-AI/issues/32) |
+| 1. Small default model fully on the GPU, 8B as fallback | [#3](https://github.com/mhaiprojects/Sahir-AI/issues/3) |
+| 2. Embeddings on the CPU | [#4](https://github.com/mhaiprojects/Sahir-AI/issues/4) |
+| 3. Ollama memory tuning for 4 GB cards | [#5](https://github.com/mhaiprojects/Sahir-AI/issues/5) |
+| 4. Trim the orchestrator prompt | [#6](https://github.com/mhaiprojects/Sahir-AI/issues/6) |
+| 5. Optional llama.cpp server (Vulkan) backend | [#7](https://github.com/mhaiprojects/Sahir-AI/issues/7) |
+| 6. Moonshine streaming STT | [#8](https://github.com/mhaiprojects/Sahir-AI/issues/8) |
+| Fix the stale CPU-only claim in `docs/upgrade-research.md` | [#19](https://github.com/mhaiprojects/Sahir-AI/issues/19) |
+| Move Ollama model storage off the root disk | [#31](https://github.com/mhaiprojects/Sahir-AI/issues/31) |

@@ -31,7 +31,7 @@ A local-first voice chat agent that converses naturally and delegates tasks to w
 | M1 voice loop works locally (mic → text → LLM → speech) | Pass |
 | M2 orchestrator emits and receives a delegated task | Pass |
 | M3 one worker completes a real task end to end | Pass (research and code workers) |
-| M4 ClickUp actions fire from worker output | Pass with mocked HTTP only; live use needs credentials ([#16](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/16)) |
+| M4 ClickUp actions fire from worker output | Pass with mocked HTTP only; live use needs credentials ([#16](https://github.com/mhaiprojects/Sahir-AI/issues/16)) |
 | M5 multi-worker orchestration with context intact | Pass |
 | Barge-in | Pass |
 
@@ -39,6 +39,6 @@ Tests at the time: 49 pytest tests offline, 28/28 web checks, smoke test and end
 
 ## Still open
 
-- Live ClickUp credentials and an end-to-end run: [#16](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/16)
-- A real-microphone browser test of Live voice: [#18](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/18)
-- Next research picks (Moonshine, llama.cpp Vulkan, Wyoming, custom wake phrases): [#8](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/8), [#7](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/7), [#29](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/29), [#30](https://github.com/mhaiprojects/MH-VoiceAssistant-A/issues/30)
+- Live ClickUp credentials and an end-to-end run: [#16](https://github.com/mhaiprojects/Sahir-AI/issues/16)
+- A real-microphone browser test of Live voice: [#18](https://github.com/mhaiprojects/Sahir-AI/issues/18)
+- Next research picks (Moonshine, llama.cpp Vulkan, Wyoming, custom wake phrases): [#8](https://github.com/mhaiprojects/Sahir-AI/issues/8), [#7](https://github.com/mhaiprojects/Sahir-AI/issues/7), [#29](https://github.com/mhaiprojects/Sahir-AI/issues/29), [#30](https://github.com/mhaiprojects/Sahir-AI/issues/30)
