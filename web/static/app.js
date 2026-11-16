@@ -1776,60 +1776,10 @@ async function sendChat(message, { forceCursor = false } = {}) {
   }
 }
 
-async function sendToCursor(message) {
-  const history = getChatHistoryForApi();
-  const startedAt = Date.now();
-  setBusy(true);
-  addMessage("user", message);
-  addMessage("system", "Sending task to Cursor CLI…");
-  activeRequestController = new AbortController();
-
-  try {
-    const res = await fetch("/api/cursor", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, history }),
-      signal: activeRequestController.signal,
-    });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || res.statusText);
-    }
-
-    const data = await res.json();
-    addMessage("assistant", data.reply || "(no reply text)");
-    addModelTag(data);
-    lastAssistantReply = data.reply || "";
-    reportCursorCompletion(data, startedAt, { always: true });
-
-    prependLogEntry({
-      id: data.log_id,
-      created_at: new Date().toISOString(),
-      client_ip: null,
-      input_type: "cursor",
-      user_message: message,
-      ai_reply: data.reply,
-      routed: true,
-      action: data.action,
-      action_details: data.action_details || {},
-      duration_ms: null,
-      status: "success",
-      error_message: null,
-    });
-
-    await maybePlayTts(data.reply);
-  } catch (err) {
-    if (err.name === "AbortError") {
-      addMessage("system", "Cursor request cancelled.");
-    } else {
-      addMessage("system", `Cursor error: ${err.message}`);
-    }
-  } finally {
-    activeRequestController = null;
-    setBusy(false);
-    focusHomeChatInput();
-  }
+// Ctrl+Enter and "Send to Cursor" use the same streaming endpoint as Send
+// (mode "cursor"), so Cursor progress shows in the activity feed (#37).
+function sendToCursor(message) {
+  return sendChat(message, { forceCursor: true });
 }
 
 chatForm.addEventListener("submit", (e) => {
