@@ -1,0 +1,464 @@
+"""SQLite store for conversations, messages, memories, documents, and chunks.
+
+Everything lives in one on-disk file (default ``data/agent.db``). Embeddings are stored
+as float32 BLOBs. When the sqlite-vec extension loads, similarity search runs in SQL via
+``vec_distance_cosine``; otherwise a numpy brute-force fallback is used.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+import threading
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Iterable
+
+import numpy as np
+
+from agent.vectors import cosine, pack, try_load_sqlite_vec, unpack
+
+SCHEMA = """
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS conversations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL DEFAULT 'New conversation',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'web'
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    role TEXT NOT NULL CHECK (role IN ('user','assistant','system','tool')),
+    content TEXT NOT NULL,
+    meta TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages (conversation_id, id);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+    content, content='messages', content_rowid='id', tokenize='porter unicode61'
+);
+CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+    INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
+END;
+CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+    INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', old.id, old.content);
+END;
+CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
+    INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', old.id, old.content);
+    INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
+END;
+
+CREATE TABLE IF NOT EXISTS memories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'fact',
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','pending','rejected')),
+    source TEXT NOT NULL DEFAULT 'manual',
+    source_conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL,
+    embedding BLOB,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memories_status ON memories (status);
+
+CREATE TABLE IF NOT EXISTS documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename TEXT NOT NULL,
+    mime TEXT,
+    size_bytes INTEGER NOT NULL DEFAULT 0,
+    sha256 TEXT NOT NULL UNIQUE,
+    chunk_count INTEGER NOT NULL DEFAULT 0,
+    embed_model TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS chunks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    idx INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    embedding BLOB
+);
+CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks (document_id, idx);
+"""
+
+
+def utcnow() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+@dataclass
+class ScoredChunk:
+    chunk_id: int
+    document_id: int
+    filename: str
+    idx: int
+    content: str
+    score: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "chunk_id": self.chunk_id,
+            "document_id": self.document_id,
+            "filename": self.filename,
+            "idx": self.idx,
+            "content": self.content,
+            "score": round(self.score, 4),
+        }
+
+
+class AgentStore:
+    """Thread-safe SQLite store. One connection per call; a lock serialises writes."""
+
+    def __init__(self, db_path: Path) -> None:
+        self.db_path = Path(db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
+        self.vector_backend = "numpy"
+        with self._connect() as conn:
+            conn.executescript(SCHEMA)
+            conn.execute("PRAGMA journal_mode=WAL")
+        with self._connect() as conn:
+            if try_load_sqlite_vec(conn):
+                self.vector_backend = "sqlite-vec"
+
+    # ------------------------------------------------------------------ infra
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=15)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        if getattr(self, "vector_backend", "numpy") == "sqlite-vec":
+            try_load_sqlite_vec(conn)
+        return conn
+
+    def _exec(self, sql: str, params: Iterable[Any] = ()) -> sqlite3.Cursor:
+        with self._lock:
+            conn = self._connect()
+            try:
+                cur = conn.execute(sql, tuple(params))
+                conn.commit()
+                return cur
+            finally:
+                conn.close()
+
+    def _query(self, sql: str, params: Iterable[Any] = ()) -> list[sqlite3.Row]:
+        conn = self._connect()
+        try:
+            return conn.execute(sql, tuple(params)).fetchall()
+        finally:
+            conn.close()
+
+    def stats(self) -> dict[str, Any]:
+        def count(sql: str) -> int:
+            return int(self._query(sql)[0][0])
+
+        return {
+            "db_path": str(self.db_path),
+            "vector_backend": self.vector_backend,
+            "conversations": count("SELECT COUNT(*) FROM conversations"),
+            "messages": count("SELECT COUNT(*) FROM messages"),
+            "memories_active": count("SELECT COUNT(*) FROM memories WHERE status='active'"),
+            "memories_pending": count("SELECT COUNT(*) FROM memories WHERE status='pending'"),
+            "documents": count("SELECT COUNT(*) FROM documents"),
+            "chunks": count("SELECT COUNT(*) FROM chunks"),
+        }
+
+    # --------------------------------------------------------- conversations
+    def create_conversation(self, title: str | None = None, source: str = "web") -> dict[str, Any]:
+        now = utcnow()
+        cur = self._exec(
+            "INSERT INTO conversations (title, created_at, updated_at, source) VALUES (?,?,?,?)",
+            ((title or "New conversation").strip()[:200] or "New conversation", now, now, source),
+        )
+        return self.get_conversation(int(cur.lastrowid))  # type: ignore[return-value]
+
+    def get_conversation(self, conv_id: int) -> dict[str, Any] | None:
+        rows = self._query(
+            """SELECT c.*, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id=c.id) AS message_count
+               FROM conversations c WHERE c.id=?""",
+            (conv_id,),
+        )
+        return dict(rows[0]) if rows else None
+
+    def list_conversations(self, q: str | None = None, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
+        base = """SELECT c.*, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id=c.id) AS message_count,
+                  (SELECT content FROM messages m WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) AS last_message
+                  FROM conversations c"""
+        params: list[Any] = []
+        if q and q.strip():
+            base += """ WHERE c.title LIKE ? OR c.id IN (
+                        SELECT m.conversation_id FROM messages m JOIN messages_fts f ON f.rowid=m.id
+                        WHERE messages_fts MATCH ?)"""
+            params += [f"%{q.strip()}%", _fts_query(q)]
+        base += " ORDER BY c.updated_at DESC, c.id DESC LIMIT ? OFFSET ?"
+        params += [limit, offset]
+        out = []
+        for r in self._query(base, params):
+            d = dict(r)
+            if d.get("last_message"):
+                d["last_message"] = d["last_message"][:160]
+            out.append(d)
+        return out
+
+    def rename_conversation(self, conv_id: int, title: str) -> dict[str, Any] | None:
+        title = title.strip()[:200]
+        if not title:
+            raise ValueError("Title is empty")
+        cur = self._exec("UPDATE conversations SET title=? WHERE id=?", (title, conv_id))
+        return self.get_conversation(conv_id) if cur.rowcount else None
+
+    def delete_conversation(self, conv_id: int) -> bool:
+        return self._exec("DELETE FROM conversations WHERE id=?", (conv_id,)).rowcount > 0
+
+    def touch(self, conv_id: int) -> None:
+        self._exec("UPDATE conversations SET updated_at=? WHERE id=?", (utcnow(), conv_id))
+
+    def latest_active_conversation(self, idle_minutes: int, source: str | None = None) -> dict[str, Any] | None:
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=idle_minutes)).isoformat(timespec="seconds")
+        sql = "SELECT id FROM conversations WHERE updated_at >= ?"
+        params: list[Any] = [cutoff]
+        if source:
+            sql += " AND source=?"
+            params.append(source)
+        rows = self._query(sql + " ORDER BY updated_at DESC, id DESC LIMIT 1", params)
+        return self.get_conversation(int(rows[0]["id"])) if rows else None
+
+    # --------------------------------------------------------------- messages
+    def add_message(self, conv_id: int, role: str, content: str, meta: dict[str, Any] | None = None) -> int:
+        cur = self._exec(
+            "INSERT INTO messages (conversation_id, role, content, meta, created_at) VALUES (?,?,?,?,?)",
+            (conv_id, role, content, json.dumps(meta or {}, ensure_ascii=False), utcnow()),
+        )
+        self.touch(conv_id)
+        return int(cur.lastrowid)
+
+    def get_messages(self, conv_id: int, limit: int | None = None) -> list[dict[str, Any]]:
+        if limit:
+            rows = self._query(
+                "SELECT * FROM (SELECT * FROM messages WHERE conversation_id=? ORDER BY id DESC LIMIT ?) ORDER BY id",
+                (conv_id, limit),
+            )
+        else:
+            rows = self._query("SELECT * FROM messages WHERE conversation_id=? ORDER BY id", (conv_id,))
+        out = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["meta"] = json.loads(d.get("meta") or "{}")
+            except json.JSONDecodeError:
+                d["meta"] = {}
+            out.append(d)
+        return out
+
+    def search_messages(self, q: str, limit: int = 50) -> list[dict[str, Any]]:
+        if not q.strip():
+            return []
+        rows = self._query(
+            """SELECT m.id, m.conversation_id, m.role, m.created_at, c.title,
+                      snippet(messages_fts, 0, '[', ']', '…', 12) AS snippet
+               FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid
+               JOIN conversations c ON c.id = m.conversation_id
+               WHERE messages_fts MATCH ? ORDER BY rank LIMIT ?""",
+            (_fts_query(q), limit),
+        )
+        return [dict(r) for r in rows]
+
+    # --------------------------------------------------------------- memories
+    def add_memory(
+        self,
+        content: str,
+        *,
+        category: str = "fact",
+        status: str = "active",
+        source: str = "manual",
+        source_conversation_id: int | None = None,
+        embedding: list[float] | np.ndarray | None = None,
+    ) -> dict[str, Any]:
+        content = content.strip()
+        if not content:
+            raise ValueError("Memory content is empty")
+        if status not in {"active", "pending", "rejected"}:
+            raise ValueError(f"Invalid status {status!r}")
+        now = utcnow()
+        cur = self._exec(
+            """INSERT INTO memories (content, category, status, source, source_conversation_id, embedding, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (content[:2000], (category or "fact")[:40], status, source, source_conversation_id,
+             pack(embedding) if embedding is not None else None, now, now),
+        )
+        return self.get_memory(int(cur.lastrowid))  # type: ignore[return-value]
+
+    def get_memory(self, mem_id: int) -> dict[str, Any] | None:
+        rows = self._query("SELECT * FROM memories WHERE id=?", (mem_id,))
+        return _memory_dict(rows[0]) if rows else None
+
+    def list_memories(self, status: str | None = None, q: str | None = None) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM memories WHERE 1=1"
+        params: list[Any] = []
+        if status:
+            sql += " AND status=?"
+            params.append(status)
+        if q and q.strip():
+            sql += " AND content LIKE ?"
+            params.append(f"%{q.strip()}%")
+        sql += " ORDER BY updated_at DESC, id DESC"
+        return [_memory_dict(r) for r in self._query(sql, params)]
+
+    def update_memory(
+        self,
+        mem_id: int,
+        *,
+        content: str | None = None,
+        category: str | None = None,
+        status: str | None = None,
+        embedding: list[float] | np.ndarray | None = None,
+    ) -> dict[str, Any] | None:
+        sets, params = [], []
+        if content is not None:
+            if not content.strip():
+                raise ValueError("Memory content is empty")
+            sets.append("content=?")
+            params.append(content.strip()[:2000])
+        if category is not None:
+            sets.append("category=?")
+            params.append(category[:40] or "fact")
+        if status is not None:
+            if status not in {"active", "pending", "rejected"}:
+                raise ValueError(f"Invalid status {status!r}")
+            sets.append("status=?")
+            params.append(status)
+        if embedding is not None:
+            sets.append("embedding=?")
+            params.append(pack(embedding))
+        if not sets:
+            return self.get_memory(mem_id)
+        sets.append("updated_at=?")
+        params.append(utcnow())
+        params.append(mem_id)
+        cur = self._exec(f"UPDATE memories SET {', '.join(sets)} WHERE id=?", params)
+        return self.get_memory(mem_id) if cur.rowcount else None
+
+    def delete_memory(self, mem_id: int) -> bool:
+        return self._exec("DELETE FROM memories WHERE id=?", (mem_id,)).rowcount > 0
+
+    def search_memories(
+        self, query_vec: list[float] | np.ndarray, k: int = 5, statuses: tuple[str, ...] = ("active",)
+    ) -> list[tuple[dict[str, Any], float]]:
+        placeholders = ",".join("?" for _ in statuses)
+        q = np.asarray(query_vec, dtype=np.float32)
+        if self.vector_backend == "sqlite-vec":
+            rows = self._query(
+                f"""SELECT *, 1 - vec_distance_cosine(embedding, ?) AS score FROM memories
+                    WHERE embedding IS NOT NULL AND length(embedding)=? AND status IN ({placeholders})
+                    ORDER BY score DESC LIMIT ?""",
+                (pack(q), q.nbytes, *statuses, k),
+            )
+            return [(_memory_dict(r), float(r["score"])) for r in rows]
+        rows = self._query(
+            f"SELECT * FROM memories WHERE embedding IS NOT NULL AND status IN ({placeholders})", statuses
+        )
+        scored = [(_memory_dict(r), cosine(q, unpack(r["embedding"]))) for r in rows]
+        scored.sort(key=lambda t: t[1], reverse=True)
+        return scored[:k]
+
+    # -------------------------------------------------------------- documents
+    def find_document_by_hash(self, sha256: str) -> dict[str, Any] | None:
+        rows = self._query("SELECT * FROM documents WHERE sha256=?", (sha256,))
+        return dict(rows[0]) if rows else None
+
+    def add_document(
+        self,
+        *,
+        filename: str,
+        mime: str | None,
+        size_bytes: int,
+        sha256: str,
+        chunks: list[str],
+        embeddings: list[list[float]] | None,
+        embed_model: str | None,
+    ) -> dict[str, Any]:
+        with self._lock:
+            conn = self._connect()
+            try:
+                cur = conn.execute(
+                    """INSERT INTO documents (filename, mime, size_bytes, sha256, chunk_count, embed_model, created_at)
+                       VALUES (?,?,?,?,?,?,?)""",
+                    (filename, mime, size_bytes, sha256, len(chunks), embed_model, utcnow()),
+                )
+                doc_id = int(cur.lastrowid)
+                conn.executemany(
+                    "INSERT INTO chunks (document_id, idx, content, embedding) VALUES (?,?,?,?)",
+                    [
+                        (doc_id, i, text, pack(embeddings[i]) if embeddings else None)
+                        for i, text in enumerate(chunks)
+                    ],
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        return self.get_document(doc_id)  # type: ignore[return-value]
+
+    def get_document(self, doc_id: int) -> dict[str, Any] | None:
+        rows = self._query("SELECT * FROM documents WHERE id=?", (doc_id,))
+        return dict(rows[0]) if rows else None
+
+    def list_documents(self) -> list[dict[str, Any]]:
+        return [dict(r) for r in self._query("SELECT * FROM documents ORDER BY id DESC")]
+
+    def get_chunks(self, doc_id: int, limit: int = 500) -> list[dict[str, Any]]:
+        rows = self._query(
+            "SELECT id, document_id, idx, content FROM chunks WHERE document_id=? ORDER BY idx LIMIT ?",
+            (doc_id, limit),
+        )
+        return [dict(r) for r in rows]
+
+    def delete_document(self, doc_id: int) -> bool:
+        return self._exec("DELETE FROM documents WHERE id=?", (doc_id,)).rowcount > 0
+
+    def search_chunks(self, query_vec: list[float] | np.ndarray, k: int = 4) -> list[ScoredChunk]:
+        q = np.asarray(query_vec, dtype=np.float32)
+        if self.vector_backend == "sqlite-vec":
+            rows = self._query(
+                """SELECT ch.id, ch.document_id, ch.idx, ch.content, d.filename,
+                          1 - vec_distance_cosine(ch.embedding, ?) AS score
+                   FROM chunks ch JOIN documents d ON d.id = ch.document_id
+                   WHERE ch.embedding IS NOT NULL AND length(ch.embedding)=?
+                   ORDER BY score DESC LIMIT ?""",
+                (pack(q), q.nbytes, k),
+            )
+            return [
+                ScoredChunk(r["id"], r["document_id"], r["filename"], r["idx"], r["content"], float(r["score"]))
+                for r in rows
+            ]
+        rows = self._query(
+            """SELECT ch.id, ch.document_id, ch.idx, ch.content, ch.embedding, d.filename
+               FROM chunks ch JOIN documents d ON d.id = ch.document_id WHERE ch.embedding IS NOT NULL"""
+        )
+        scored = [
+            ScoredChunk(r["id"], r["document_id"], r["filename"], r["idx"], r["content"], cosine(q, unpack(r["embedding"])))
+            for r in rows
+        ]
+        scored.sort(key=lambda c: c.score, reverse=True)
+        return scored[:k]
+
+
+def _memory_dict(row: sqlite3.Row) -> dict[str, Any]:
+    d = dict(row)
+    d.pop("embedding", None)
+    d.pop("score", None)
+    d["has_embedding"] = row["embedding"] is not None
+    return d
+
+
+def _fts_query(q: str) -> str:
+    """Turn free text into a safe FTS5 query (prefix match on each token)."""
+    tokens = [t for t in "".join(ch if ch.isalnum() else " " for ch in q).split() if t]
+    if not tokens:
+        return '""'
+    return " ".join(f'"{t}"*' for t in tokens[:12])

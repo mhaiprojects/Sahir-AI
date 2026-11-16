@@ -1,0 +1,15 @@
+# Optional: mount Cursor CLI from the host for "Route via Cursor" features.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.cursor.yml up -d
+#
+# Adjust host paths to match your machine.
+
+services:
+  voice-assistant:
+    environment:
+      CURSOR_WORKSPACE: /workspace
+      CURSOR_AGENT_BIN: /host-bin/cursor-agent
+    volumes:
+      - ${CURSOR_WORKSPACE_HOST:-./workspace}:/workspace:rw
+      - ${CURSOR_AGENT_BIN_HOST:-/usr/local/bin/cursor-agent}:/host-bin/cursor-agent:ro

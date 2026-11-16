@@ -1,0 +1,19 @@
+pipecat-ai[silero,whisper,ollama,piper]>=1.7.0
+ollama>=0.6.0
+openwakeword>=0.4.0
+sounddevice>=0.5.0
+python-dotenv>=1.0.0
+pynput>=1.8.0
+numpy>=2.0.0
+scipy>=1.11.0
+piper-tts>=1.7.0
+faster-whisper>=1.0.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12
+# Local-first agent layer (chat history, memory, RAG)
+sqlite-vec>=0.1.9
+pypdf>=5.0
+requests>=2.31
+# Optional: Kokoro-82M TTS backend (TTS_BACKEND=kokoro) via sherpa-onnx
+sherpa-onnx>=2.0.1

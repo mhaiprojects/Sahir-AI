@@ -1,0 +1,17 @@
+[Unit]
+Description=Voice Assistant Web UI (LAN)
+After=network.target ollama.service
+
+[Service]
+Type=simple
+# The ROOT placeholder in paths below is filled in by scripts/install_systemd.sh
+WorkingDirectory=@ROOT@
+EnvironmentFile=-@ROOT@/.env
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@ROOT@/venv/bin/python bot.py --web
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

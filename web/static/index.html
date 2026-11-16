@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Voice Assistant</title>
+  <link rel="stylesheet" href="/static/style.css?v=20250825c">
+</head>
+<body>
+  <div class="layout">
+    <aside class="nav-sidebar" aria-label="Main navigation">
+      <div class="nav-brand" aria-hidden="true">VA</div>
+      <nav class="nav-rail" role="tablist" aria-label="App sections">
+        <button type="button" class="nav-item active" role="tab" aria-selected="true" data-view="home" id="nav-btn-home" title="Home">
+          <span class="nav-icon" aria-hidden="true">⌂</span>
+          <span class="nav-label">Home</span>
+        </button>
+        <button type="button" class="nav-item" role="tab" aria-selected="false" data-view="logs" id="nav-btn-logs" title="Logs">
+          <span class="nav-icon" aria-hidden="true">≡</span>
+          <span class="nav-label">Logs</span>
+        </button>
+        <button type="button" class="nav-item" role="tab" aria-selected="false" data-view="config" id="nav-btn-config" title="Config">
+          <span class="nav-icon" aria-hidden="true">⚙</span>
+          <span class="nav-label">Config</span>
+        </button>
+        <a class="nav-item" href="/agent" id="nav-link-agent" title="Agent manager: chats, memory, documents, live voice, tasks" style="text-decoration:none">
+          <span class="nav-icon" aria-hidden="true">✦</span>
+          <span class="nav-label">Agent</span>
+        </a>
+      </nav>
+    </aside>
+
+    <div class="main-shell">
+      <!-- Home: voice + chat -->
+      <div id="view-home" class="view view-home active" role="tabpanel" aria-labelledby="nav-btn-home">
+        <header class="app-header">
+          <div class="header-row">
+            <div>
+              <h1>Voice Assistant</h1>
+              <p class="subtitle">Local network control panel</p>
+            </div>
+            <button type="button" id="start-tour-btn" class="secondary small">Take tour</button>
+          </div>
+        </header>
+
+        <section id="live-transcript" class="live-transcript live-transcript-top" aria-live="polite" aria-label="Live transcription">
+          <div class="live-header">
+            <span id="live-transcript-label" class="live-label">Live transcription</span>
+            <span id="live-transcript-status" class="live-status">Mic off</span>
+          </div>
+          <div id="live-transcript-live" class="live-text draft idle">Enable the microphone to see live captions while you speak.</div>
+          <div id="live-transcript-final-wrap" class="live-final-wrap hidden">
+            <div class="live-label">Corrected</div>
+            <div id="live-transcript-final" class="live-text final"></div>
+          </div>
+        </section>
+
+        <section class="voice-buttons-row" aria-label="Microphone controls">
+          <button type="button" id="toggle-mic-btn" class="secondary btn-voice" title="Enable or disable microphone access">
+            Enable microphone
+          </button>
+          <button type="button" id="mic-btn" class="secondary btn-voice" title="Hold to record" disabled>
+            Hold to listen
+          </button>
+        </section>
+
+        <section class="options-row" aria-label="Routing and listening options">
+          <label class="checkbox">
+            <input type="checkbox" id="route-toggle" checked>
+            Route via tools
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="always-listen-toggle">
+            Always listening
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="route-cursor-toggle">
+            Route all via advanced AI (Cursor)
+          </label>
+        </section>
+
+        <p id="mic-hint" class="mic-hint hidden"></p>
+
+        <main class="main-content">
+          <section id="chat-log" class="chat-log" aria-live="polite"></section>
+
+          <form id="chat-form" class="chat-form">
+            <textarea
+              id="message-input"
+              rows="3"
+              placeholder="Ask a question, control the PC, or request a coding task…"
+              required
+            ></textarea>
+            <div class="chat-actions">
+              <button type="submit" id="send-btn" class="btn-voice">Send</button>
+              <button type="button" id="cursor-btn" class="secondary btn-voice" title="Force Cursor CLI to handle this task">
+                Send to Cursor
+              </button>
+            </div>
+          </form>
+        </main>
+
+        <details class="status-panel" id="status-panel">
+          <summary class="status-panel-summary">Service status</summary>
+          <div id="status-bar" class="status-bar">Checking services…</div>
+          <div id="mic-status" class="mic-status">
+            <span id="mic-badge" class="badge">Mic: checking…</span>
+          </div>
+        </details>
+
+        <footer class="app-footer">
+          <p>Accessible on your LAN at this machine's IP and port <span id="port-label">8765</span>.</p>
+          <p class="warn">No authentication — use only on trusted networks.</p>
+        </footer>
+      </div>
+
+      <!-- Logs -->
+      <div id="view-logs" class="view view-logs" role="tabpanel" aria-labelledby="nav-btn-logs" hidden>
+        <header class="view-header">
+          <h1>Request log</h1>
+          <button type="button" id="refresh-logs-btn" class="secondary small">Refresh</button>
+        </header>
+        <div id="request-log" class="request-log" aria-live="polite">
+          <p class="empty">No requests yet.</p>
+        </div>
+      </div>
+
+      <!-- Config -->
+      <div id="view-config" class="view view-config" role="tabpanel" aria-labelledby="nav-btn-config" hidden>
+        <header class="view-header">
+          <h1>Settings</h1>
+        </header>
+
+        <details class="config-section" open>
+          <summary>Microphone</summary>
+          <div class="config-body">
+            <p class="config-note">Use the Home screen to enable the microphone and control always-listening mode.</p>
+            <div id="mic-status-config" class="mic-status">
+              <span id="mic-badge-config" class="badge">Mic: checking…</span>
+            </div>
+          </div>
+        </details>
+
+        <details class="config-section" open>
+          <summary>Voice commands</summary>
+          <div class="config-body">
+            <p class="config-note">Keyword shortcuts active while speaking or processing.</p>
+            <form id="command-form" class="command-form">
+              <input type="text" id="command-keyword" placeholder="Keyword phrase" required maxlength="120">
+              <select id="command-action" required></select>
+              <button type="submit" class="small">Add</button>
+            </form>
+            <div id="command-list" class="command-list" aria-live="polite"></div>
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/vendor/marked.min.js"></script>
+  <script src="/static/vendor/purify.min.js"></script>
+  <script src="/static/markdown.js"></script>
+  <script src="/static/app.js?v=20261114a"></script>
+  <script src="/static/tour.js"></script>
+</body>
+</html>

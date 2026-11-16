@@ -1,0 +1,43 @@
+# Python / virtualenvs
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Secrets and local config (templates stay tracked)
+.env
+.env.*
+!.env.example
+!.env.docker.example
+secrets/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+
+# Runtime data: TLS certs, logs, SQLite databases, pid files, HF cache
+data/
+data/certs/
+data/logs/
+data/*.db
+data/*.db-*
+data/*.pid
+data/huggingface/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Downloaded models (large binaries). Fetch with scripts/setup_models.sh
+# and scripts/setup_kokoro.sh instead of committing them.
+models/
+!models/README.md
+
+# Editor / tool state
+.cursor/
+.vscode/
+.idea/

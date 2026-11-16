@@ -1,0 +1,63 @@
+# Voice Assistant stack: web UI + Ollama LLM
+#
+# Quick start:
+#   cp .env.docker.example .env
+#   docker compose up -d --build
+#   docker compose logs -f voice-assistant
+#
+# Open: https://<host-ip>:8765  (accept self-signed cert for LAN mic access)
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: voice-assistant-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "${OLLAMA_PUBLISH_PORT:-11434}:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  voice-assistant:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PRELOAD_WHISPER: ${PRELOAD_WHISPER:-0}
+        PRELOAD_PIPER: ${PRELOAD_PIPER:-1}
+    container_name: voice-assistant-web
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_PULL_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
+      WEB_HOST: 0.0.0.0
+      WEB_PORT: "8765"
+      WEB_SSL_CERT: data/certs/web.crt
+      WEB_SSL_KEY: data/certs/web.key
+      WAKEWORD_ENABLED: "false"
+      HF_HOME: /app/data/huggingface
+      PRELOAD_WHISPER: ${PRELOAD_WHISPER:-0}
+    ports:
+      - "${WEB_PUBLISH_PORT:-8765}:8765"
+    volumes:
+      - ./data:/app/data
+      - ./models/piper:/app/models/piper
+    healthcheck:
+      test: ["CMD", "curl", "-fk", "https://127.0.0.1:8765/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
+volumes:
+  ollama_data:
