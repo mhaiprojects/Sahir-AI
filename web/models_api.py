@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BENCH_DIR = PROJECT_ROOT / "data" / "bench"
 BENCH_SCRIPT = PROJECT_ROOT / "scripts" / "bench_models.py"
+# A progress.json updated within this many seconds (and not "done") means a run
+# started elsewhere (CLI, or before a server restart) is still going (#41).
+EXTERNAL_RUN_STALE_S = 300
 
 
 class ModelRef(BaseModel):
@@ -53,9 +56,34 @@ class BenchRunner:
     def running(self) -> bool:
         return self._proc is not None and self._proc.poll() is None
 
+    def _read_progress(self) -> dict[str, Any] | None:
+        prog = self.bench_dir / "progress.json"
+        if not prog.exists():
+            return None
+        try:
+            data = json.loads(prog.read_text())
+        except Exception:
+            return None
+        return data if isinstance(data, dict) else None
+
+    def external_progress(self) -> dict[str, Any] | None:
+        """Progress of a run this server didn't start (CLI or pre-restart), if it looks live."""
+        if self.running:
+            return None
+        data = self._read_progress()
+        if not data or str(data.get("message", "")).strip() == "done":
+            return None
+        try:
+            at = float(data.get("at") or 0)
+        except (TypeError, ValueError):
+            return None
+        if time.time() - at > EXTERNAL_RUN_STALE_S:
+            return None
+        return data
+
     def start(self, models: list[str], quick: bool) -> dict[str, Any]:
         with self._lock:
-            if self.running:
+            if self.running or self.external_progress():
                 raise RuntimeError("A benchmark is already running")
             self.bench_dir.mkdir(parents=True, exist_ok=True)
             cmd = [sys.executable, str(self.script), "--out", str(self.bench_dir)]
@@ -76,14 +104,11 @@ class BenchRunner:
                 results = json.loads(latest.read_text())
             except Exception:
                 results = None
-        progress = None
-        prog = self.bench_dir / "progress.json"
-        if self.running and prog.exists():
-            try:
-                progress = json.loads(prog.read_text())
-            except Exception:
-                progress = None
-        return {"running": self.running, "started_at": self._started_at,
+        external = self.external_progress()
+        progress = self._read_progress() if self.running else external
+        return {"running": self.running or external is not None,
+                "external": external is not None,
+                "started_at": self._started_at,
                 "exit_code": None if self._proc is None else self._proc.poll(),
                 "progress": progress, "latest": results}
 

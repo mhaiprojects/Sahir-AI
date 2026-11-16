@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -130,6 +131,21 @@ def test_benchmark_status_reads_latest(client: TestClient, tmp_path: Path) -> No
     (tmp_path / "bench" / "latest.json").write_text(json.dumps({"results": [{"model": "x"}]}))
     s = client.get("/api/models/benchmark").json()
     assert s["running"] is False and s["latest"]["results"][0]["model"] == "x"
+
+
+def test_benchmark_status_detects_external_run(client: TestClient, tmp_path: Path) -> None:
+    bench = tmp_path / "bench"
+    bench.mkdir()
+    prog = bench / "progress.json"
+    prog.write_text(json.dumps({"message": "llama3.1:8b: decision 3/20", "at": time.time()}))
+    s = client.get("/api/models/benchmark").json()
+    assert s["running"] is True and s["external"] is True
+    assert s["progress"]["message"].startswith("llama3.1:8b")
+    assert client.post("/api/models/benchmark", json={"quick": True}).status_code == 409
+    prog.write_text(json.dumps({"message": "done", "at": time.time()}))
+    assert client.get("/api/models/benchmark").json()["running"] is False
+    prog.write_text(json.dumps({"message": "x: decision 1/20", "at": time.time() - 3600}))
+    assert client.get("/api/models/benchmark").json()["running"] is False
 
 
 def test_escalation_phrases_and_think() -> None:

@@ -11,6 +11,7 @@
   if (!listEl) return;
 
   let benchTimer = null;
+  let benchErrors = 0;
 
   function fmtBytes(n) {
     if (n == null || Number.isNaN(Number(n))) return "n/a";
@@ -177,15 +178,21 @@
       const s = await api("/api/models/benchmark");
       renderBench(s.latest);
       benchRun.disabled = benchQuick.disabled = s.running;
+      benchErrors = 0;
       if (s.running) {
-        benchStatus.textContent = `Running… ${s.progress?.message || ""}`;
+        const where = s.external ? " (started outside this page)" : "";
+        benchStatus.textContent = `Running${where}… ${s.progress?.message || ""}`;
         benchTimer = setTimeout(pollBench, 3000);
       } else {
         benchStatus.textContent = s.exit_code && s.exit_code !== 0 ? `Last run failed (exit ${s.exit_code}); see data/bench/last_run.log` : "";
         if (benchTimer) { benchTimer = null; refreshModels(); }
       }
     } catch (err) {
-      benchStatus.textContent = `Benchmark status error: ${err.message}`;
+      // Keep polling with backoff instead of stopping after one failure (#41).
+      benchErrors += 1;
+      const delay = Math.min(30000, 3000 * 2 ** Math.min(benchErrors, 4));
+      benchStatus.textContent = `Benchmark status error: ${err.message} (retrying in ${Math.round(delay / 1000)}s)`;
+      benchTimer = setTimeout(pollBench, delay);
     }
   }
 
