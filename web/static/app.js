@@ -238,6 +238,8 @@ async function consumeAgentSse(res, { onToken, onMeta } = {}) {
 
 function renderHomeMessagesFromHistory(messages) {
   if (!chatLog) return;
+  // aria-busy stops screen readers announcing the whole restored history (#36).
+  chatLog.setAttribute("aria-busy", "true");
   chatLog.innerHTML = "";
   chatHistory = [];
   for (const m of messages) {
@@ -245,6 +247,7 @@ function renderHomeMessagesFromHistory(messages) {
       addMessage(m.role, m.content, { skipRemember: false });
     }
   }
+  chatLog.removeAttribute("aria-busy");
 }
 
 async function loadHomeConversation() {
@@ -1663,6 +1666,7 @@ async function sendChat(message, { forceCursor = false } = {}) {
 
   const pending = document.createElement("div");
   pending.className = "msg assistant";
+  pending.setAttribute("aria-busy", "true");
   const pendingBody = document.createElement("div");
   pendingBody.className = "msg-content markdown-body";
   pendingBody.textContent = "…";
@@ -1703,6 +1707,7 @@ async function sendChat(message, { forceCursor = false } = {}) {
     } else {
       pendingBody.textContent = reply;
     }
+    pending.removeAttribute("aria-busy");
     rememberChatTurn("assistant", reply);
     addModelTag({ action_details: data.action_details || {} });
     lastAssistantReply = reply;
@@ -1912,6 +1917,22 @@ micBtn.addEventListener("mouseleave", () => {
   if (pttActive) stopPttRecording();
 });
 
+// Keyboard push-to-talk: hold Space or Enter while the button is focused (#36).
+micBtn.addEventListener("keydown", (e) => {
+  if (e.key !== " " && e.key !== "Enter") return;
+  e.preventDefault();
+  if (e.repeat || pttActive) return;
+  startPttRecording();
+});
+micBtn.addEventListener("keyup", (e) => {
+  if (e.key !== " " && e.key !== "Enter") return;
+  e.preventDefault();
+  stopPttRecording();
+});
+micBtn.addEventListener("blur", () => {
+  if (pttActive) stopPttRecording();
+});
+
 micBtn.addEventListener("touchstart", (e) => {
   e.preventDefault();
   startPttRecording();
@@ -1989,7 +2010,41 @@ function initViewNav() {
   activateView(initial, { replaceUrl: true });
 }
 
+// Roving tabindex + arrow/Home/End keys for role="tablist" groups (#36).
+function initTablistKeys(tablist) {
+  if (!tablist) return;
+  const tabs = () => Array.from(tablist.querySelectorAll('[role="tab"]'));
+  const sync = () => {
+    tabs().forEach((t) => {
+      t.tabIndex = t.getAttribute("aria-selected") === "true" ? 0 : -1;
+    });
+  };
+  tablist.addEventListener("keydown", (e) => {
+    const list = tabs();
+    const i = list.indexOf(document.activeElement);
+    if (i < 0) return;
+    const vertical = tablist.getAttribute("aria-orientation") === "vertical";
+    const next = vertical ? "ArrowDown" : "ArrowRight";
+    const prev = vertical ? "ArrowUp" : "ArrowLeft";
+    let j = null;
+    if (e.key === next || e.key === "ArrowDown" || e.key === "ArrowRight") j = (i + 1) % list.length;
+    else if (e.key === prev || e.key === "ArrowUp" || e.key === "ArrowLeft") j = (i - 1 + list.length) % list.length;
+    else if (e.key === "Home") j = 0;
+    else if (e.key === "End") j = list.length - 1;
+    if (j === null) return;
+    e.preventDefault();
+    list[j].focus();
+    list[j].click();
+  });
+  tablist.addEventListener("click", () => setTimeout(sync, 0));
+  sync();
+  return sync;
+}
+window.initTablistKeys = initTablistKeys;
+
 initViewNav();
+const syncNavTabs = initTablistKeys(document.querySelector(".nav-rail"));
+window.addEventListener("popstate", () => syncNavTabs?.());
 loadHomeConversation();
 
 const commandForm = document.getElementById("command-form");

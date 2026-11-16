@@ -72,6 +72,7 @@ const TOUR_STEPS = [
 let tourIndex = 0;
 let tourActive = false;
 let tourElements = null;
+let tourReturnFocus = null;
 
 function createTourElements() {
   const overlay = document.createElement("div");
@@ -85,9 +86,11 @@ function createTourElements() {
 
   const card = document.createElement("div");
   card.className = "tour-card";
+  card.tabIndex = -1;
   card.setAttribute("role", "dialog");
   card.setAttribute("aria-modal", "true");
   card.setAttribute("aria-labelledby", "tour-title");
+  card.setAttribute("aria-describedby", "tour-body");
 
   card.innerHTML = `
     <div class="tour-card-header">
@@ -211,6 +214,28 @@ function endTour(markDone = true) {
   if (markDone) {
     localStorage.setItem(TOUR_STORAGE_KEY, "1");
   }
+  if (tourReturnFocus && document.contains(tourReturnFocus)) {
+    tourReturnFocus.focus();
+  }
+  tourReturnFocus = null;
+}
+
+// Keep Tab / Shift+Tab inside the tour dialog while it is open (#36).
+function trapTourFocus(event) {
+  if (event.key !== "Tab") return;
+  const focusable = Array.from(
+    tourElements.card.querySelectorAll("button:not([disabled])")
+  );
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && (document.activeElement === first || !tourElements.card.contains(document.activeElement))) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && (document.activeElement === last || !tourElements.card.contains(document.activeElement))) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 function startTour({ force = false } = {}) {
@@ -240,6 +265,7 @@ function startTour({ force = false } = {}) {
     window.addEventListener("keydown", (event) => {
       if (!tourActive) return;
       if (event.key === "Escape") endTour(true);
+      trapTourFocus(event);
       if (event.key === "ArrowRight" && !tourElements.nextBtn.disabled) {
         tourElements.nextBtn.click();
       }
@@ -255,11 +281,13 @@ function startTour({ force = false } = {}) {
 
   tourIndex = 0;
   tourActive = true;
+  tourReturnFocus = document.activeElement;
   document.body.classList.add("tour-active");
   tourElements.overlay.classList.remove("hidden");
   tourElements.card.classList.remove("hidden");
   tourElements.overlay.setAttribute("aria-hidden", "false");
   renderTourStep();
+  tourElements.nextBtn.focus();
 }
 
 function initTour() {

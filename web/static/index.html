@@ -4,31 +4,31 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Sahir</title>
-  <link rel="stylesheet" href="/static/style.css?v=20261116b">
-  <link rel="stylesheet" href="/static/agent.css?v=20261116b">
+  <link rel="stylesheet" href="/static/style.css?v=20261116ui">
+  <link rel="stylesheet" href="/static/agent.css?v=20261116ui">
 </head>
 <body>
   <div class="layout">
     <aside class="nav-sidebar" aria-label="Main navigation">
       <div class="nav-brand" aria-hidden="true">S</div>
-      <nav class="nav-rail" role="tablist" aria-label="App sections">
-        <button type="button" class="nav-item active" role="tab" aria-selected="true" data-view="home" id="nav-btn-home" title="Home">
+      <nav class="nav-rail" role="tablist" aria-label="App sections" aria-orientation="vertical">
+        <button type="button" class="nav-item active" role="tab" aria-selected="true" data-view="home" id="nav-btn-home" aria-controls="view-home" title="Home">
           <span class="nav-icon" aria-hidden="true">⌂</span>
           <span class="nav-label">Home</span>
         </button>
-        <button type="button" class="nav-item" role="tab" aria-selected="false" data-view="logs" id="nav-btn-logs" title="Logs">
+        <button type="button" class="nav-item" role="tab" aria-selected="false" data-view="logs" id="nav-btn-logs" aria-controls="view-logs" title="Logs">
           <span class="nav-icon" aria-hidden="true">≡</span>
           <span class="nav-label">Logs</span>
         </button>
-        <button type="button" class="nav-item" role="tab" aria-selected="false" data-view="config" id="nav-btn-config" title="Config">
+        <button type="button" class="nav-item" role="tab" aria-selected="false" data-view="config" id="nav-btn-config" aria-controls="view-config" title="Config">
           <span class="nav-icon" aria-hidden="true">⚙</span>
           <span class="nav-label">Config</span>
         </button>
-        <button type="button" class="nav-item" role="tab" aria-selected="false" data-view="models" id="nav-btn-models" title="Models">
+        <button type="button" class="nav-item" role="tab" aria-selected="false" data-view="models" id="nav-btn-models" aria-controls="view-models" title="Models">
           <span class="nav-icon" aria-hidden="true">◈</span>
           <span class="nav-label">Models</span>
         </button>
-        <button type="button" class="nav-item" role="tab" aria-selected="false" data-view="agent" id="nav-btn-agent" title="Agent manager: chats, memory, documents, live voice, tasks">
+        <button type="button" class="nav-item" role="tab" aria-selected="false" data-view="agent" id="nav-btn-agent" aria-controls="view-agent" title="Agent manager: chats, memory, documents, live voice, tasks">
           <span class="nav-icon" aria-hidden="true">✦</span>
           <span class="nav-label">Agent</span>
         </button>
@@ -64,7 +64,7 @@
           <button type="button" id="toggle-mic-btn" class="secondary btn-voice" title="Enable or disable microphone access">
             Enable microphone
           </button>
-          <button type="button" id="mic-btn" class="secondary btn-voice" title="Hold to record" disabled>
+          <button type="button" id="mic-btn" class="secondary btn-voice" title="Hold to record (mouse, touch, or hold Space/Enter while focused)" aria-keyshortcuts="Space Enter" disabled>
             Hold to listen
           </button>
         </section>
@@ -94,9 +94,10 @@
             </div>
             <ol id="activity-list" class="activity-list"></ol>
           </section>
-          <section id="chat-log" class="chat-log" aria-live="polite"></section>
+          <section id="chat-log" class="chat-log" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation"></section>
 
           <form id="chat-form" class="chat-form">
+            <label for="message-input" class="sr-only">Message</label>
             <textarea
               id="message-input"
               rows="3"
@@ -191,8 +192,8 @@
           <div class="config-body">
             <p class="config-note">Keyword shortcuts active while speaking or processing.</p>
             <form id="command-form" class="command-form">
-              <input type="text" id="command-keyword" placeholder="Keyword phrase" required maxlength="120">
-              <select id="command-action" required></select>
+              <input type="text" id="command-keyword" placeholder="Keyword phrase" aria-label="Keyword phrase" required maxlength="120">
+              <select id="command-action" aria-label="Action" required></select>
               <button type="submit" class="small">Add</button>
             </form>
             <div id="command-list" class="command-list" aria-live="polite"></div>
@@ -209,15 +210,15 @@
             <button type="button" id="conv-new-top" class="primary small">New chat</button>
             <span id="ag-status" class="ag-status">loading…</span>
           </header>
-          <nav class="ag-tabs" role="tablist">
-            <button class="ag-tab active" data-tab="chats" role="tab">Chats</button>
-            <button class="ag-tab" data-tab="memory" role="tab">Memory <span id="pending-badge" class="badge hidden"></span></button>
-            <button class="ag-tab" data-tab="docs" role="tab">Documents</button>
-            <button class="ag-tab" data-tab="voice" role="tab">Live voice</button>
-            <button class="ag-tab" data-tab="tasks" role="tab">Tasks</button>
+          <nav class="ag-tabs" role="tablist" aria-label="Agent sections">
+            <button type="button" class="ag-tab active" data-tab="chats" role="tab" id="ag-tab-chats" aria-controls="tab-chats" aria-selected="true">Chats</button>
+            <button type="button" class="ag-tab" data-tab="memory" role="tab" id="ag-tab-memory" aria-controls="tab-memory" aria-selected="false">Memory <span id="pending-badge" class="badge hidden"></span></button>
+            <button type="button" class="ag-tab" data-tab="docs" role="tab" id="ag-tab-docs" aria-controls="tab-docs" aria-selected="false">Documents</button>
+            <button type="button" class="ag-tab" data-tab="voice" role="tab" id="ag-tab-voice" aria-controls="tab-voice" aria-selected="false">Live voice</button>
+            <button type="button" class="ag-tab" data-tab="tasks" role="tab" id="ag-tab-tasks" aria-controls="tab-tasks" aria-selected="false">Tasks</button>
           </nav>
           <div class="ag-panels">
-            <section id="tab-chats" class="ag-panel active">
+            <section id="tab-chats" class="ag-panel active" role="tabpanel" aria-labelledby="ag-tab-chats">
               <aside class="ag-sidebar">
                 <div class="row">
                   <input id="conv-search" type="search" placeholder="Search chats…" aria-label="Search chats">
@@ -237,7 +238,7 @@
                   </div>
                 </div>
                 <div id="agent-activity" class="ag-activity hidden" aria-live="polite" aria-label="Agent activity"></div>
-                <div id="messages" class="ag-messages" aria-live="polite"></div>
+                <div id="messages" class="ag-messages" role="log" aria-live="polite" aria-relevant="additions" aria-label="Agent conversation"></div>
                 <form id="agent-chat-form" class="ag-composer">
                   <select id="chat-mode" aria-label="Mode" title="agent = orchestrator with workers; route = legacy tool router; chat = plain LLM">
                     <option value="stream">chat (streaming)</option>
@@ -250,14 +251,14 @@
                 </form>
               </div>
             </section>
-            <section id="tab-memory" class="ag-panel">
+            <section id="tab-memory" class="ag-panel" role="tabpanel" aria-labelledby="ag-tab-memory">
               <div class="ag-col">
                 <form id="mem-form" class="row">
-                  <select id="mem-category">
+                  <select id="mem-category" aria-label="Memory category">
                     <option>fact</option><option>preference</option><option>person</option>
                     <option>project</option><option>task</option><option>other</option>
                   </select>
-                  <input id="mem-content" placeholder="Add a long-term fact, e.g. “User prefers metric units”" required>
+                  <input id="mem-content" aria-label="Memory content" placeholder="Add a long-term fact, e.g. “User prefers metric units”" required>
                   <button type="submit">Add</button>
                 </form>
                 <div class="row">
@@ -265,14 +266,14 @@
                     <option value="">all</option><option value="pending">pending review</option>
                     <option value="active" selected>active</option><option value="rejected">rejected</option>
                   </select></label>
-                  <input id="mem-search" type="search" placeholder="Filter…">
+                  <input id="mem-search" type="search" placeholder="Filter…" aria-label="Filter memories">
                   <button type="button" id="mem-test-btn" title="Semantic search over active memories">Test recall</button>
                 </div>
                 <p class="hint">Auto-extracted memories land in <b>pending review</b> — approve, edit or reject them.</p>
                 <ul id="mem-list" class="ag-cards"></ul>
               </div>
             </section>
-            <section id="tab-docs" class="ag-panel">
+            <section id="tab-docs" class="ag-panel" role="tabpanel" aria-labelledby="ag-tab-docs">
               <div class="ag-col">
                 <form id="doc-form" class="drop" tabindex="0">
                   <p>Drop .txt / .md / .pdf files here or</p>
@@ -281,7 +282,7 @@
                   <p id="doc-upload-status" class="hint"></p>
                 </form>
                 <div class="row">
-                  <input id="rag-query" placeholder="Test retrieval: ask something about your documents">
+                  <input id="rag-query" aria-label="Test retrieval query" placeholder="Test retrieval: ask something about your documents">
                   <button type="button" id="rag-search-btn">Search</button>
                 </div>
                 <ol id="rag-results" class="ag-cards"></ol>
@@ -289,7 +290,7 @@
                 <ul id="doc-list" class="ag-cards"></ul>
               </div>
             </section>
-            <section id="tab-voice" class="ag-panel">
+            <section id="tab-voice" class="ag-panel" role="tabpanel" aria-labelledby="ag-tab-voice">
               <div class="ag-col">
                 <p class="hint">Streaming mic → server-side Silero VAD → Whisper → orchestrator → sentence-by-sentence TTS.
                   Start talking while it answers to <b>barge in</b>. Needs HTTPS (or localhost) for the microphone.</p>
@@ -303,7 +304,7 @@
                 <div id="voice-log" class="ag-messages small"></div>
               </div>
             </section>
-            <section id="tab-tasks" class="ag-panel">
+            <section id="tab-tasks" class="ag-panel" role="tabpanel" aria-labelledby="ag-tab-tasks">
               <div class="ag-col">
                 <div class="row"><button type="button" id="tasks-refresh">Refresh</button><span id="tasks-info" class="hint"></span></div>
                 <table class="ag-table">
@@ -322,9 +323,9 @@
   <script src="/static/vendor/marked.min.js"></script>
   <script src="/static/vendor/purify.min.js"></script>
   <script src="/static/markdown.js"></script>
-  <script src="/static/app.js?v=20261116c"></script>
-  <script src="/static/agent.js?v=20261116c"></script>
-  <script src="/static/models.js?v=20261116b"></script>
-  <script src="/static/tour.js"></script>
+  <script src="/static/app.js?v=20261116ui"></script>
+  <script src="/static/agent.js?v=20261116ui"></script>
+  <script src="/static/models.js?v=20261116ui"></script>
+  <script src="/static/tour.js?v=20261116ui"></script>
 </body>
 </html>

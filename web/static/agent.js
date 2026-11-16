@@ -96,13 +96,17 @@
 
   // ---------------------------------------------------------------- tabs
   document.querySelectorAll(".ag-tab").forEach((b) => b.addEventListener("click", () => {
-    document.querySelectorAll(".ag-tab").forEach((x) => x.classList.toggle("active", x === b));
+    document.querySelectorAll(".ag-tab").forEach((x) => {
+      x.classList.toggle("active", x === b);
+      x.setAttribute("aria-selected", x === b ? "true" : "false");
+    });
     document.querySelectorAll(".ag-panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + b.dataset.tab));
     localStorage.setItem("agentTab", b.dataset.tab);
     if (b.dataset.tab === "memory") loadMemories();
     if (b.dataset.tab === "docs") loadDocs();
     if (b.dataset.tab === "tasks") loadTasks();
   }));
+  window.initTablistKeys?.(document.querySelector(".ag-tabs"));
 
   async function loadStatus() {
     try {
@@ -146,7 +150,10 @@
     $("#conv-actions").hidden = false;
     $("#conv-export-md").href = `/api/conversations/${id}/export?format=md`;
     $("#conv-export-json").href = `/api/conversations/${id}/export?format=json`;
+    // aria-busy: don't announce the whole history when a chat is opened (#36).
+    $("#messages").setAttribute("aria-busy", "true");
     $("#messages").innerHTML = c.messages.map(renderMessage).join("");
+    $("#messages").removeAttribute("aria-busy");
     $("#messages").scrollTop = 1e9;
     localStorage.setItem("agentConv", id);
     localStorage.setItem("voice-assistant-conversation-id", id);
