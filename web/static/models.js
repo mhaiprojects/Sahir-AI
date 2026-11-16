@@ -13,6 +13,7 @@
   let benchTimer = null;
 
   function fmtBytes(n) {
+    if (n == null || Number.isNaN(Number(n))) return "n/a";
     if (!n) return "0 B";
     const gb = n / 1e9;
     return gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(n / 1e6)} MB`;
@@ -118,8 +119,14 @@
     listEl.querySelectorAll("button, input").forEach((el) => { el.disabled = true; });
     try {
       const r = await api(`/api/models/${kind}`, { model });
-      if (kind === "load") setStatus(`Loaded ${model} in ${r.seconds}s`);
       await refreshModels();
+      // Show the load result after the refresh so render() doesn't overwrite it (#40).
+      if (kind === "load") {
+        const already = !r.load_duration_ms && Number(r.seconds) < 0.5;
+        const took = r.load_duration_ms ? `${(r.load_duration_ms / 1000).toFixed(1)}s` : `${r.seconds}s`;
+        const msg = already ? `${model} was already in memory (${r.seconds}s)` : `Loaded ${model} in ${took}`;
+        setStatus(`${msg} · ${statusEl.textContent}`);
+      }
     } catch (err) {
       setStatus(`${verb} ${model} failed: ${err.message}`, true);
       await refreshModels();
