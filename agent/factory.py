@@ -30,7 +30,7 @@ def build_agent_stack(settings: Settings, config: AgentConfig | None = None, *,
     config = config or AgentConfig.from_env()
     store = AgentStore(config.db_path)
     embedder = OllamaEmbedder(settings.ollama_host, config.embed_model)
-    llm = OllamaChat(settings.ollama_host, settings.ollama_model)
+    llm = OllamaChat(settings.ollama_host, settings.ollama_model, model_getter=lambda: settings.ollama_model)
     agent = Agent(settings, config, store, embedder, llm)
     dispatcher = Dispatcher(store)
     clickup = clickup or ClickUpClient()

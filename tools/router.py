@@ -71,6 +71,43 @@ def _client(settings: Settings) -> ollama.Client:
     return ollama.Client(host=settings.ollama_host)
 
 
+def _pick_model(text: str, settings: Settings) -> tuple[str, dict[str, Any]]:
+    """Selected chat model for this turn (+ metadata), honouring forced/user-requested fallback."""
+    from agent.models import get_manager
+
+    mgr = get_manager()
+    if mgr is None:
+        return settings.ollama_model, {"model": settings.ollama_model}
+    model, reason = mgr.initial_model(text)
+    meta: dict[str, Any] = {"model": model}
+    if reason:
+        meta["escalated"] = reason
+    return model, meta
+
+
+def _chat(client: Any, model: str, messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+    from agent.models import think_kwargs
+
+    return client.chat(model=model, messages=messages, **think_kwargs(model), **kwargs)
+
+
+def _maybe_escalate(client: Any, model: str, messages: list[dict[str, Any]], response: Any,
+                    meta: dict[str, Any], *, tools: list[dict[str, Any]], **kwargs: Any) -> tuple[str, Any]:
+    """Retry with the fallback model when a small model returns invalid tool/action JSON."""
+    from agent.models import get_manager, tool_calls_invalid
+
+    mgr = get_manager()
+    if mgr is None or not mgr.can_escalate(model):
+        return model, response
+    msg = response.get("message", {}) if isinstance(response, dict) else response.message.model_dump()
+    bad = tool_calls_invalid(msg, tools)
+    if not bad:
+        return model, response
+    logger.info("Router escalating %s -> %s (%s)", model, mgr.fallback_model, bad)
+    meta.update({"escalated": f"invalid_output:{bad}", "small_model": model, "model": mgr.fallback_model})
+    return mgr.fallback_model, _chat(client, mgr.fallback_model, messages, tools=tools, **kwargs)
+
+
 def _normalize_history(history: list[ChatTurn] | None) -> list[ChatTurn]:
     if not history:
         return []
@@ -366,17 +403,18 @@ def route_utterance_detailed(
         )
 
     client = _client(settings)
+    model, meta = _pick_model(text, settings)
+    messages = _build_messages(
+        system=_with_context(ROUTER_SYSTEM, context),
+        user_text=text,
+        history=history,
+    )
     try:
-        response = client.chat(
-            model=settings.ollama_model,
-            messages=_build_messages(
-                system=_with_context(ROUTER_SYSTEM, context),
-                user_text=text,
-                history=history,
-            ),
-            tools=_tools_schema(),
-            options={"num_predict": 256, "temperature": 0.2},
-        )
+        response = _chat(client, model, messages, tools=_tools_schema(),
+                         options={"num_predict": 256, "temperature": 0.2})
+        model, response = _maybe_escalate(client, model, messages, response, meta,
+                                          tools=_tools_schema(),
+                                          options={"num_predict": 256, "temperature": 0.2})
     except Exception as exc:
         logger.exception("Ollama routing failed")
         return RouteResult(
@@ -408,13 +446,15 @@ def route_utterance_detailed(
             routed=True,
         )
 
-    return _maybe_delegate_to_cursor(
+    result = _maybe_delegate_to_cursor(
         text,
         result,
         settings,
         history=history,
         on_long_task=on_long_task,
     )
+    result.action_details = {**result.action_details, **meta}
+    return result
 
 
 def _execute_tool_call(
@@ -521,10 +561,12 @@ def chat_text_only_detailed(
 ) -> RouteResult:
     """Simple local chat with action metadata."""
     client = _client(settings)
+    model, meta = _pick_model(text, settings)
     try:
-        response = client.chat(
-            model=settings.ollama_model,
-            messages=_build_messages(
+        response = _chat(
+            client,
+            model,
+            _build_messages(
                 system=_with_context(DIRECT_CHAT_SYSTEM, context),
                 user_text=text,
                 history=history,
@@ -542,7 +584,7 @@ def chat_text_only_detailed(
     result = RouteResult(
         reply=reply,
         action="direct_chat",
-        action_details={"model": settings.ollama_model},
+        action_details={"model": model, **meta},
         routed=False,
     )
     return _maybe_delegate_to_cursor(text, result, settings, history=history)

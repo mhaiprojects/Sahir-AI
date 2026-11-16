@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Iterator, Protocol
+from typing import Any, Callable, Iterator, Protocol
 
 import ollama
+
+from agent.models import think_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -55,16 +57,30 @@ class OllamaEmbedder:
 
 
 class OllamaChat:
-    def __init__(self, host: str, model: str) -> None:
-        self.model = model
+    """Chat client. ``model_getter`` lets the runtime model selector switch models live."""
+
+    def __init__(self, host: str, model: str, model_getter: Callable[[], str] | None = None) -> None:
+        self._model = model
+        self._model_getter = model_getter
         self._client = ollama.Client(host=host)
 
+    @property
+    def model(self) -> str:
+        return self._model_getter() if self._model_getter else self._model
+
+    @model.setter
+    def model(self, value: str) -> None:
+        self._model = value
+        self._model_getter = None
+
     def chat(self, messages: list[dict[str, str]], **kwargs: Any) -> dict[str, Any]:
-        resp = self._client.chat(model=self.model, messages=messages, **kwargs)
+        model = self.model
+        resp = self._client.chat(model=model, messages=messages, **think_kwargs(model), **kwargs)
         return {"content": (resp.get("message", {}) or {}).get("content", "") or ""}
 
     def chat_stream(self, messages: list[dict[str, str]], **kwargs: Any) -> Iterator[str]:
-        for part in self._client.chat(model=self.model, messages=messages, stream=True, **kwargs):
+        model = self.model
+        for part in self._client.chat(model=model, messages=messages, stream=True, **think_kwargs(model), **kwargs):
             token = (part.get("message", {}) or {}).get("content", "")
             if token:
                 yield token

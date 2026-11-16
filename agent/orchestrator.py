@@ -15,6 +15,7 @@ from typing import Any
 import ollama
 
 from agent.delegation import Dispatcher, Task, TaskResult
+from agent.models import get_manager, think_kwargs, tool_calls_invalid
 from config import Settings
 from tools import router
 
@@ -55,6 +56,14 @@ class Orchestrator:
         self.dispatcher = dispatcher
         self.max_rounds = max_rounds
         self._client = client or ollama.Client(host=settings.ollama_host)
+        self._model: str | None = None  # model for the current run (set per turn)
+
+    @property
+    def model(self) -> str:
+        return self._model or self.settings.ollama_model
+
+    def _chat(self, messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        return self._client.chat(model=self.model, messages=messages, **think_kwargs(self.model), **kwargs)
 
     def _tools(self) -> list[dict[str, Any]]:
         types = list(self.dispatcher.workers)
@@ -113,6 +122,22 @@ class Orchestrator:
 
     def run(self, text: str, *, history: list[dict[str, str]], context_block: str = "",
             base_context: dict[str, Any] | None = None) -> OrchestrationResult:
+        mgr = get_manager()
+        model, reason = mgr.initial_model(text) if mgr else (self.settings.ollama_model, None)
+        self._model = model
+        meta: dict[str, Any] = {"model": model, "requested_model": self.settings.ollama_model}
+        if reason:
+            meta["escalated"] = reason
+        try:
+            res = self._run(text, history=history, context_block=context_block, base_context=base_context,
+                            meta=meta, mgr=mgr)
+        finally:
+            self._model = None
+        res.action_details = {**res.action_details, **meta}
+        return res
+
+    def _run(self, text: str, *, history: list[dict[str, str]], context_block: str,
+             base_context: dict[str, Any] | None, meta: dict[str, Any], mgr: Any) -> OrchestrationResult:
         base_ctx = {"history": history[-12:], **(base_context or {})}
         messages: list[dict[str, Any]] = [{"role": "system", "content": self._system(context_block)},
                                           *history, {"role": "user", "content": text}]
@@ -122,8 +147,16 @@ class Orchestrator:
 
         for round_no in range(self.max_rounds):
             try:
-                resp = self._client.chat(model=self.settings.ollama_model, messages=messages, tools=self._tools(),
-                                         options={"temperature": 0.2, "num_predict": 300})
+                tools = self._tools()
+                resp = self._chat(messages, tools=tools, options={"temperature": 0.2, "num_predict": 300})
+                msg0 = resp.get("message", {}) if isinstance(resp, dict) else resp.message.model_dump()
+                bad = tool_calls_invalid(msg0, tools)
+                if bad and mgr is not None and mgr.can_escalate(self.model):
+                    logger.info("Escalating %s -> %s (%s)", self.model, mgr.fallback_model, bad)
+                    meta.update({"escalated": f"invalid_output:{bad}", "small_model": self.model,
+                                 "model": mgr.fallback_model})
+                    self._model = mgr.fallback_model
+                    resp = self._chat(messages, tools=tools, options={"temperature": 0.2, "num_predict": 300})
             except Exception as exc:
                 logger.exception("Orchestrator LLM call failed")
                 return OrchestrationResult(reply=f"I could not reach the local model: {exc}", action="error",
@@ -212,7 +245,7 @@ class Orchestrator:
     def _compose(self, summaries: list[dict[str, Any]], request: str = "") -> str:
         try:
             payload = f"User request: {request}\n\nWorker results:\n" + json.dumps(summaries, ensure_ascii=False)[:8000]
-            resp = self._client.chat(model=self.settings.ollama_model, messages=[
+            resp = self._chat([
                 {"role": "system", "content": FINAL_SYSTEM},
                 {"role": "user", "content": payload}],
                 options={"temperature": 0.3, "num_predict": 160})

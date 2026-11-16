@@ -34,6 +34,8 @@ from tools.router import (
 from agent.factory import AgentStack, build_agent_stack
 from agent.vad import speech_seconds
 from web.agent_api import create_agent_router
+from web.models_api import create_models_router
+from agent.models import ModelManager, get_manager, set_manager
 from web.voice_ws import register_voice_ws
 from web.commands import VALID_ACTIONS, VoiceCommandStore
 from web.db import RequestLogStore
@@ -123,6 +125,14 @@ def _get_settings() -> Settings:
     if _settings is None:
         _settings = Settings.from_env()
     return _settings
+
+
+def _get_model_manager() -> ModelManager:
+    mgr = get_manager()
+    if mgr is None:
+        mgr = ModelManager(_get_settings())  # applies the persisted active model to Settings
+        set_manager(mgr)
+    return mgr
 
 
 def _get_pipeline() -> SpeechPipeline:
@@ -298,6 +308,7 @@ def check_health(settings: Settings | None = None) -> dict[str, Any]:
     health: dict[str, Any] = {
         "ollama_host": settings.ollama_host,
         "ollama_model": settings.ollama_model,
+        "fallback_model": get_manager().fallback_model if get_manager() else None,
         "cursor_workspace": str(settings.cursor_workspace),
         "web_db": str(settings.web_db_path),
         "https_enabled": bool(settings.web_ssl_cert and settings.web_ssl_key),
@@ -885,6 +896,7 @@ def create_app() -> FastAPI:
     app.include_router(
         create_agent_router(lambda: _get_agent_stack().agent, _request_lock)
     )
+    app.include_router(create_models_router(_get_model_manager, _request_lock))
     register_voice_ws(
         app,
         get_settings=_get_settings,
@@ -927,6 +939,7 @@ def run_web_server(settings: Settings | None = None) -> None:
     logger.info("Logging to %s", log_path)
     _get_log_store()
     _get_command_store()
+    _get_model_manager()
     app = create_app()
 
     ssl_kwargs: dict[str, Any] = {}
