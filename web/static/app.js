@@ -1689,14 +1689,22 @@ async function maybePlayTts(text) {
     });
     if (audioRes.ok) {
       const blob = await audioRes.blob();
-      const audio = new Audio(URL.createObjectURL(blob));
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
       currentTtsAudio = audio;
-      await audio.play();
-      await new Promise((resolve) => {
-        audio.onended = resolve;
-        audio.onerror = resolve;
-      });
-      if (currentTtsAudio === audio) currentTtsAudio = null;
+      try {
+        await audio.play();
+        await new Promise((resolve) => {
+          audio.onended = resolve;
+          audio.onerror = resolve;
+          audio.onpause = resolve; // stopCurrentTts() pauses; don't wait forever
+        });
+      } finally {
+        // Free the WAV blob once playback ends, fails or is stopped (#47).
+        audio.onended = audio.onerror = audio.onpause = null;
+        URL.revokeObjectURL(url);
+        if (currentTtsAudio === audio) currentTtsAudio = null;
+      }
     }
   } catch (err) {
     if (err.name !== "AbortError") {
