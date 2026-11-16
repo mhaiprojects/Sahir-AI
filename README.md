@@ -48,7 +48,15 @@ venv/bin/python scripts/e2e_agent.py --base https://127.0.0.1:${WEB_PORT:-8765} 
 WEB_PORT=${WEB_PORT:-8765} venv/bin/python scripts/test_web.py   # existing web integration tests
 ```
 
-Docs: [docs/architecture.md](docs/architecture.md) · [docs/upgrade-research.md](docs/upgrade-research.md)
+### Model selector
+
+The ◈ **Models** view switches the chat model at runtime (Select / Load / Eject), shows each
+model's size and GPU/RAM split, and keeps a big fallback model (`FALLBACK_MODEL`, default
+`llama3.1:8b`) for invalid actions or when you say "think harder". Benchmark all installed models
+with the **Run benchmark** button or `venv/bin/python scripts/bench_models.py`. See
+[docs/models.md](docs/models.md).
+
+Docs: [docs/architecture.md](docs/architecture.md) · [docs/upgrade-research.md](docs/upgrade-research.md) · [docs/models.md](docs/models.md)
 
 ## Quick start
 

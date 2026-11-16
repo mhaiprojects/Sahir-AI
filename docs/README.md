@@ -10,6 +10,7 @@ Internal docs extracted from development sessions for programmers and AI agents.
 | [deployment.md](./deployment.md) | Native install, Docker, GitHub, new PC setup |
 | [troubleshooting.md](./troubleshooting.md) | WebM decode, errors, browser cache, HTTPS |
 | [ui-layout.md](./ui-layout.md) | Web UI structure and UX goals |
+| [models.md](./models.md) | Chat model selector, fallback policy, benchmark |
 | [for-ai-agents.md](./for-ai-agents.md) | Quick context for future AI sessions |
 
 **Public docs:** [README.md](../README.md) (user-facing), [DOCKER.md](../DOCKER.md) (container deploy).

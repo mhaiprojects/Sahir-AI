@@ -16,6 +16,7 @@ Top-to-bottom on **Home** view:
 |------|---------|
 | **Home** | Layout above + chat transcript |
 | **Logs** | Request / activity log |
+| **Models** | Chat model selector (Select / Load / Eject), fallback toggles, benchmark |
 | **Config** | Settings, voice commands CRUD, tunables |
 
 Secondary status panels and detailed logs should be collapsible or on Logs/Config views, not competing with live transcription on Home.
@@ -45,4 +46,4 @@ Cache-bust JS in `index.html`: `app.js?v=...` — bump when changing frontend lo
 - [x] Auto-refresh UI after server deploy / error recovery — `refreshHealth()` compares `/api/health` `build_id`, reloads via `reloadForNewBuild()` (deferred while busy/recording/speaking), retries every 5 s when the server is down and announces recovery; `index.html` is served `Cache-Control: no-cache`
 - [x] Cursor task completion always surfaces a message in chat — `reportCursorCompletion()` after Send to Cursor, the Cursor toggle, and routed `run_cursor_agent` replies
 
-Current cache-bust: `app.js?v=20261114a`.
+Current cache-bust: `app.js?v=20261116a`, `models.js?v=20261116a`, `style.css?v=20261116a`.

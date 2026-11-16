@@ -3,7 +3,9 @@
 ## Web UI
 
 - **HTTPS web control panel** on `WEB_HOST`:`WEB_PORT` (default `0.0.0.0:8765`)
-- **Left nav rail:** Home, Logs, Config (`web/static/index.html`, `app.js`)
+- **Left nav rail:** Home, Logs, Models, Config (`web/static/index.html`, `app.js`, `models.js`)
+- **Models view** — pick the active Ollama chat model, Load/Eject it, see size and GPU/RAM split, fallback toggles, run the model benchmark ([models.md](models.md))
+- **Model fallback** — escalates to `FALLBACK_MODEL` on invalid tool/action JSON or when you say "think harder" / "use the big model"; each reply is tagged with the model that answered
 - **Live transcription panel** — always visible at top of Home view; shows idle/recording/processing states
 - **Hold-to-talk** and **always-listening** with VAD and adaptive noise floor
 - **Text chat** with markdown rendering (marked + DOMPurify in `web/static/vendor/`)
@@ -43,6 +45,9 @@
 | POST | `/api/speak` | TTS WAV response |
 | GET/POST | `/api/commands` | Voice command CRUD |
 | GET | `/api/logs` | Request history |
+| GET | `/api/models` | Chat models: installed, loaded (VRAM/RAM), active, fallback |
+| POST | `/api/models/select` · `/load` · `/eject` · `/options` | Switch, preload, unload models; fallback policy |
+| GET/POST | `/api/models/benchmark` | Run / read the model benchmark (`scripts/bench_models.py`) |
 
 ## Cursor CLI integration
 
