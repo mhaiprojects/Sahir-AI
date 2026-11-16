@@ -384,7 +384,7 @@
   $("#tasks-refresh").addEventListener("click", loadTasks);
 
   // ---------------------------------------------------------- live voice
-  const voice = { ws: null, ctx: null, stream: null, node: null, playing: [], playCtx: null, nextAudioMeta: null, playHead: 0 };
+  const voice = { ws: null, ctx: null, stream: null, node: null, mute: null, playing: [], playCtx: null, nextAudioMeta: null, playHead: 0 };
   const vlog = (html, cls = "") => { const el = $("#voice-log"); el.insertAdjacentHTML("beforeend", `<div class="msg ${cls}">${html}</div>`); el.scrollTop = 1e9; };
   const setVState = (s) => { $("#voice-state").textContent = s; $("#voice-state").dataset.state = s; };
 
@@ -433,26 +433,38 @@
     voice.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
     voice.ctx = new AudioContext({ sampleRate: 16000 });
     const srcNode = voice.ctx.createMediaStreamSource(voice.stream);
-    // ScriptProcessor keeps this dependency-free; 1024 samples ≈ 64 ms @16 kHz.
-    voice.node = voice.ctx.createScriptProcessor(1024, 1, 1);
-    voice.node.onaudioprocess = (e) => {
-      const f32 = e.inputBuffer.getChannelData(0);
+    const handleChunk = (f32) => {
       let peak = 0; const i16 = new Int16Array(f32.length);
       for (let i = 0; i < f32.length; i++) { const s = Math.max(-1, Math.min(1, f32[i])); i16[i] = s * 32767; peak = Math.max(peak, Math.abs(s)); }
       $("#voice-meter").style.width = Math.min(100, peak * 140) + "%";
       if (voice.ws && voice.ws.readyState === 1) voice.ws.send(i16.buffer);
     };
-    srcNode.connect(voice.node); voice.node.connect(voice.ctx.destination);
+    // 1024-sample chunks ≈ 64 ms @16 kHz. AudioWorklet replaces the deprecated
+    // ScriptProcessorNode, which is only a fallback for old browsers (#44).
+    if (voice.ctx.audioWorklet && window.AudioWorkletNode) {
+      await voice.ctx.audioWorklet.addModule("/static/pcm-capture-worklet.js?v=20261116ui");
+      voice.node = new AudioWorkletNode(voice.ctx, "pcm-capture", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+      voice.node.port.onmessage = (e) => handleChunk(e.data);
+    } else {
+      voice.node = voice.ctx.createScriptProcessor(1024, 1, 1);
+      voice.node.onaudioprocess = (e) => handleChunk(e.inputBuffer.getChannelData(0));
+    }
+    // The graph must reach the destination to keep running, but through a
+    // zero-gain node so the mic is never played back through the speakers (#44).
+    voice.mute = voice.ctx.createGain();
+    voice.mute.gain.value = 0;
+    srcNode.connect(voice.node); voice.node.connect(voice.mute); voice.mute.connect(voice.ctx.destination);
     $("#voice-toggle").textContent = "Stop live voice"; $("#voice-interrupt").disabled = false;
   }
 
   function stopVoice(fromClose = false) {
     stopPlayback();
-    try { voice.node && voice.node.disconnect(); } catch {}
+    try { if (voice.node?.port) voice.node.port.onmessage = null; voice.node && voice.node.disconnect(); } catch {}
+    try { voice.mute && voice.mute.disconnect(); } catch {}
     voice.stream && voice.stream.getTracks().forEach((t) => t.stop());
     voice.ctx && voice.ctx.close().catch(() => {});
     if (!fromClose && voice.ws) voice.ws.close();
-    Object.assign(voice, { ws: null, ctx: null, stream: null, node: null });
+    Object.assign(voice, { ws: null, ctx: null, stream: null, node: null, mute: null });
     $("#voice-toggle").textContent = "Start live voice"; $("#voice-interrupt").disabled = true;
     if (!fromClose) setVState("idle");
     loadConversations();
