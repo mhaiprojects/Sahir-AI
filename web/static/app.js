@@ -139,6 +139,20 @@ function addMessage(role, text) {
   chatLog.scrollTop = chatLog.scrollHeight;
 }
 
+function addModelTag(data) {
+  // Show which model answered (and whether the big fallback model was used).
+  const details = data?.action_details || {};
+  if (!details.model) return;
+  const last = chatLog.lastElementChild;
+  if (!last || !last.classList.contains("assistant")) return;
+  const tag = document.createElement("div");
+  tag.className = "msg-model";
+  tag.textContent = details.escalated
+    ? `${details.model} (fallback: ${String(details.escalated).replace("invalid_output:", "invalid output ")})`
+    : details.model;
+  last.appendChild(tag);
+}
+
 function setBusy(nextBusy) {
   busy = nextBusy;
   sendBtn.disabled = busy;
@@ -1391,6 +1405,7 @@ async function sendAudioBlob(blob, mode = "ptt", livePreview = "") {
 
     if (finalText) addMessage("user", finalText);
     addMessage("assistant", data.reply || "(no reply text)");
+    addModelTag(data);
     lastAssistantReply = data.reply || "";
     reportCursorCompletion(data, voiceStartedAt);
 
@@ -1532,6 +1547,7 @@ async function sendChat(message, { forceCursor = false } = {}) {
 
     const data = await res.json();
     addMessage("assistant", data.reply || "(no reply text)");
+    addModelTag(data);
     lastAssistantReply = data.reply || "";
     reportCursorCompletion(data, startedAt, { always: useCursor });
 
@@ -1586,6 +1602,7 @@ async function sendToCursor(message) {
 
     const data = await res.json();
     addMessage("assistant", data.reply || "(no reply text)");
+    addModelTag(data);
     lastAssistantReply = data.reply || "";
     reportCursorCompletion(data, startedAt, { always: true });
 
@@ -1744,6 +1761,9 @@ function initViewNav() {
     });
     if (viewName === "logs") {
       refreshLogs();
+    }
+    if (viewName === "models" && typeof refreshModels === "function") {
+      refreshModels();
     }
   }
 

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Voice Assistant</title>
-  <link rel="stylesheet" href="/static/style.css?v=20250825c">
+  <link rel="stylesheet" href="/static/style.css?v=20261116a">
 </head>
 <body>
   <div class="layout">
@@ -22,6 +22,10 @@
         <button type="button" class="nav-item" role="tab" aria-selected="false" data-view="config" id="nav-btn-config" title="Config">
           <span class="nav-icon" aria-hidden="true">⚙</span>
           <span class="nav-label">Config</span>
+        </button>
+        <button type="button" class="nav-item" role="tab" aria-selected="false" data-view="models" id="nav-btn-models" title="Models">
+          <span class="nav-icon" aria-hidden="true">◈</span>
+          <span class="nav-label">Models</span>
         </button>
         <a class="nav-item" href="/agent" id="nav-link-agent" title="Agent manager: chats, memory, documents, live voice, tasks" style="text-decoration:none">
           <span class="nav-icon" aria-hidden="true">✦</span>
@@ -125,6 +129,39 @@
         </div>
       </div>
 
+      <!-- Models -->
+      <div id="view-models" class="view view-models" role="tabpanel" aria-labelledby="nav-btn-models" hidden>
+        <header class="view-header">
+          <h1>Models</h1>
+          <button type="button" id="refresh-models-btn" class="secondary small">Refresh</button>
+        </header>
+        <p class="config-note">Select the chat model the assistant uses. Load keeps a model in memory
+          (GPU first, overflow in RAM); Eject frees it. The fallback model answers when a small model
+          returns an invalid action, or when you say "think harder" / "use the big model".</p>
+        <div id="models-status" class="models-status" aria-live="polite">Loading models…</div>
+        <div id="models-list" class="models-list" role="radiogroup" aria-label="Chat models"></div>
+        <section class="config-section models-options">
+          <div class="config-body">
+            <label class="checkbox"><input type="checkbox" id="auto-fallback-toggle"> Auto-fallback to the big model on invalid actions</label>
+            <label class="checkbox"><input type="checkbox" id="force-fallback-toggle"> Always use the big model</label>
+          </div>
+        </section>
+        <details class="config-section" id="bench-section" open>
+          <summary>Benchmark</summary>
+          <div class="config-body">
+            <p class="config-note">Measures load time, first-token time, tokens/s, decision latency and
+              action-selection accuracy for every installed chat model. Takes several minutes; the
+              assistant is slower while it runs.</p>
+            <div class="bench-actions">
+              <button type="button" id="bench-run-btn" class="btn-voice">Run benchmark</button>
+              <button type="button" id="bench-quick-btn" class="secondary btn-voice">Quick run</button>
+            </div>
+            <div id="bench-status" class="models-status"></div>
+            <div id="bench-results" class="bench-results"></div>
+          </div>
+        </details>
+      </div>
+
       <!-- Config -->
       <div id="view-config" class="view view-config" role="tabpanel" aria-labelledby="nav-btn-config" hidden>
         <header class="view-header">
@@ -160,7 +197,8 @@
   <script src="/static/vendor/marked.min.js"></script>
   <script src="/static/vendor/purify.min.js"></script>
   <script src="/static/markdown.js"></script>
-  <script src="/static/app.js?v=20261114a"></script>
+  <script src="/static/app.js?v=20261116a"></script>
+  <script src="/static/models.js?v=20261116a"></script>
   <script src="/static/tour.js"></script>
 </body>
 </html>
