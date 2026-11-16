@@ -999,7 +999,8 @@ button.secondary.listening {
     width: 100%;
   }
 
-  .app-footer {
+  /* Keep the no-authentication warning visible on phones (#46). */
+  .app-footer p:not(.warn) {
     display: none;
   }
 
