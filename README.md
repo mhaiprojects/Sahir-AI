@@ -198,13 +198,13 @@ Use the repository root as `--workspace` (or your configured `CURSOR_WORKSPACE`)
 ## Systemd user service
 
 ```bash
-bash scripts/install_systemd.sh            # render units with this checkout's path
-systemctl --user start voice-assistant-web.service   # web UI only
-systemctl --user enable --now voice-assistant.service  # desktop PTT/wake word
-# or: bash scripts/install_systemd.sh --enable  (enables the web unit)
+bash scripts/install_systemd.sh            # render units into ~/.config/systemd/user
+bash scripts/install_systemd.sh --enable   # after: bash scripts/voice-assistant.sh stop
+bash scripts/install_systemd.sh --status
+systemctl --user enable --now voice-assistant.service  # optional desktop PTT/wake
 ```
 
-The unit files in `systemd/` use an `@ROOT@` placeholder, so the checkout can live anywhere.
+The unit files in `systemd/` use an `@ROOT@` placeholder, so the checkout can live anywhere. With the web unit **enabled**, `voice-assistant.sh` delegates to systemd. See [docs/operations.md](docs/operations.md).
 
 Run in your graphical user session so push-to-talk hotkeys work.
 

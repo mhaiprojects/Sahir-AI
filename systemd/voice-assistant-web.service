@@ -1,14 +1,18 @@
 [Unit]
 Description=Sahir voice assistant web UI (LAN)
-After=network.target ollama.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-# The ROOT placeholder in paths below is filled in by scripts/install_systemd.sh
+# The @ROOT@ placeholder is filled in by scripts/install_systemd.sh
 WorkingDirectory=@ROOT@
 EnvironmentFile=-@ROOT@/.env
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=PYTHONUNBUFFERED=1
+# Default web token path when not set in .env (expanduser in app)
+Environment=WEB_AUTH_TOKEN_FILE=%h/.config/jahash-secrets/sahir-web-token.txt
+ExecStartPre=-@ROOT@/scripts/wait_ollama.sh
 ExecStart=@ROOT@/venv/bin/python bot.py --web
 Restart=on-failure
 RestartSec=5

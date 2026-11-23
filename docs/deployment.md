@@ -89,3 +89,32 @@ Full details: [DOCKER.md](../DOCKER.md)
 - `.env.docker.example` — reference for Docker (copied by `generate_secrets.sh docker`)
 
 Key vars: see `config.py` and `.env.example`.
+
+## systemd user units (native)
+
+Templates live in `systemd/` with an `@ROOT@` placeholder. Install into `~/.config/systemd/user/` (never edit the templates in place on an old path):
+
+```bash
+bash scripts/install_systemd.sh              # render + daemon-reload
+bash scripts/install_systemd.sh --enable     # enable + start voice-assistant-web (see below)
+bash scripts/install_systemd.sh --disable
+bash scripts/install_systemd.sh --status
+```
+
+- **Web UI:** `voice-assistant-web.service` → `venv/bin/python bot.py --web`, loads `.env`, optional `WEB_AUTH_TOKEN_FILE` default.
+- **Desktop PTT/wake:** `voice-assistant.service` → `venv/bin/python bot.py`.
+- **Before `--enable`:** stop the script-managed server if it is using the same `WEB_PORT` (`bash scripts/voice-assistant.sh stop`). The install script refuses to enable while `data/voice-assistant.pid` points at a live `bot.py` or the port is taken.
+- **Linger** (boot without login): `loginctl enable-linger "$USER"` — check with `loginctl show-user "$USER" -p Linger`.
+- **Web auth token:** run `bash scripts/generate_web_token.sh` before first start when `WEB_AUTH_ENABLED=true`.
+
+After enabling, `bash scripts/voice-assistant.sh start|stop|restart|status` delegates to `systemctl --user` for the web unit.
+
+### Tailscale Serve (optional, tailnet)
+
+If Tailscale **Serve** on **:8443** (tailnet) still proxies to **127.0.0.1:8766**, nothing will answer — Sahir listens on **WEB_PORT** (default **8765**). Point Serve at the real HTTPS listener (auth required):
+
+```bash
+tailscale serve --bg --https=8443 https+insecure://127.0.0.1:8765
+```
+
+Do **not** change the public **Funnel** on **:443** (it serves a different app on **8091**). The agent does not run `tailscale` commands.

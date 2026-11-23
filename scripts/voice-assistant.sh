@@ -4,13 +4,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-PID_FILE="$ROOT_DIR/data/voice-assistant.pid"
+PID_FILE="${VOICE_ASSISTANT_PID_FILE:-$ROOT_DIR/data/voice-assistant.pid}"
 VENV_PYTHON="$ROOT_DIR/venv/bin/python"
 ENV_FILE="$ROOT_DIR/.env"
 
 WEB_HOST="${WEB_HOST:-0.0.0.0}"
 WEB_PORT="${WEB_PORT:-8765}"
 WEB_SCHEME="http"
+SYSTEMD_WEB_UNIT="voice-assistant-web.service"
 
 load_env() {
   # A WEB_PORT already set in the environment wins over .env
@@ -96,6 +97,37 @@ require_setup() {
   mkdir -p "$ROOT_DIR/data/logs"
 }
 
+systemd_web_enabled() {
+  if [[ "${VOICE_ASSISTANT_FORCE_SCRIPT:-}" == "1" ]]; then
+    return 1
+  fi
+  systemctl --user is-enabled "$SYSTEMD_WEB_UNIT" >/dev/null 2>&1
+}
+
+port_listeners() {
+  ss -tlnp 2>/dev/null | grep -E ":${WEB_PORT} " || true
+}
+
+ensure_port_free() {
+  if ss -tln 2>/dev/null | grep -qE ":${WEB_PORT} "; then
+    echo "Port ${WEB_PORT} is already in use (WEB_PORT from .env)." >&2
+    port_listeners >&2
+    echo "Stop the process holding that port, or set an explicit override:" >&2
+    echo "  WEB_PORT=<port> bash scripts/voice-assistant.sh start" >&2
+    exit 1
+  fi
+}
+
+run_via_systemd() {
+  local action="$1"
+  case "$action" in
+    start) systemctl --user start "$SYSTEMD_WEB_UNIT" ;;
+    stop) systemctl --user stop "$SYSTEMD_WEB_UNIT" ;;
+    restart) systemctl --user restart "$SYSTEMD_WEB_UNIT" ;;
+    status) systemctl --user --no-pager status "$SYSTEMD_WEB_UNIT" ;;
+  esac
+}
+
 wait_for_health() {
   local attempts=40
   local url="${WEB_SCHEME}://127.0.0.1:${WEB_PORT}/api/health"
@@ -119,6 +151,12 @@ wait_for_health() {
 
 cmd_start() {
   load_env
+  if systemd_web_enabled; then
+    echo "Using systemd user unit ($SYSTEMD_WEB_UNIT)."
+    run_via_systemd start
+    print_urls
+    exit 0
+  fi
   require_setup
 
   if is_running; then
@@ -129,6 +167,8 @@ cmd_start() {
 
   # Always bind on all interfaces so phones/tablets on the LAN can connect.
   export WEB_HOST="0.0.0.0"
+
+  ensure_port_free
 
   cd "$ROOT_DIR"
   nohup "$VENV_PYTHON" bot.py --web >>"$ROOT_DIR/data/logs/startup.log" 2>&1 &
@@ -143,6 +183,12 @@ cmd_start() {
 }
 
 cmd_stop() {
+  if systemd_web_enabled; then
+    echo "Using systemd user unit ($SYSTEMD_WEB_UNIT)."
+    run_via_systemd stop
+    rm -f "$PID_FILE"
+    exit 0
+  fi
   if ! is_running; then
     echo "Sahir is not running."
     rm -f "$PID_FILE"
@@ -171,6 +217,12 @@ cmd_stop() {
 }
 
 cmd_restart() {
+  if systemd_web_enabled; then
+    echo "Using systemd user unit ($SYSTEMD_WEB_UNIT)."
+    run_via_systemd restart
+    print_urls
+    exit 0
+  fi
   cmd_stop
   sleep 1
   cmd_start
@@ -178,6 +230,11 @@ cmd_restart() {
 
 cmd_status() {
   load_env
+
+  if systemd_web_enabled; then
+    run_via_systemd status
+    exit 0
+  fi
 
   if is_running; then
     echo "running (pid $(pid_of))"
@@ -211,6 +268,9 @@ Usage: $(basename "$0") {start|stop|restart|status|urls}
 
 Environment (.env):
   WEB_PORT, WEB_SSL_CERT, WEB_SSL_KEY
+
+When voice-assistant-web.service is enabled (bash scripts/install_systemd.sh --enable),
+start/stop/restart/status use systemctl --user instead of the pid file.
 
 Examples:
   bash scripts/voice-assistant.sh start
