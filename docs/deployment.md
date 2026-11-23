@@ -77,7 +77,7 @@ Full details: [DOCKER.md](../DOCKER.md)
 |------------|--------|--------|
 | Web UI + LAN mic | Yes | Yes |
 | Ollama | Host install | Sidecar container |
-| PTT / wake word | Yes | No (disabled) |
+| PTT / wake word (`bot.py` only, not browser) | Yes | No (disabled) |
 | PC control | Yes | No (unless host tools mounted) |
 | Cursor CLI | Host PATH | Optional compose override |
 

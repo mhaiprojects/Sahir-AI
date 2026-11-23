@@ -23,8 +23,13 @@ const TOUR_STEPS = [
   },
   {
     title: "Composer",
-    body: "Send obeys the mode picker. Ctrl+Enter always sends to Cursor. Hold to listen (HTTP PTT), Hands-free (/ws/voice), Stop (barge-in), and Speak replies are here once.",
+    body: "Send obeys the mode picker. Ctrl+Enter always sends to Cursor. Hold to listen (HTTP PTT), Hands-free (/ws/voice), Stop (barge-in), and Speak replies are here once. Wake word and Right Ctrl push-to-talk are desktop app only (bot.py), not in the browser.",
     target: "#chat-form",
+  },
+  {
+    title: "Desktop-only voice",
+    body: "Wake word (e.g. hey_jarvis) and Right Ctrl push-to-talk run only in the desktop app (python bot.py). The browser offers Hold to listen and Hands-free instead.",
+    target: "#desktop-only-voice-note",
   },
   {
     title: "Activity panel",

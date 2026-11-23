@@ -612,26 +612,37 @@ async function refreshLogs() {
   }
 }
 
+const DESKTOP_ONLY_VOICE_NOTE =
+  "Desktop app only (bot.py), not available in the browser";
+
+function pttHotkeyLabel(hotkey) {
+  const key = String(hotkey || "ctrl_r").toLowerCase();
+  if (key === "ctrl_r") return "Right Ctrl";
+  if (key === "ctrl_l") return "Left Ctrl";
+  return key.replaceAll("_", " ");
+}
+
+function updateDesktopOnlyVoiceLabels(cfg) {
+  if (!cfg) return;
+  const phrase = String(cfg.wakeword_model || "hey_jarvis").replaceAll("_", " ");
+  const wakeEl = document.getElementById("settings-wakeword-label");
+  const pttEl = document.getElementById("settings-ptt-label");
+  const desktopNote = document.getElementById("desktop-only-voice-note");
+  if (wakeEl) wakeEl.textContent = phrase;
+  if (pttEl) pttEl.textContent = pttHotkeyLabel(cfg.ptt_hotkey);
+  if (desktopNote) {
+    desktopNote.textContent =
+      `${DESKTOP_ONLY_VOICE_NOTE}: wake word (“${phrase}”) and push-to-talk (${pttHotkeyLabel(cfg.ptt_hotkey)}).`;
+  }
+}
+
 function updateWakeWordNote(cfg) {
   const note = document.getElementById("wake-word-note");
   if (!note || !cfg) return;
+  updateDesktopOnlyVoiceLabels(cfg);
   const phrase = String(cfg.wakeword_model || "").replaceAll("_", " ");
-  const desktop = cfg.wakeword_enabled && phrase
-    ? ` The desktop app (bot.py) listens for “${phrase}”.`
-    : "";
-  if (cfg.web_wakeword) {
-    note.innerHTML = "";
-    note.append("Wake word: ");
-    const strong = document.createElement("strong");
-    strong.textContent = phrase ? `“${phrase}”` : "on";
-    note.append(strong, ". Hands-free waits for it before recording.");
-    return;
-  }
-  note.innerHTML = "";
-  note.append("Wake word: ");
-  const strong = document.createElement("strong");
-  strong.textContent = "off in the browser";
-  note.append(strong, `. With Hands-free on, speech streams to the server VAD.${desktop}`);
+  note.textContent =
+    `Hands-free streams via /ws/voice in the browser. ${DESKTOP_ONLY_VOICE_NOTE}: wake word (“${phrase}”) and ${pttHotkeyLabel(cfg.ptt_hotkey)} PTT.`;
 }
 
 async function loadWebConfig() {

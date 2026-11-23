@@ -5,17 +5,34 @@ Includes a real TTS -> STT round trip: Piper synthesizes a phrase via
 /api/speak, then faster-whisper transcribes it via /api/transcribe and
 /api/transcribe/live. Also checks truncated / headerless WebM handling.
 
-Run with the server up:  python scripts/test_web.py
-Override the port with WEB_PORT=8766 python scripts/test_web.py
+By default this script starts a throwaway ``python bot.py --web`` on a free
+localhost port (override with ``TEST_WEB_THROWAWAY_PORT``), with ``AGENT_DB_PATH`` and
+``WEB_DB_PATH`` under a temp directory, then stops only that process and
+removes the temp dir — it does not write to the live ``data/agent.db``.
+
+Opt-in to hit an already-running server (and delete conversations it creates)::
+
+  python scripts/test_web.py --use-running
+  TEST_WEB_USE_RUNNING=1 python scripts/test_web.py
+
+When not using ``--use-running``, row counts in the live agent DB (if present)
+are compared before and after; they must match.
 """
 
 from __future__ import annotations
 
+import argparse
 import io
 import json
+import os
 import re
+import shutil
+import socket
+import sqlite3
 import subprocess
 import sys
+import tempfile
+import time
 import wave
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -23,9 +40,16 @@ from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent.parent
 
+_OVERRIDE_BASE_URL: str | None = None
+CREATED_CONV_IDS: list[int] = []
 
-def _base_url() -> str:
-    import os
+
+def _set_base_url(url: str) -> None:
+    global _OVERRIDE_BASE_URL
+    _OVERRIDE_BASE_URL = url.rstrip("/")
+
+
+def _default_base_url() -> str:
     from dotenv import load_dotenv
 
     load_dotenv(ROOT / ".env")
@@ -36,6 +60,130 @@ def _base_url() -> str:
     if host in ("0.0.0.0", "::"):
         host = "127.0.0.1"
     return f"{scheme}://{host}:{port}"
+
+
+def _base_url() -> str:
+    return _OVERRIDE_BASE_URL or _default_base_url()
+
+
+def _live_agent_db_path() -> Path:
+    from dotenv import load_dotenv
+
+    load_dotenv(ROOT / ".env")
+    raw = os.getenv("AGENT_DB_PATH", "").strip()
+    if raw:
+        return Path(raw).expanduser()
+    return ROOT / "data" / "agent.db"
+
+
+def _agent_db_row_counts(db_path: Path) -> dict[str, int]:
+    if not db_path.is_file():
+        return {}
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        out: dict[str, int] = {}
+        for table in ("conversations", "messages", "memories"):
+            try:
+                out[table] = int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+            except sqlite3.OperationalError:
+                continue
+        return out
+    finally:
+        conn.close()
+
+
+def _track_conversation_response(payload: dict | bytes) -> None:
+    if not isinstance(payload, dict):
+        return
+    cid = payload.get("conversation_id")
+    if cid is not None:
+        CREATED_CONV_IDS.append(int(cid))
+
+
+def _cleanup_created_conversations() -> None:
+    seen: set[int] = set()
+    for cid in CREATED_CONV_IDS:
+        if cid in seen:
+            continue
+        seen.add(cid)
+        status, body = _request("DELETE", f"/api/conversations/{cid}")
+        if status != 200:
+            print(f"warn: could not delete conversation {cid}: {status} {body}")
+
+
+def _venv_python() -> Path:
+    candidate = ROOT / "venv" / "bin" / "python"
+    return candidate if candidate.is_file() else Path(sys.executable)
+
+
+def _pick_free_port(host: str = "127.0.0.1") -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind((host, 0))
+        return int(sock.getsockname()[1])
+
+
+def _wait_for_health(base_url: str, timeout: float = 180.0) -> None:
+    url = base_url.rstrip("/") + "/api/health"
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with urlopen(Request(url), timeout=5.0) as resp:
+                if resp.status == 200:
+                    return
+        except (HTTPError, URLError, TimeoutError, OSError):
+            pass
+        time.sleep(0.5)
+    raise RuntimeError(f"server did not become healthy at {base_url}")
+
+
+def _start_throwaway_server() -> tuple[subprocess.Popen[bytes], Path, str]:
+    temp_dir = Path(tempfile.mkdtemp(prefix="sahir-test-web-"))
+    port = int(os.getenv("TEST_WEB_THROWAWAY_PORT", "0") or "0")
+    if port <= 0:
+        port = _pick_free_port()
+    env = os.environ.copy()
+    env["WEB_HOST"] = "127.0.0.1"
+    env["WEB_PORT"] = str(port)
+    env["AGENT_DB_PATH"] = str(temp_dir / "agent.db")
+    env["WEB_DB_PATH"] = str(temp_dir / "web.db")
+    env["WEB_SSL_CERT"] = ""
+    env["WEB_SSL_KEY"] = ""
+    proc = subprocess.Popen(
+        [str(_venv_python()), str(ROOT / "bot.py"), "--web"],
+        cwd=str(ROOT),
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+    base = f"http://127.0.0.1:{port}"
+    try:
+        _wait_for_health(base)
+    except RuntimeError:
+        err = proc.stderr.read().decode(errors="replace") if proc.stderr else ""
+        _stop_throwaway_server(proc, temp_dir)
+        raise RuntimeError(f"throwaway server failed on {base}: {err[:500]}") from None
+    return proc, temp_dir, base
+
+
+def _stop_throwaway_server(proc: subprocess.Popen[bytes], temp_dir: Path) -> None:
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=10)
+    shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Sahir web API integration tests")
+    parser.add_argument(
+        "--use-running",
+        action="store_true",
+        help="Use the server from .env (WEB_PORT); delete conversations created during the run",
+    )
+    return parser.parse_args(argv)
 
 
 def _request(
@@ -150,6 +298,13 @@ def run_extended_checks(errors: list[str], cursor: dict) -> None:
     else:
         errors.append("index.html missing app.js?v= cache-bust")
 
+    if status == 200 and b"desktop-only-voice-note" in (index_html or b"") and b"Desktop app only" in (
+        index_html or b""
+    ):
+        ok("index desktop-only voice labels: ok")
+    else:
+        errors.append("index.html missing desktop-only wake/PTT labels")
+
     status, app_js = _request("GET", "/static/app.js")
     missing = [
         name
@@ -161,6 +316,11 @@ def run_extended_checks(errors: list[str], cursor: dict) -> None:
         ok("app.js UX features: ok")
     else:
         errors.append(f"app.js missing UX features: {missing}")
+
+    if status == 200 and b"DESKTOP_ONLY_VOICE_NOTE" in (app_js if isinstance(app_js, bytes) else b""):
+        ok("app.js desktop-only labels: ok")
+    else:
+        errors.append("app.js missing DESKTOP_ONLY_VOICE_NOTE")
 
     details = cursor.get("action_details", {}) if isinstance(cursor, dict) else {}
     if "exit_code" in details and "success" in details:
@@ -245,9 +405,8 @@ def run_extended_checks(errors: list[str], cursor: dict) -> None:
         errors.append(f"ptt truncated webm unexpected: {status} {res}")
 
 
-def main() -> int:
-    errors: list[str] = []
-    print(f"Testing {_base_url()}")
+def run_all_tests(errors: list[str]) -> None:
+    """Exercise the web API; append failures to errors."""
 
     status, health = _request("GET", "/api/health")
     if status != 200:
@@ -298,6 +457,7 @@ def main() -> int:
         errors.append(f"chat failed: {status} {chat}")
     else:
         ok("chat:", chat["reply"][:60])
+        _track_conversation_response(chat)
 
     history_body = json.dumps(
         {
@@ -319,6 +479,7 @@ def main() -> int:
         errors.append(f"chat history failed: {status} {history_chat}")
     else:
         ok("chat history: ok")
+        _track_conversation_response(history_chat)
 
     cursor_body = json.dumps(
         {
@@ -337,6 +498,7 @@ def main() -> int:
         errors.append(f"cursor endpoint failed: {status} {cursor}")
     else:
         ok("cursor endpoint: ok")
+        _track_conversation_response(cursor)
 
     status, logs = _request("GET", "/api/logs?limit=5")
     if status != 200 or not logs.get("logs"):
@@ -404,6 +566,7 @@ def main() -> int:
         errors.append(f"unexpected route action: {routed.get('action')}")
     else:
         ok("pc route:", routed.get("action"), routed.get("reply", "")[:60])
+        _track_conversation_response(routed)
 
     status, cmds = _request("GET", "/api/commands")
     if status != 200 or not cmds.get("commands"):
@@ -425,6 +588,49 @@ def main() -> int:
 
     run_extended_checks(errors, cursor if isinstance(cursor, dict) else {})
 
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv)
+    use_running = args.use_running or os.getenv("TEST_WEB_USE_RUNNING", "").strip() in {
+        "1",
+        "true",
+        "yes",
+    }
+    live_db = _live_agent_db_path()
+    before_counts = _agent_db_row_counts(live_db)
+
+    proc: subprocess.Popen[bytes] | None = None
+    temp_dir: Path | None = None
+    errors: list[str] = []
+
+    try:
+        if use_running:
+            _set_base_url(_default_base_url())
+            print("Mode: use-running (cleanup conversations created during test)")
+        else:
+            proc, temp_dir, base = _start_throwaway_server()
+            _set_base_url(base)
+            print("Mode: throwaway server (isolated temp databases)")
+
+        print(f"Testing {_base_url()}")
+        run_all_tests(errors)
+
+        if use_running:
+            _cleanup_created_conversations()
+    except RuntimeError as exc:
+        errors.append(str(exc))
+    finally:
+        if proc is not None and temp_dir is not None:
+            _stop_throwaway_server(proc, temp_dir)
+
+    after_counts = _agent_db_row_counts(live_db)
+    if before_counts != after_counts:
+        errors.append(
+            f"live agent DB row counts changed: before={before_counts} after={after_counts} ({live_db})"
+        )
+    elif before_counts and not use_running:
+        ok("live agent.db unchanged:", before_counts)
+
     print(f"\nSummary: {len(PASSED)} passed, {len(errors)} failed")
     if errors:
         print("\nFAILED:")
@@ -441,5 +647,5 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except URLError as exc:
         print(f"Could not reach server: {exc}", file=sys.stderr)
-        print("Start it with: python bot.py --web", file=sys.stderr)
+        print("By default this script starts its own server; use --use-running for an existing one.", file=sys.stderr)
         raise SystemExit(2) from exc

@@ -16,8 +16,8 @@ Custom local voice assistant using trusted open-source components:
 - **TTS:** Piper
 - **Router:** Ollama (local)
 - **Dev tasks:** Cursor CLI (`cursor-agent -p`)
-- **Activation:** push-to-talk (Right Ctrl) + wake word (`hey_jarvis` for now; a custom "Hey Sahir"
-  wake word model is planned)
+- **Activation (desktop app only, `python bot.py`):** push-to-talk (Right Ctrl) + wake word
+  (`hey_jarvis` for now; a custom "Hey Sahir" wake word is planned). **Not available in the browser.**
 - **Local-first agent:** persistent chat history, long-term memory with review, document RAG
   (SQLite + sqlite-vec, all under `data/`), an Ollama orchestrator that delegates to workers
   (research summarizer, Cursor code agent, ClickUp), realtime voice over WebSocket with Silero VAD
@@ -93,7 +93,7 @@ cp .env.example .env             # if install.sh did not create it
 python bot.py
 ```
 
-Hold **Right Ctrl** while speaking, then release. Or say **hey jarvis** and speak after the prompt (a custom "Hey Sahir" wake word is planned).
+**Desktop app only (`python bot.py`), not in the browser:** hold **Right Ctrl** while speaking, then release. Or say **hey jarvis** and speak after the prompt (a custom "Hey Sahir" wake word is planned).
 
 ## Web UI (local network)
 

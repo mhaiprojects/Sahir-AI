@@ -497,6 +497,8 @@ def create_app() -> FastAPI:
             "web_wakeword": False,
             "wakeword_enabled": settings.wakeword_enabled,
             "wakeword_model": settings.wakeword_model,
+            "ptt_hotkey": settings.ptt_hotkey,
+            "desktop_voice_only": True,
             "web_port": settings.web_port,
         }
 

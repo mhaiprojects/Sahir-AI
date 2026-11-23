@@ -25,15 +25,19 @@
 ## Mode and voice (chat bar / composer)
 
 - **Mode** select per conversation: Agent, Tools, Chat, or Cursor (stored on the conversation row)
-- **Hands-free** — streams PCM to `/ws/voice` (no browser wake word; desktop wake word remains in `bot.py`)
+- **Hands-free** — streams PCM to `/ws/voice` in the browser (wake word / Right Ctrl PTT are **desktop app only**, not in the web UI)
 - **Speak replies** — one toggle: streaming TTS on Hands-free, `/api/speak` on hold-to-listen
 
-## Desktop mode (`python bot.py`)
+## Desktop mode (`python bot.py`) — not available in the browser
+
+Desktop app only: these features do not run in the web UI.
 
 - Push-to-talk (`PTT_HOTKEY`, default Right Ctrl)
 - Wake word (`WAKEWORD_MODEL`, default `hey_jarvis`; a custom "Hey Sahir" model is planned)
 - Local mic/speaker via sounddevice
 - Not used in Docker web-only deployment
+
+The unified web screen uses **Hold to listen** and **Hands-free** (`/ws/voice`) instead.
 
 ## API endpoints (main)
 

@@ -107,7 +107,7 @@
         <p id="mic-hint" class="mic-hint hidden"></p>
 
         <main class="main-content">
-          <div id="chat-empty-state" class="chat-empty-state" role="status">Ready. Enable the microphone, use Hold to listen, or type a message below. <span class="sr-only">Wake word is off in the browser.</span></div>
+          <div id="chat-empty-state" class="chat-empty-state" role="status">Ready. Enable the microphone, use Hold to listen, or type a message below.</div>
           <section id="chat-log" class="chat-log" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation"></section>
 
           <form id="chat-form" class="chat-form">
@@ -121,11 +121,11 @@
               ></textarea>
               <button type="submit" id="send-btn" class="btn-voice">Send</button>
             </div>
-            <div class="composer-voice" data-help="Enable microphone, hold to listen, Hands-free, and Speak replies. Ctrl+Enter sends to Cursor." data-help-label="Voice and composer" data-help-place="inside">
+            <div class="composer-voice" data-help="Enable microphone, hold to listen (browser HTTP PTT), Hands-free (/ws/voice), and Speak replies. Wake word and Right Ctrl push-to-talk are desktop app only (bot.py), not in the browser. Ctrl+Enter sends to Cursor." data-help-label="Voice and composer" data-help-place="inside">
               <button type="button" id="toggle-mic-btn" class="secondary btn-voice" title="Enable or disable microphone access">Enable microphone</button>
               <button type="button" id="mic-btn" class="secondary btn-voice" title="Hold to record" aria-keyshortcuts="Space Enter" disabled>Hold to listen</button>
-              <label class="checkbox" title="Keeps the mic open for speech (no wake word in the browser)">
-                <input type="checkbox" id="hands-free-toggle" aria-describedby="wake-word-note">
+              <label class="checkbox" title="Streaming voice via /ws/voice (browser microphone). Wake word and Right Ctrl PTT are desktop-only — see Settings.">
+                <input type="checkbox" id="hands-free-toggle" aria-describedby="wake-word-note desktop-only-voice-note">
                 Hands-free
               </label>
               <label class="checkbox" title="Reads replies aloud (streaming TTS on Hands-free; HTTP TTS on hold-to-listen)">
@@ -137,7 +137,8 @@
           </form>
         </main>
 
-        <p id="wake-word-note" class="voice-mode-note sr-only">Wake word is off in the browser. Hands-free streams to the server with Silero VAD and barge-in.</p>
+        <p id="wake-word-note" class="voice-mode-note" aria-live="polite">Hands-free uses the browser microphone and <code>/ws/voice</code>.</p>
+        <p id="desktop-only-voice-note" class="voice-mode-note desktop-only-note">Desktop app only (<code>bot.py</code>), not available in the browser: wake word (e.g. <code>hey_jarvis</code>) and push-to-talk (Right Ctrl by default).</p>
 
         <footer class="app-footer">
           <p>Accessible on your LAN at this machine's IP and port <span id="port-label">…</span>.</p>
@@ -204,6 +205,11 @@
             </div>
             <span id="mic-badge-config" class="sr-only" aria-hidden="true"></span>
             <p class="config-note">Enable the microphone on the Chat screen. Hands-free lives in the composer.</p>
+            <p id="settings-desktop-only-voice" class="config-note desktop-only-note">
+              <strong>Desktop app only (<code>bot.py</code>), not available in the browser:</strong>
+              wake word (<span id="settings-wakeword-label">hey_jarvis</span>) and push-to-talk
+              (<span id="settings-ptt-label">Right Ctrl</span>). Run <code>python bot.py</code> on the PC for those.
+            </p>
           </div>
         </details>
 
