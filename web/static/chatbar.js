@@ -27,6 +27,14 @@
     if ([...projectSelect.options].some((o) => o.value === v)) projectSelect.value = v;
   }
 
+  function syncConvActionsMenu() {
+    const menu = document.getElementById("conv-actions-menu");
+    if (!menu) return;
+    const narrow = window.matchMedia("(max-width: 980px)").matches;
+    if (narrow) menu.removeAttribute("open");
+    else menu.setAttribute("open", "");
+  }
+
   function updateContextUi(conv) {
     const proj = document.getElementById("breadcrumb-project");
     const chat = document.getElementById("breadcrumb-chat");
@@ -53,6 +61,7 @@
     }
     applyProjectSelectValue(conv.project_id);
     window.sahirSetCurrentProject?.(conv.project_id);
+    syncConvActionsMenu();
   }
 
   async function refreshProjects() {
@@ -297,7 +306,10 @@
   });
   setInterval(refreshModels, 60000);
 
+  window.sahirSyncConvActionsMenu = syncConvActionsMenu;
   window.sahirRefreshChatBar = () => Promise.all([refreshProjects(), refreshChats(), refreshModels()]);
+  syncConvActionsMenu();
+  window.addEventListener("resize", syncConvActionsMenu);
   refreshModels();
   refreshProjects()
     .then(() => {

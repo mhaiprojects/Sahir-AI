@@ -7,8 +7,8 @@
   <link rel="stylesheet" href="/static/style.css?v=20261116ui">
   <link rel="stylesheet" href="/static/agent.css?v=20261116ui">
   <link rel="stylesheet" href="/static/help.css?v=20261123help">
-  <link rel="stylesheet" href="/static/panels.css?v=20261124fix">
-  <link rel="stylesheet" href="/static/unified.css?v=20261124fix">
+  <link rel="stylesheet" href="/static/panels.css?v=20261124layout2">
+  <link rel="stylesheet" href="/static/unified.css?v=20261124layout2">
 </head>
 <body>
   <div class="layout unified-layout">
@@ -81,6 +81,8 @@
         <div class="chat-context-head">
           <span id="supervisor-badge" class="supervisor-badge hidden">Supervisor</span>
           <p id="chat-breadcrumb" class="chat-breadcrumb" aria-live="polite"><span id="breadcrumb-project">General</span> › <strong id="breadcrumb-chat">—</strong></p>
+          <details class="conv-actions-menu" id="conv-actions-menu" open>
+            <summary class="conv-actions-more" aria-label="Chat actions">⋯</summary>
           <div class="row" id="conv-actions" hidden data-help="Rename, export, extract memories, or delete this chat." data-help-label="Chat actions" data-help-place="inside">
             <button type="button" id="conv-rename">Rename</button>
             <a id="conv-export-md" class="secondary small conv-export">Export .md</a>
@@ -90,9 +92,10 @@
             <button type="button" id="conv-supervisor-bg" class="secondary small" hidden>Ask supervisor for background</button>
             <button type="button" id="conv-delete" class="danger">Delete</button>
           </div>
+          </details>
         </div>
 
-        <section id="live-transcript" class="live-transcript live-transcript-top" aria-live="polite" aria-label="Live transcription">
+        <section id="live-transcript" class="live-transcript live-transcript-top hidden" aria-live="polite" aria-label="Live transcription">
           <div class="live-header">
             <span id="live-transcript-label" class="live-label">Live transcription</span>
             <span id="live-transcript-status" class="live-status">Mic off</span>
@@ -368,10 +371,10 @@
   <script src="/static/app.js?v=20261124auth"></script>
   <script src="/static/agent.js?v=20261124hf"></script>
   <script src="/static/models.js?v=20261124storage"></script>
-  <script src="/static/tour.js?v=20261124shell"></script>
-  <script src="/static/chatbar.js?v=20261124shell"></script>
+  <script src="/static/tour.js?v=20261124layout"></script>
+  <script src="/static/chatbar.js?v=20261124layout2"></script>
   <script src="/static/rail.js?v=20261124shell"></script>
-  <script src="/static/wip.js?v=20261123wip"></script>
+  <script src="/static/wip.js?v=20261124layout2"></script>
   <script src="/static/help.js?v=20261123help"></script>
 </body>
 </html>

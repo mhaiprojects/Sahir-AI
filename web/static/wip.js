@@ -228,7 +228,16 @@
       "Reconnecting to the activity stream…");
   }
 
-  setCollapsed(localStorage.getItem(COLLAPSE_KEY) === "1");
+  const wipQs = new URLSearchParams(window.location.search);
+  if (wipQs.get("wip") === "collapsed") {
+    setCollapsed(true);
+  } else {
+    const stored = localStorage.getItem(COLLAPSE_KEY);
+    if (stored === "1") setCollapsed(true);
+    else if (stored === "0") setCollapsed(false);
+    else if (window.matchMedia("(max-width: 980px)").matches) setCollapsed(true);
+    else setCollapsed(false);
+  }
   updateJump();
   connect();
 

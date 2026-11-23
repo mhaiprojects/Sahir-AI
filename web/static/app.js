@@ -1147,8 +1147,15 @@ function refreshLiveTranscriptIdle() {
   if (pttActive || handsFreeStreaming()) return;
   if (liveTranscriptStatus?.classList.contains("thinking")) return;
 
+  if (!micReady && !handsFreeToggle?.checked) {
+    liveTranscript?.classList.add("hidden");
+    liveTranscript?.classList.remove("active", "idle-compact");
+    return;
+  }
+
   const { status, text } = getLiveTranscriptIdleState();
   liveTranscript.classList.remove("active", "hidden");
+  liveTranscript.classList.add("idle-compact");
   if (liveTranscriptLabel) liveTranscriptLabel.textContent = "Live transcription";
   liveTranscriptLive.textContent = text;
   liveTranscriptLive.classList.add("idle");
@@ -1162,7 +1169,7 @@ function refreshLiveTranscriptIdle() {
 }
 
 function showLivePanel(statusText, { thinking = false } = {}) {
-  liveTranscript.classList.remove("hidden");
+  liveTranscript.classList.remove("hidden", "idle-compact");
   liveTranscript.classList.add("active");
   if (liveTranscriptStatus) {
     liveTranscriptStatus.textContent = statusText;

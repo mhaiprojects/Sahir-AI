@@ -175,6 +175,16 @@ function startTour() {
 
 document.getElementById("start-tour-btn")?.addEventListener("click", startTour);
 
-if (!localStorage.getItem(TOUR_STORAGE_KEY)) {
+function shouldAutoStartTour() {
+  try {
+    const qs = new URLSearchParams(window.location.search);
+    if (qs.has("notour")) return false;
+  } catch (_) {
+    /* ignore */
+  }
+  return !localStorage.getItem(TOUR_STORAGE_KEY);
+}
+
+if (shouldAutoStartTour()) {
   window.setTimeout(() => startTour(), 800);
 }

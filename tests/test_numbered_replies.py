@@ -289,7 +289,7 @@ def test_numbered_screenshot_script() -> None:
             cwd=str(script.parent.parent),
             env=env,
             check=True,
-            timeout=60,
+            timeout=600,
         )
     except (subprocess.CalledProcessError, RuntimeError, OSError) as exc:
         pytest.skip(f"headless screenshot unavailable: {exc}")

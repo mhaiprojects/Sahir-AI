@@ -15,6 +15,23 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from scripts import capture_web_helpers as cap
+
+_NUMBERED_READY_JS = """(() => {
+  const list = document.querySelector(".numbered-reply-list");
+  if (!list || !list.querySelector(".numbered-reply-item")) {
+    return { ok: false, reason: "numbered list not rendered" };
+  }
+  return { ok: true };
+})()"""
+
+_CAPTURES = (
+    ("desktop", 1440, 900, "numbered-reply-desktop.png"),
+    ("desktop1366", 1366, 768, "numbered-reply-desktop1366.png"),
+    ("mobile", 390, 844, "numbered-reply-mobile.png"),
+    ("mobile500", 500, 757, None),
+)
 
 
 def _pick_free_port() -> int:
@@ -41,14 +58,6 @@ def _wait_health(base: str, timeout: float = 45.0) -> None:
     raise RuntimeError(f"server not healthy at {base}")
 
 
-def _chrome() -> str:
-    for name in ("google-chrome-stable", "google-chrome", "chromium", "chromium-browser"):
-        path = shutil.which(name)
-        if path:
-            return path
-    raise RuntimeError("No Chrome/Chromium binary found")
-
-
 def _wait_conv_api(base: str, cid: int, timeout: float = 30.0) -> None:
     url = f"{base}/api/conversations/{cid}"
     deadline = time.monotonic() + timeout
@@ -65,19 +74,12 @@ def _wait_conv_api(base: str, cid: int, timeout: float = 30.0) -> None:
     raise RuntimeError("conversation not ready for screenshot")
 
 
-def _screenshot(chrome: str, user_data: Path, url: str, shot: Path, w: int, h: int) -> None:
-    cmd = [
-        chrome,
-        "--headless=new",
-        "--disable-gpu",
-        "--hide-scrollbars",
-        f"--window-size={w},{h}",
-        f"--screenshot={shot}",
-        f"--user-data-dir={user_data}",
-        "--timeout=12000",
-        url,
-    ]
-    subprocess.run(cmd, check=True, timeout=55)
+def _chrome() -> str:
+    for name in ("google-chrome-stable", "google-chrome", "chromium", "chromium-browser"):
+        path = shutil.which(name)
+        if path:
+            return path
+    raise RuntimeError("No Chrome/Chromium binary found")
 
 
 def main() -> int:
@@ -95,9 +97,7 @@ def main() -> int:
     env["WEB_SSL_KEY"] = ""
     env["WEB_AUTH_ENABLED"] = "false"
 
-    sys.path.insert(0, str(ROOT))
     from agent.numbered_replies import format_tts
-
     from agent.store import AgentStore
 
     store = AgentStore(temp_dir / "agent.db")
@@ -126,20 +126,40 @@ def main() -> int:
         stderr=subprocess.PIPE,
     )
     base = f"http://127.0.0.1:{port}"
-    user_data = Path(tempfile.mkdtemp(prefix="sahir-chrome-ud-"))
     try:
         _wait_health(base)
         _wait_conv_api(base, cid)
         chrome = _chrome()
-        page_url = f"{base}/?conv={cid}"
-        # Let chatbar async openChat finish (breadcrumb, list render, scroll).
-        time.sleep(3.0)
-        for label, w, h in (("desktop", 1440, 900), ("mobile", 390, 844)):
-            shot = out_dir / f"numbered-reply-{label}.png"
-            _screenshot(chrome, user_data, page_url, shot, w, h)
-            time.sleep(0.5)
-            if not shot.is_file() or shot.stat().st_size < 5000:
-                raise RuntimeError(f"screenshot too small or missing: {shot}")
+        page_url = cap.build_automation_url(base, conv=cid, view="chat")
+        report: dict[str, object] = {
+            "screenshots": [],
+            "chat_log_client_heights": {},
+            "composer_positions": {},
+        }
+        for label, w, h, fname in _CAPTURES:
+            shot = out_dir / fname if fname else None
+            metrics = cap.capture_viewport(
+                chrome,
+                page_url,
+                shot,
+                w,
+                h,
+                settle_s=18.0,
+                ready_js=_NUMBERED_READY_JS,
+            )
+            if not metrics.get("tour_hidden"):
+                raise RuntimeError("guided tour overlay visible during capture")
+            report["chat_log_client_heights"][label] = metrics["chat_log_client_height"]
+            report["composer_positions"][label] = {
+                "bottom": metrics.get("composer_bottom"),
+                "inner_height": metrics.get("inner_height"),
+                "layout": metrics.get("layout"),
+            }
+            if shot is not None:
+                if not shot.is_file() or shot.stat().st_size < 5000:
+                    raise RuntimeError(f"screenshot too small or missing: {shot}")
+                report["screenshots"].append(str(shot))
+        print(json.dumps(report))
         print(f"Screenshots written to {out_dir}")
         return 0
     finally:
@@ -149,7 +169,6 @@ def main() -> int:
                 proc.wait(timeout=20)
             except subprocess.TimeoutExpired:
                 proc.kill()
-        shutil.rmtree(user_data, ignore_errors=True)
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
