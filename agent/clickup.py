@@ -153,8 +153,7 @@ class ClickUpWorker:
     """Worker for explicit ClickUp requests: context["action"] in create_task|update_status|add_comment|log_time."""
 
     type = "clickup"
-    description = ("Create a ClickUp task, update a task status, add a comment, or log time. "
-                   "Use when the user explicitly mentions ClickUp or tracking a task.")
+    description = "ClickUp tasks, comments, time when user says ClickUp."
     timeout_s = 30.0
     max_retries = 1
     consumes_results = True  # runs after producer workers in the same orchestration round

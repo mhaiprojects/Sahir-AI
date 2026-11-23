@@ -25,18 +25,28 @@ from tools import router
 
 logger = logging.getLogger(__name__)
 
-ORCH_SYSTEM = """You are the orchestrator of a local voice assistant running on the user's PC.
-For each user turn decide ONE of:
-  1. answer directly (call `answer`) for chit-chat and general knowledge you are sure about;
-  2. call a PC tool (open_app, run_command, set_volume) for simple desktop actions;
-  3. call `delegate` to hand work to a specialised worker. Workers available:
-{workers}
-For questions about the Cursor CLI, workspace files, agent transcripts, or "ask cursor" requests,
-delegate to the `code` worker — do not claim you lack access to the user's machine.
-You may call `delegate` several times in one turn for independent sub-tasks. After workers
-report back you will see their results; then either delegate a follow-up (e.g. file the research
-result in ClickUp) or call `answer` with a short spoken reply (1-3 sentences) summarising the outcome.
-Always use the conversation history and the context below. Never invent worker results."""
+ORCH_SYSTEM = """Per turn: `answer`, PC tool (open_app|run_command|set_volume), or `delegate`.
+Workers: {workers}
+Workspace/cursor/files → delegate code. After worker results: `answer` (1-3 sentences). Use context; no fake results."""
+
+_ORCH_PC_TOOLS: list[dict[str, Any]] = [
+    {"type": "function", "function": {
+        "name": "open_app",
+        "description": "Launch whitelisted app.",
+        "parameters": {"type": "object", "properties": {"app_name": {"type": "string"}}, "required": ["app_name"]}}},
+    {"type": "function", "function": {
+        "name": "run_command",
+        "description": "Inspect this PC: disk, memory, uptime.",
+        "parameters": {"type": "object", "properties": {
+            "command": {"type": "string"},
+            "args": {"type": "array", "items": {"type": "string"}, "default": []},
+        }, "required": ["command"]}}},
+    {"type": "function", "function": {
+        "name": "set_volume",
+        "description": "Master volume 0-100.",
+        "parameters": {"type": "object", "properties": {"percent": {"type": "integer", "minimum": 0, "maximum": 100}},
+                       "required": ["percent"]}}},
+]
 
 FINAL_SYSTEM = """You are Sahir, a local voice assistant. Using the worker results below, answer the user's
 request directly in 1-3 short spoken sentences, stating the key facts from the results (not just that
@@ -73,26 +83,21 @@ class Orchestrator:
 
     def _tools(self) -> list[dict[str, Any]]:
         types = list(self.dispatcher.workers)
-        pc_tools = [t for t in router._tools_schema() if t["function"]["name"] in {"open_app", "run_command", "set_volume"}]
         return [
             {"type": "function", "function": {
-                "name": "answer", "description": "Reply to the user directly.",
+                "name": "answer", "description": "Chat, facts, or mental math (not run_command).",
                 "parameters": {"type": "object", "properties": {"reply": {"type": "string"}}, "required": ["reply"]}}},
             {"type": "function", "function": {
-                "name": "delegate", "description": "Hand a task to a worker and wait for its result.",
+                "name": "delegate", "description": "Run a worker task.",
                 "parameters": {"type": "object", "properties": {
                     "type": {"type": "string", "enum": types},
-                    "description": {"type": "string", "description": "Self-contained task description with all needed context."},
-                    "priority": {"type": "string", "enum": ["urgent", "high", "normal", "low"]},
-                    "track_in_clickup": {"type": "boolean", "description": "Also log this work in ClickUp."},
-                    "clickup_action": {"type": "string", "enum": ["create_task", "update_status", "add_comment", "log_time"]},
-                    "clickup_task_id": {"type": "string"},
+                    "description": {"type": "string"},
                 }, "required": ["type", "description"]}}},
-            *pc_tools,
+            *_ORCH_PC_TOOLS,
         ]
 
     def _system(self, context_block: str) -> str:
-        workers = "\n".join(f"   - {w['type']}: {w['description']}" for w in self.dispatcher.catalog())
+        workers = "; ".join(f"{w['type']}: {w['description']}" for w in self.dispatcher.catalog())
         s = ORCH_SYSTEM.format(workers=workers or "   (none)")
         return f"{s}\n\n{context_block}" if context_block else s
 

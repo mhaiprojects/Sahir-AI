@@ -27,19 +27,18 @@ SUMMARY_MSG_LIMIT = 40
 SUMMARY_CHARS = 6000
 ROSTER_REPLY_MAX = 1800
 
-SUPERVISOR_JSON_SYSTEM = """You are the project supervisor for Sahir AI. You manage sub-chats in this project.
-Respond with JSON only (no markdown). Use one of:
-{"tool":"answer","reply":"short spoken reply to the user"}
-{"tool":"spawn_sub_chat","title":"...","brief":"...","aliases":["..."],"mode":"agent|chat|cursor|route"}
-{"tool":"update_brief","conversation_id":123,"brief":"..."}
-{"tool":"rename_sub_chat","conversation_id":123,"title":"..."}
-{"tool":"archive_sub_chat","conversation_id":123}
-{"tool":"unarchive_sub_chat","conversation_id":123}
-{"tool":"summarise_sub_chat","conversation_id":123}
+SUPERVISOR_JSON_SYSTEM = """Sahir project supervisor. JSON only (no markdown). One object per turn:
+{"tool":"answer","reply":"..."}
+{"tool":"spawn_sub_chat","title","brief","aliases":[],"mode":"agent|chat|cursor|route"}
+{"tool":"update_brief","conversation_id":N,"brief":"..."}
+{"tool":"rename_sub_chat","conversation_id":N,"title":"..."}
+{"tool":"archive_sub_chat","conversation_id":N}
+{"tool":"unarchive_sub_chat","conversation_id":N}
+{"tool":"summarise_sub_chat","conversation_id":N}
 {"tool":"summarise_all"}
-{"tool":"inject_context","conversation_id":123,"content":"background facts…","reason":"..."}
-{"tool":"move_sub_chat","conversation_id":123,"project_id":2}
-Sub-chats are listed in the system context. Never invent conversation ids."""
+{"tool":"inject_context","conversation_id":N,"content","reason"}
+{"tool":"move_sub_chat","conversation_id":N,"project_id":N}
+Use conversation ids from the sub-chat list below only."""
 
 
 @dataclass

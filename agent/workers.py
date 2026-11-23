@@ -43,8 +43,7 @@ class ResearchWorker:
     """Answers a question from local RAG documents (+memory/context) with a cited summary."""
 
     type = "research"
-    description = ("Research and summarize information from the user's local documents and notes. "
-                   "Use for 'summarize', 'what do my notes/docs say about', 'research', 'look up in my files'.")
+    description = "Local docs/notes (RAG); summarize or 'my files say'."
     timeout_s = 180.0
     max_retries = 1
 
@@ -76,8 +75,7 @@ class CodeWorker:
     """Delegates coding / repo tasks to the Cursor CLI (cursor-agent) in the configured workspace."""
 
     type = "code"
-    description = ("Coding, files, git, tests, refactoring or anything in the code workspace, executed by "
-                   "the Cursor CLI agent.")
+    description = "Cursor CLI: code, repo, workspace files."
     max_retries = 0
 
     def __init__(self, settings: Settings) -> None:
