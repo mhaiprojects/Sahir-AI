@@ -177,8 +177,12 @@
     autoFb.checked = !!data.auto_fallback;
     forceFb.checked = !!data.force_fallback;
     const other = (data.other_loaded || []).map((o) => `${o.name} ${fmtBytes(o.size)}`).join(", ");
-    let line = `Active: ${data.active_model} · Fallback: ${data.fallback_model}` +
+    const backend = data.llm_backend || data.llm_status?.backend || "ollama";
+    let line = `LLM backend: ${backend} · Active: ${data.active_model} · Fallback: ${data.fallback_model}` +
       (other ? ` · Also loaded: ${other}` : "");
+    if (backend === "openai" && data.llm_status?.openai_base_url) {
+      line += ` · ${data.llm_status.openai_base_url}`;
+    }
     if (data.live_stt_backend) {
       line += ` · Live captions: ${data.live_stt_backend}`;
     }

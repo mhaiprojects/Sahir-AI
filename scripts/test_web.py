@@ -489,6 +489,11 @@ def run_all_tests(errors: list[str]) -> None:
             errors.append(f"transcription.live_stt_backend missing: {tx}")
         else:
             ok("transcription.live_stt_backend:", tx.get("live_stt_backend"))
+        llm = health.get("llm", {})
+        if llm.get("backend") not in ("ollama", "openai"):
+            errors.append(f"health.llm missing backend: {llm}")
+        else:
+            ok("llm.backend:", llm.get("backend"))
         if not health.get("https_enabled"):
             print("warn: HTTPS not enabled (mobile mic needs it)")
 

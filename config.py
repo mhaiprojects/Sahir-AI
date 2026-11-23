@@ -38,6 +38,19 @@ class Settings:
     # Local pipeline
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "llama3.1:8b"
+    # Chat LLM backend: ollama (default) or openai-compatible HTTP (e.g. llama-server)
+    llm_backend: str = "ollama"
+    openai_base_url: str = "http://127.0.0.1:8080/v1"
+    openai_model: str = ""
+    openai_api_key: str = field(default="", repr=False)
+    openai_api_key_file: Path = field(
+        default_factory=lambda: Path.home() / ".config" / "jahash-secrets" / "openai-api-key.txt"
+    )
+    openai_api_key_source: str = "none"
+    openai_api_key_load_error: str | None = None
+    openai_base_url_error: str | None = None
+    openai_base_url_warning: str | None = None
+    openai_timeout_seconds: float = 120.0
     # Optional override for Models page storage display (else systemd / Ollama defaults).
     ollama_models_dir: Path | None = None
     ollama_models_warn_free_gb: float = 10.0
@@ -165,6 +178,10 @@ class Settings:
             sample_rate=int(os.getenv("SAMPLE_RATE", "16000")),
             ollama_host=os.getenv("OLLAMA_HOST", "http://localhost:11434"),
             ollama_model=os.getenv("OLLAMA_MODEL", "llama3.1:8b"),
+            llm_backend=os.getenv("LLM_BACKEND", "ollama").strip().lower() or "ollama",
+            openai_model=os.getenv("OPENAI_MODEL", "").strip(),
+            openai_timeout_seconds=float(os.getenv("OPENAI_TIMEOUT_SECONDS", "120")),
+            **_openai_env_fields(),
             ollama_models_dir=(
                 Path(p) if (p := os.getenv("OLLAMA_MODELS_DIR", "").strip()) else None
             ),
@@ -305,6 +322,38 @@ def _calendar_env_fields() -> dict:
         "calendar_password": password,
         "calendar_password_source": source,
         "calendar_password_load_error": err,
+    }
+
+
+def _openai_env_fields() -> dict:
+    from agent.openai_compat import normalize_openai_base_url, warn_openai_base_url
+    from agent.integration_secrets import load_secret
+
+    key_path = Path(
+        os.getenv("OPENAI_API_KEY_FILE", "").strip()
+        or str(Path.home() / ".config" / "jahash-secrets" / "openai-api-key.txt")
+    ).expanduser()
+    api_key, key_source, key_err = load_secret(
+        env_var="OPENAI_API_KEY", file_path=key_path, label="OpenAI API key"
+    )
+    raw_url = os.getenv("OPENAI_BASE_URL", "http://127.0.0.1:8080/v1").strip()
+    url_err: str | None = None
+    url_warn: str | None = None
+    base_url = raw_url
+    try:
+        base_url = normalize_openai_base_url(raw_url)
+        url_warn = warn_openai_base_url(base_url)
+    except ValueError as exc:
+        url_err = str(exc)
+        base_url = raw_url
+    return {
+        "openai_base_url": base_url,
+        "openai_api_key": api_key,
+        "openai_api_key_file": key_path,
+        "openai_api_key_source": key_source,
+        "openai_api_key_load_error": key_err,
+        "openai_base_url_error": url_err,
+        "openai_base_url_warning": url_warn,
     }
 
 

@@ -1019,8 +1019,15 @@ async function refreshHealth() {
     const ttsBackend = String(tts.backend || "piper").toLowerCase();
     const ttsName = `${ttsBackend.charAt(0).toUpperCase()}${ttsBackend.slice(1)} TTS`;
     const ttsOk = ttsBackend === "kokoro" ? Boolean(tts.kokoro_model_present) : healthData.piper?.ok;
+    const llm = healthData.llm || {};
+    const chatBackend = llm.backend || "ollama";
+    const chatExtra =
+      chatBackend === "openai"
+        ? `${llm.chat_model || llm.openai_model || "—"} (OpenAI API)`
+        : (healthData.ollama?.target_loaded ? "model ready" : "check model");
     const items = [
       ["Ollama", healthData.ollama?.ok, healthData.ollama?.target_loaded ? "model ready" : "check model"],
+      ["Chat LLM", chatBackend !== "openai" || llm.openai_configured !== false, `${chatBackend}: ${chatExtra}`],
       ["Cursor CLI", healthData.cursor_cli?.ok],
       [ttsName, ttsOk],
       ["Whisper (final)", healthData.whisper?.ok, tx.whisper_final_model || "base"],

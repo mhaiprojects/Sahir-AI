@@ -412,7 +412,10 @@ def check_health(settings: Settings | None = None) -> dict[str, Any]:
         }
     else:
         health["whisper"] = {"ok": False, "reason": "disabled"}
+    from agent.llm_factory import llm_status
     from stt_live import live_stt_status
+
+    health["llm"] = llm_status(settings)
 
     tx = live_stt_status(settings)
     health["transcription"] = {

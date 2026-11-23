@@ -187,6 +187,10 @@ class Orchestrator:
         return self._model or self.settings.ollama_model
 
     def _chat(self, messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        from agent.llm_factory import chat_completion, resolve_llm_backend
+
+        if resolve_llm_backend(self.settings) == "openai":
+            return chat_completion(self.settings, self.model, messages, **kwargs)
         return self._client.chat(model=self.model, messages=messages, **ollama_chat_kwargs(self.model, **kwargs))
 
     def _tools(self) -> list[dict[str, Any]]:

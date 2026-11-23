@@ -126,6 +126,8 @@ def maybe_voice_e2e_chat(llm: ChatLLM) -> ChatLLM:
     if os.getenv("SAHIR_VOICE_E2E", "").lower() not in ("1", "true", "yes"):
         return llm
     delay = float(os.getenv("SAHIR_VOICE_E2E_GENERATION_DELAY", "2.5") or "2.5")
-    if isinstance(llm, OllamaChat):
-        return VoiceE2EChat(llm, delay_s=delay)
-    return llm
+    return VoiceE2EChat(llm, delay_s=delay)
+
+
+# Re-export for callers that import from agent.llm
+from agent.openai_compat import OpenAIChat  # noqa: E402

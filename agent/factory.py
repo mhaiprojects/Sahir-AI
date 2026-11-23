@@ -10,7 +10,8 @@ from agent.clickup import ClickUpClient, ClickUpSync, ClickUpWorker
 from agent.config import AgentConfig
 from agent.delegation import Dispatcher
 from agent.email_integration import EmailService, EmailWorker
-from agent.llm import OllamaChat, OllamaEmbedder, maybe_voice_e2e_chat
+from agent.llm import OllamaEmbedder, maybe_voice_e2e_chat
+from agent.llm_factory import build_chat_llm, resolve_llm_backend
 from agent.loop import Agent
 from agent.orchestrator import Orchestrator
 from agent.store import AgentStore
@@ -42,9 +43,7 @@ def build_agent_stack(
     config = config or AgentConfig.from_env()
     store = AgentStore(config.db_path)
     embedder = OllamaEmbedder(settings.ollama_host, config.embed_model)
-    llm = maybe_voice_e2e_chat(
-        OllamaChat(settings.ollama_host, settings.ollama_model, model_getter=lambda: settings.ollama_model)
-    )
+    llm = maybe_voice_e2e_chat(build_chat_llm(settings))
     agent = Agent(settings, config, store, embedder, llm)
     dispatcher = Dispatcher(store)
     clickup = clickup or ClickUpClient.from_settings(settings)
@@ -62,9 +61,10 @@ def build_agent_stack(
     agent._integration_email = email  # noqa: SLF001 — numbered action dispatch
     agent._integration_calendar = calendar  # noqa: SLF001
     logger.info(
-        "Agent stack ready: db=%s vector=%s workers=%s clickup=%s email=%s calendar=%s",
+        "Agent stack ready: db=%s vector=%s llm=%s workers=%s clickup=%s email=%s calendar=%s",
         config.db_path,
         store.vector_backend,
+        resolve_llm_backend(settings),
         list(dispatcher.workers),
         "configured" if clickup.configured else "no token",
         "configured" if email.configured else "no creds",

@@ -33,6 +33,7 @@ from agent.gpu_config import get_gpu_config
 from agent.model_selection import choose_auto_default, load_bench_scores
 from agent.vram_budget import budget_summary, model_fits_vram, vram_warning_for_model
 from agent.ollama_runtime import chat_options
+from agent.llm_factory import chat_model_name, resolve_llm_backend
 from config import Settings
 
 logger = logging.getLogger(__name__)
@@ -106,7 +107,13 @@ class ModelManager:
     # ------------------------------------------------------------ state
     @property
     def active_model(self) -> str:
-        return self.settings.ollama_model
+        return chat_model_name(self.settings)
+
+    def _set_active_model(self, name: str) -> None:
+        if resolve_llm_backend(self.settings) == "openai":
+            self.settings.openai_model = name
+        else:
+            self.settings.ollama_model = name
 
     def _load_state(self) -> None:
         try:
@@ -117,12 +124,14 @@ class ModelManager:
             logger.warning("Ignoring unreadable model state %s: %s", self.state_path, exc)
             return
         if state.get("active_model"):
-            self.settings.ollama_model = str(state["active_model"])
+            self._set_active_model(str(state["active_model"]))
             source = state.get("active_source")
             if source in ("user", "auto"):
                 self.active_source = source
             else:  # legacy file: a model other than the env default must have been picked by hand
-                self.active_source = "user" if self.settings.ollama_model != self.default_model else "env"
+                self.active_source = (
+                    "user" if self.active_model != self.default_model else "env"
+                )
         self.auto_fallback = bool(state.get("auto_fallback", True))
         self.force_fallback = bool(state.get("force_fallback", False))
         if state.get("fallback_model") and not os.getenv("FALLBACK_MODEL"):
@@ -147,7 +156,31 @@ class ModelManager:
         return f"{self.settings.ollama_host.rstrip('/')}{path}"
 
     def installed(self) -> list[dict[str, Any]]:
+        if resolve_llm_backend(self.settings) == "openai":
+            return self._openai_installed()
         return list(self._http("GET", self._url("/api/tags"), None, 5).get("models", []))
+
+    def _openai_installed(self) -> list[dict[str, Any]]:
+        from agent.openai_compat import OpenAIChat
+
+        if self.settings.openai_base_url_error:
+            raise RuntimeError(self.settings.openai_base_url_error)
+        chat = OpenAIChat(
+            self.settings.openai_base_url,
+            self.settings.openai_model or "default",
+            api_key=self.settings.openai_api_key,
+            timeout_s=min(self.settings.openai_timeout_seconds, 15.0),
+        )
+        rows = chat.list_models()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            mid = row.get("id") or row.get("name") or ""
+            if not mid or _EMBED_RE.search(mid):
+                continue
+            out.append({"name": mid, "size": int(row.get("size") or 0), "details": {}})
+        if not out and self.settings.openai_model:
+            out.append({"name": self.settings.openai_model, "size": 0, "details": {}})
+        return out
 
     def running(self) -> list[dict[str, Any]]:
         return list(self._http("GET", self._url("/api/ps"), None, 5).get("models", []))
@@ -164,6 +197,8 @@ class ModelManager:
 
     def ensure_default(self, installed: list[dict[str, Any]] | None = None) -> str | None:
         """Apply the VRAM/bench auto default unless the user's pick is still installed."""
+        if resolve_llm_backend(self.settings) == "openai":
+            return None
         if not self.auto_default:
             return None
         installed = self.installed() if installed is None else installed
@@ -180,7 +215,7 @@ class ModelManager:
             return None
         reason = ("saved model %r is no longer installed" % current) if current not in names else "auto_default"
         with self._lock:
-            self.settings.ollama_model = chosen
+            self._set_active_model(chosen)
             self.active_source = "auto"
             self._save_state()
         if current != chosen:
@@ -263,7 +298,13 @@ class ModelManager:
 
         router_svc = get_router_service()
         router_placement = router_svc.placement_status() if router_svc else {"enabled": False}
+        from agent.llm_factory import llm_status
+
+        llm = llm_status(self.settings)
         return {"active_model": self.active_model, "active_source": self.active_source,
+                "llm_backend": llm["backend"],
+                "llm_status": llm,
+                "router_stays_on_ollama": True,
                 "smallest_model": auto_name,  # legacy key: recommended auto default
                 "auto_default_model": auto_name,
                 "default_selection": self._default_selection_status(installed, active_row),
@@ -285,7 +326,7 @@ class ModelManager:
     def select(self, name: str) -> dict[str, Any]:
         self._require_installed(name)
         with self._lock:
-            self.settings.ollama_model = name
+            self._set_active_model(name)
             self.active_source = "user"
             self._save_state()
         logger.info("Active chat model -> %s (picked by user)", name)
@@ -307,6 +348,8 @@ class ModelManager:
                 "fallback_model": self.fallback_model}
 
     def load(self, name: str, keep_alive: str | None = None) -> dict[str, Any]:
+        if resolve_llm_backend(self.settings) == "openai":
+            raise ValueError("Model load is only supported for the Ollama LLM backend")
         self._require_installed(name)
         publish("model", f"loading {name} into memory…", source="models")
         t0 = time.monotonic()
@@ -319,6 +362,8 @@ class ModelManager:
                 "load_duration_ms": round((resp.get("load_duration") or 0) / 1e6)}
 
     def eject(self, name: str) -> dict[str, Any]:
+        if resolve_llm_backend(self.settings) == "openai":
+            raise ValueError("Model eject is only supported for the Ollama LLM backend")
         publish("model", f"ejecting {name} from memory", source="models")
         self._http("POST", self._url("/api/generate"), {"model": name, "prompt": "", "stream": False,
                                                         "keep_alive": 0}, 60)
@@ -326,6 +371,8 @@ class ModelManager:
 
     # ------------------------------------------------------------ fallback
     def settings_for(self, model: str) -> Settings:
+        if resolve_llm_backend(self.settings) == "openai":
+            return replace(self.settings, openai_model=model)
         return replace(self.settings, ollama_model=model)
 
     def notify_fallback_escalation(self, reason: str) -> None:

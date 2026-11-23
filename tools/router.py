@@ -621,22 +621,34 @@ def chat_text_only_detailed(
     context: str | None = None,
 ) -> RouteResult:
     """Simple local chat with action metadata."""
+    from agent.llm_factory import chat_completion, resolve_llm_backend
+
     client = _client(settings)
     model, meta = _pick_model(text, settings)
+    messages = _build_messages(
+        system=_with_context(DIRECT_CHAT_SYSTEM, context),
+        user_text=text,
+        history=history,
+    )
     try:
-        response = _chat(
-            client,
-            model,
-            _build_messages(
-                system=_with_context(DIRECT_CHAT_SYSTEM, context),
-                user_text=text,
-                history=history,
-            ),
-            options={"num_predict": 128, "temperature": 0.5},
-        )
+        if resolve_llm_backend(settings) == "openai":
+            response = chat_completion(
+                settings,
+                model,
+                messages,
+                options={"num_predict": 128, "temperature": 0.5},
+            )
+        else:
+            response = _chat(
+                client,
+                model,
+                messages,
+                options={"num_predict": 128, "temperature": 0.5},
+            )
     except Exception as exc:
+        label = "OpenAI API" if resolve_llm_backend(settings) == "openai" else "Ollama"
         return RouteResult(
-            reply=f"Ollama error: {exc}",
+            reply=f"{label} error: {exc}",
             action="error",
             action_details={"error": str(exc)},
             routed=False,
