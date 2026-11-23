@@ -298,11 +298,15 @@ def try_tier1_route(
     store: AgentStore | None,
     embedder: RouterEmbedder | None,
     t0: float,
+    precomputed: Tier1Hit | None = None,
 ) -> RouteDecision | None:
     cfg = get_gpu_config()
     if not cfg.router_t1_enabled or not ctx.tier1_enabled or embedder is None:
         return None
-    hit, _embed_ms = _index.classify(utterance, embedder, chats=ctx.chats)
+    if precomputed is not None:
+        hit = precomputed
+    else:
+        hit, _embed_ms = _index.classify(utterance, embedder, chats=ctx.chats)
     if hit is None:
         return None
     total_ms = (time.perf_counter() - t0) * 1000

@@ -59,3 +59,18 @@ Target: false **S/D** on gold **C** utterances ≤ 3% when acting on margin.
 - Tier 1 uses per-label max cosine similarity; confidence = margin to runner-up label.
 - Static vectors cached under `data/router_t1_cache_*.json`.
 - Tier 2 (qwen3:0.6b) is not part of this calibration run.
+
+## Tier 2 bench (full router stack)
+
+Run: `scripts/bench_router.py` on 2026-11-24 01:33 AEDT.
+
+| Metric | Value |
+|---|---|
+| Utterances | 130 |
+| End-to-end accuracy (effective label) | 96.2% |
+| Latency p50 | 26.3 ms |
+| Latency p90 | 70.2 ms |
+| Tier usage | {"0": 17, "1": 105, "2": 8, "sticky0": 2} |
+| Ollama `/api/ps` | qwen3:0.6b: 100% GPU approx; nomic-embed-text:latest: 0% GPU approx; llama3.1:8b: 100% GPU approx |
+
+Notes: Tier 2 uses `ROUTER_MODEL` with one-letter classify; embeddings stay on CPU when `EMBED_ON_CPU=true`.

@@ -130,6 +130,45 @@ def execute_s_command(
             sources={},
         )
 
+    if cmd == "route_undo":
+        prev = (decision.utterance or "").strip()
+        tid = decision.target_chat_id or ctx.supervisor_chat_id
+        if not prev or not tid:
+            return AgentReply(
+                reply="Nothing to redo.",
+                action="route_undo",
+                action_details={"success": False},
+                routed=True,
+                conversation_id=ctx.active_chat_id or 0,
+                user_message_id=0,
+                assistant_message_id=0,
+                sources={},
+            )
+        mode = agent.store.get_conversation_mode(int(tid)) or "agent"
+        from agent.dispatcher import storage_mode_to_agent
+
+        loop = storage_mode_to_agent(mode)
+        reply = agent.respond(
+            prev,
+            conversation_id=int(tid),
+            mode=loop,
+            source="voice",
+            input_type="voice",
+            auto_session=True,
+            extra_meta={"route_undo": True},
+        )
+        _publish_switch(store, int(tid))
+        return AgentReply(
+            reply=f"Sent to the right chat: {reply.reply[:200]}",
+            action="route_undo",
+            action_details={"success": True, "target_conversation_id": tid, "prior_reply": reply.reply[:500]},
+            routed=True,
+            conversation_id=int(tid),
+            user_message_id=reply.user_message_id,
+            assistant_message_id=reply.assistant_message_id,
+            sources=reply.sources,
+        )
+
     if cmd == "repeat_last":
         return AgentReply(
             reply="Okay, repeating the last reply.",

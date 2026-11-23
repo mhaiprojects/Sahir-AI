@@ -28,6 +28,8 @@ _SUP_PREFIX = re.compile(r"(?is)^(?:supervisor|sahir)\s*[,:\s]+\s*(.+)$")
 _RELAY = re.compile(r"(?is)^(?:please\s+)?(?:tell|in|to)\s+(?:the\s+)?(.+?)\s+chat\s*[,:\s]+\s*(.+)$")
 _RUN_CMD = re.compile(r"(?is)^run\s+(.+)$")
 _STOP_SPEAK = re.compile(r"(?is)^(?:please\s+)?(?:stop\s+(?:speaking|talking)|be\s+quiet)\s*\.?$")
+_UNDO_SUP = re.compile(r"(?is)^(?:no,?\s+)?(?:wrong chat|that was (?:for|meant for) the supervisor)\s*\.?$")
+_UNDO_CHAT = re.compile(r"(?is)^(?:no,?\s+)?that was for (?:the\s+)?(.+?)\s*\.?$")
 
 
 def _norm(text: str) -> str:
@@ -50,6 +52,9 @@ class RouteContext:
     allow_run_command: bool = False  # legacy /api/chat route=True for typed ``run …``
     embedder: Any | None = None
     tier1_enabled: bool = False
+    tier2_enabled: bool = False
+    route_state: Any | None = None
+    chat_fn: Any | None = None
 
 
 @dataclass
@@ -62,6 +67,7 @@ class RouteDecision:
     command: str | None = None
     payload: dict[str, Any] = field(default_factory=dict)
     utterance: str = ""
+    timing: dict[str, Any] = field(default_factory=dict)
 
 
 def build_route_context(store: AgentStore, active_chat_id: int | None) -> RouteContext:
@@ -121,9 +127,17 @@ def _sticky(utterance: str, ctx: RouteContext) -> RouteDecision:
     )
 
 
-def route(utterance: str, ctx: RouteContext, *, store: AgentStore | None = None) -> RouteDecision:
-    """Tier 0 + sticky default. Publishes a ``route`` activity event."""
+def route(
+    utterance: str,
+    ctx: RouteContext,
+    *,
+    store: AgentStore | None = None,
+    max_tier: int = 2,
+    cached_partial: RouteDecision | None = None,
+) -> RouteDecision:
+    """Tier 0 → 1 → 2 + sticky default. Publishes a ``route`` activity event."""
     t0 = time.perf_counter()
+    timing: dict[str, float] = {}
     text = (utterance or "").strip()
     if not text:
         d = _sticky("", ctx)
@@ -131,7 +145,37 @@ def route(utterance: str, ctx: RouteContext, *, store: AgentStore | None = None)
         _publish_route(d)
         return d
 
+    from agent.router_partials import prefix_meaning_changed
+
     tier0 = ctx.tier0_enabled
+
+    if (
+        cached_partial is not None
+        and not prefix_meaning_changed(cached_partial.utterance, text)
+        and max_tier >= 1
+    ):
+        max_tier = min(max_tier, 1)
+
+    if tier0 and store and ctx.route_state and getattr(ctx.route_state, "last_utterance", ""):
+        m = _UNDO_CHAT.match(text)
+        if m or _UNDO_SUP.match(text):
+            target_hint = m.group(1).strip() if m else "supervisor"
+            tid = resolve_target_chat(store, ctx, target_hint) if m else ctx.supervisor_chat_id
+            d = RouteDecision(
+                label="S",
+                tier=0,
+                confidence=0.99,
+                command="route_undo",
+                target_chat_id=tid or ctx.supervisor_chat_id,
+                utterance=ctx.route_state.last_utterance,
+                payload={"undo": True, "target_hint": target_hint},
+            )
+            d.ms = (time.perf_counter() - t0) * 1000
+            timing["tier0_ms"] = d.ms
+            d.timing = dict(timing)
+            _publish_route(d)
+            return d
+
     if ctx.input_type == "text" and not tier0 and not typed_should_route_tier0(text):
         if ctx.allow_run_command:
             m = _RUN_CMD.match(text)
@@ -306,21 +350,41 @@ def route(utterance: str, ctx: RouteContext, *, store: AgentStore | None = None)
             _publish_route(d)
             return d
 
-    if ctx.tier1_enabled and ctx.embedder is not None:
-        from agent.router_t1 import try_tier1_route
+    t1_hit = None
+    if max_tier >= 1 and ctx.tier1_enabled and ctx.embedder is not None:
+        from agent.router_t1 import get_index, try_tier1_route
 
-        t1 = try_tier1_route(text, ctx, store=store, embedder=ctx.embedder, t0=t0)
+        t1_t0 = time.perf_counter()
+        hit, _embed = get_index().classify(text, ctx.embedder, chats=ctx.chats)
+        t1_hit = hit
+        t1 = try_tier1_route(text, ctx, store=store, embedder=ctx.embedder, t0=t0, precomputed=t1_hit)
+        timing["tier1_ms"] = (time.perf_counter() - t1_t0) * 1000
         if t1 is not None:
-            _publish_route(t1)
-            return t1
+            t1.timing = {**timing, "total_ms": (time.perf_counter() - t0) * 1000}
+            if not t1.payload.get("sticky") or max_tier < 2 or not ctx.tier2_enabled:
+                _publish_route(t1)
+                return t1
+            if max_tier >= 2 and ctx.tier2_enabled and t1.payload.get("sticky"):
+                from agent.router_t2 import try_tier2_route
+
+                t2 = try_tier2_route(
+                    text, ctx, store=store, t1=t1_hit, t0=t0, timing=timing, chat_fn=ctx.chat_fn,
+                )
+                if t2 is not None:
+                    _publish_route(t2)
+                    return t2
+                _publish_route(t1)
+                return t1
 
     d = _sticky(text, ctx)
     d.ms = (time.perf_counter() - t0) * 1000
+    d.timing = {**timing, "total_ms": d.ms}
     _publish_route(d)
     return d
 
 
 def _publish_route(d: RouteDecision) -> None:
+    extra = {k: round(v, 3) for k, v in (d.timing or {}).items()}
     publish(
         "route",
         "",
@@ -331,4 +395,5 @@ def _publish_route(d: RouteDecision) -> None:
         ms=round(d.ms, 3),
         target_chat_id=d.target_chat_id,
         command=d.command,
+        **extra,
     )

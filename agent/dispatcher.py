@@ -137,6 +137,7 @@ def _route_context(
     cfg = get_gpu_config()
     ctx.embedder = agent.embedder
     ctx.tier1_enabled = bool(cfg.router_t1_enabled and ctx.tier0_enabled)
+    ctx.tier2_enabled = bool(cfg.router_t2_enabled and ctx.tier0_enabled)
     return ctx
 
 
@@ -159,12 +160,18 @@ def plan_route(
     input_type: str,
     command_store: object | None,
     legacy_route: bool,
+    route_state: object | None = None,
+    cached_decision: RouteDecision | None = None,
+    max_tier: int = 2,
 ) -> tuple[RouteDecision, object]:
     ctx = _route_context(
         agent, text, conversation_id, input_type=input_type,
         command_store=command_store, legacy_route=legacy_route,
     )
-    decision = route(text, ctx, store=agent.store)
+    ctx.route_state = route_state
+    decision = route(
+        text, ctx, store=agent.store, max_tier=max_tier, cached_partial=cached_decision,
+    )
     return decision, ctx
 
 
@@ -236,16 +243,25 @@ def dispatch_routed(
     force_cursor: bool = False,
     history: list[dict[str, str]] | None = None,
     extra_meta: dict | None = None,
+    route_state: object | None = None,
+    cached_decision: RouteDecision | None = None,
+    max_tier: int = 2,
 ) -> tuple[AgentReply | RouteResult, str, RouteDecision]:
     """Utterance router → S (no model), D (supervisor), or C (active chat by mode)."""
     decision, ctx = plan_route(
         agent, text, conversation_id=conversation_id, input_type=input_type,
         command_store=command_store, legacy_route=legacy_route,
+        route_state=route_state, cached_decision=cached_decision, max_tier=max_tier,
     )
     raw, mode = execute_route_decision(
         agent, text, decision, ctx,
         input_type=input_type, force_cursor=force_cursor, history=history, extra_meta=extra_meta,
     )
+    if route_state is not None:
+        route_state.last_utterance = text
+        route_state.last_decision = decision
+        if getattr(raw, "conversation_id", None):
+            route_state.last_conversation_id = raw.conversation_id
     return raw, mode, decision
 
 

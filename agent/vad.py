@@ -150,3 +150,9 @@ class Endpointer:
             return audio
         self.reset()
         return None
+
+    def speech_snapshot(self) -> np.ndarray | None:
+        """Current in-progress utterance audio (for live STT partials)."""
+        if not self.in_speech or not self._speech_frames:
+            return None
+        return np.concatenate(self._speech_frames)

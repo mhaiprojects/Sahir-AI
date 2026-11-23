@@ -29,6 +29,14 @@ from typing import Any, Callable
 import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
+from agent.dispatcher import execute_route_decision, plan_route
+from agent.router_partials import VoiceRouteState, prefix_meaning_changed
+from agent.speculative import (
+    SpeculativeDraft,
+    can_reuse_draft,
+    commit_chat_draft,
+    run_speculative,
+)
 from agent.vad import Endpointer, SileroVAD
 from markdown_speech import strip_markdown_for_speech
 from tts_backends import split_sentences
@@ -54,6 +62,10 @@ class VoiceSession:
         self.busy = False
         self.task: asyncio.Task | None = None
         self._send_lock = asyncio.Lock()
+        self.route_state = VoiceRouteState()
+        self._partial_task: asyncio.Task | None = None
+        self._in_speech = False
+        self._speculative_gen = 0
 
     async def send(self, payload: dict[str, Any]) -> None:
         async with self._send_lock:
@@ -72,6 +84,11 @@ class VoiceSession:
 
     async def on_speech_start(self) -> None:
         await self.send({"type": "speech_start"})
+        self._in_speech = True
+        self.route_state.stabilizer.reset()
+        self.route_state.speculative_draft = None
+        self.route_state.speculative_partial = ""
+        self._partial_task = asyncio.create_task(self._partial_router_loop())
         if self.cancel_current():
             logger.info("Barge-in: user spoke during reply; cancelling generation")
             await self.send({"type": "barge_in"})
@@ -84,14 +101,95 @@ class VoiceSession:
     def _alive(self, gen: int) -> bool:
         return gen == self.generation
 
+    def _cancel_speculative_workers(self) -> int:
+        """Invalidate in-flight speculative threads (no lock). Returns generation captured for draft reuse."""
+        captured = self._speculative_gen
+        self._speculative_gen += 1
+        return captured
+
+    def _start_speculative(self, text: str) -> None:
+        if text == self.route_state.speculative_partial:
+            return
+        self.route_state.speculative_partial = text
+        self._speculative_gen += 1
+        gen = self._speculative_gen
+        conv_id = self.conversation_id
+        agent = self.get_agent()
+        slot: list[SpeculativeDraft | None] = [None]
+        gen_box = [gen]
+
+        def still_valid() -> bool:
+            return self._speculative_gen == gen_box[0]
+
+        def on_draft(d: SpeculativeDraft) -> None:
+            if still_valid():
+                slot[0] = d
+                self.route_state.speculative_draft = d
+
+        def work() -> None:
+            run_speculative(
+                agent,
+                partial=text,
+                conversation_id=conv_id,
+                generation=gen,
+                still_valid=still_valid,
+                on_draft=on_draft,
+            )
+
+        threading.Thread(target=work, name=f"voice-spec-{gen}", daemon=True).start()
+
+    async def _partial_router_loop(self) -> None:
+        pipeline = self.get_pipeline()
+        cmd_store = self.get_command_store() if self.get_command_store else None
+        try:
+            while self._in_speech:
+                await asyncio.sleep(0.45)
+                if not self._in_speech:
+                    break
+                audio = self.endpointer.speech_snapshot()
+                if audio is None or len(audio) < int(16000 * 0.35):
+                    continue
+                text = (await asyncio.to_thread(pipeline.transcribe_live, audio)).strip()
+                if not text:
+                    continue
+                stable = self.route_state.stabilizer.observe(text)
+                if not stable:
+                    continue
+                await self.send({"type": "transcript_partial", "text": stable})
+
+                def cache_route() -> None:
+                    agent = self.get_agent()
+                    decision, _ctx = plan_route(
+                        agent,
+                        stable,
+                        conversation_id=self.conversation_id,
+                        input_type="voice",
+                        command_store=cmd_store,
+                        legacy_route=False,
+                        route_state=self.route_state,
+                    )
+                    self.route_state.stabilizer.cached_decision = decision
+
+                await asyncio.to_thread(cache_route)
+                dec = self.route_state.stabilizer.cached_decision
+                if dec and dec.label == "C" and dec.payload.get("sticky", True):
+                    self._start_speculative(stable)
+        except asyncio.CancelledError:
+            pass
+
     async def run_turn(self, gen: int, *, audio: np.ndarray | None, text: str | None) -> None:
         self.busy = True
         t0 = time.monotonic()
         input_type = "text" if text is not None else "voice"
         try:
             pipeline = self.get_pipeline()
+            self._in_speech = False
+            if self._partial_task:
+                self._partial_task.cancel()
+                self._partial_task = None
             if text is None:
                 await self.send({"type": "status", "state": "transcribing"})
+                self.route_state.speech_end_mono = time.monotonic()
                 text = (await asyncio.to_thread(pipeline.transcribe_final, audio)).strip()
                 if not self._alive(gen):
                     return
@@ -102,38 +200,72 @@ class VoiceSession:
             await self.send({"type": "status", "state": "thinking"})
 
             def respond():
-                from agent.dispatcher import dispatch_routed
                 from agent.loop import AgentReply
                 from tools.router import RouteResult
+
+                draft_snapshot = self.route_state.speculative_draft
+                draft_gen = self._cancel_speculative_workers()
 
                 if not self.request_lock.acquire(timeout=120):
                     raise RuntimeError("Assistant is busy")
                 try:
                     agent = self.get_agent()
                     cmd_store = self.get_command_store() if self.get_command_store else None
-                    raw, _mode, _decision = dispatch_routed(
+                    cached = self.route_state.stabilizer.cached_decision
+                    max_tier = 2
+                    if cached and not prefix_meaning_changed(cached.utterance, text):
+                        max_tier = 1
+                    decision, ctx = plan_route(
                         agent,
                         text,
                         conversation_id=self.conversation_id,
                         input_type=input_type,
                         command_store=cmd_store,
+                        legacy_route=False,
+                        route_state=self.route_state,
+                        cached_decision=cached,
+                        max_tier=max_tier,
                     )
-                    if isinstance(raw, RouteResult):
-                        return AgentReply(
-                            reply=raw.reply,
-                            action=raw.action,
-                            action_details=raw.action_details,
-                            routed=raw.routed,
-                            conversation_id=self.conversation_id or 0,
-                            user_message_id=0,
-                            assistant_message_id=0,
-                            sources={},
+                    self.route_state.route_final_mono = time.monotonic()
+
+                    if can_reuse_draft(
+                        draft_snapshot,
+                        generation_at_capture=draft_gen,
+                        decision=decision,
+                        final_text=text,
+                        conversation_id=self.conversation_id,
+                    ):
+                        raw = commit_chat_draft(
+                            agent,
+                            conversation_id=decision.target_chat_id or self.conversation_id,
+                            user_text=text,
+                            reply=draft_snapshot.reply,
                         )
-                    return raw
+                    else:
+                        raw, _mode = execute_route_decision(
+                            agent, text, decision, ctx,
+                            input_type=input_type,
+                            extra_meta={"input_type": input_type, "route_label": decision.label},
+                        )
+                        if isinstance(raw, RouteResult):
+                            raw = AgentReply(
+                                reply=raw.reply,
+                                action=raw.action,
+                                action_details=raw.action_details,
+                                routed=raw.routed,
+                                conversation_id=self.conversation_id or 0,
+                                user_message_id=0,
+                                assistant_message_id=0,
+                                sources={},
+                            )
+                    self.route_state.speculative_draft = None
+                    self.route_state.last_decision = decision
+                    return raw, decision
                 finally:
                     self.request_lock.release()
 
-            r = await asyncio.to_thread(respond)
+            outcome = await asyncio.to_thread(respond)
+            r, route_decision = outcome
             if r.action in {"stop_speech", "cancel_request"}:
                 self.generation += 1
             elif r.action == "switch_chat" and r.conversation_id:
@@ -149,9 +281,20 @@ class VoiceSession:
                                  "sources": r.sources, "latency_ms": int((time.monotonic() - t0) * 1000)})
                 await self.send({"type": "tts_done", "interrupted": True})
                 return
+            route_ms = (
+                int((self.route_state.route_final_mono - t0) * 1000)
+                if self.route_state.route_final_mono
+                else None
+            )
+            timing = (route_decision.timing if route_decision else {}) or {}
+            e2e_ms = None
+            if self.route_state.speech_end_mono and self.route_state.route_final_mono:
+                e2e_ms = int((self.route_state.route_final_mono - self.route_state.speech_end_mono) * 1000)
             await self.send({"type": "reply", "text": r.reply, "action": r.action,
                              "conversation_id": r.conversation_id, "action_details": r.action_details,
-                             "sources": r.sources, "latency_ms": int((time.monotonic() - t0) * 1000)})
+                             "sources": r.sources, "latency_ms": int((time.monotonic() - t0) * 1000),
+                             "route_tier": route_decision.tier if route_decision else None,
+                             "route_timing": timing, "route_final_ms": e2e_ms, "route_ms": route_ms})
             if not self.tts:
                 return
             await self.send({"type": "status", "state": "speaking"})

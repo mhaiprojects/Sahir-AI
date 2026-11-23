@@ -41,6 +41,11 @@ class GpuRuntimeConfig:
     vram_desktop_gb: float = 1.1
     router_t1_enabled: bool = True
     router_t1_margin: float = 0.07
+    router_t2_enabled: bool = True
+    router_t2_timeout_ms: float = 400.0
+    router_t2_confidence: float = 0.55
+    router_t2_use_fallback: bool = False
+    router_t2_fallback_model: str = "qwen3:1.7b"
 
     @classmethod
     def from_env(cls) -> "GpuRuntimeConfig":
@@ -57,6 +62,12 @@ class GpuRuntimeConfig:
             vram_desktop_gb=_float("VRAM_DESKTOP_GB", 1.1),
             router_t1_enabled=_bool("ROUTER_T1_ENABLED", True),
             router_t1_margin=_float("ROUTER_T1_MARGIN", 0.07),
+            router_t2_enabled=_bool("ROUTER_T2_ENABLED", True),
+            router_t2_timeout_ms=_float("ROUTER_T2_TIMEOUT_MS", 400.0),
+            router_t2_confidence=_float("ROUTER_T2_CONFIDENCE", 0.55),
+            router_t2_use_fallback=_bool("ROUTER_T2_FALLBACK", False),
+            router_t2_fallback_model=os.getenv("ROUTER_T2_FALLBACK_MODEL", "qwen3:1.7b").strip()
+            or "qwen3:1.7b",
         )
 
 
