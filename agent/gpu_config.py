@@ -35,6 +35,10 @@ class GpuRuntimeConfig:
     router_num_ctx: int = 1024
     router_pin_enabled: bool = True
     router_keep_warm_sec: float = 120.0
+    router_placement_check_sec: float = 60.0
+    router_min_gpu_fraction: float = 0.9
+    router_placement_reload_cooldown_sec: float = 300.0
+    router_classify_grace_sec: float = 3.0
     vram_total_gb: float = 4.0
     vram_router_gb: float = 0.7
     vram_embed_gb: float = 0.3
@@ -56,6 +60,10 @@ class GpuRuntimeConfig:
             router_num_ctx=_int("ROUTER_NUM_CTX", 1024),
             router_pin_enabled=_bool("ROUTER_PIN_ENABLED", True),
             router_keep_warm_sec=_float("ROUTER_KEEP_WARM_SEC", 120.0),
+            router_placement_check_sec=_float("ROUTER_PLACEMENT_CHECK_SEC", 60.0),
+            router_min_gpu_fraction=_float("ROUTER_MIN_GPU_FRACTION", 0.9),
+            router_placement_reload_cooldown_sec=_float("ROUTER_PLACEMENT_RELOAD_COOLDOWN_SEC", 300.0),
+            router_classify_grace_sec=_float("ROUTER_CLASSIFY_GRACE_SEC", 3.0),
             vram_total_gb=_float("VRAM_TOTAL_GB", 4.0),
             vram_router_gb=_float("VRAM_ROUTER_GB", 0.7),
             vram_embed_gb=_float("VRAM_EMBED_GB", 0.3),

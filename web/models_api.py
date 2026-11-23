@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from activity import publish
 from agent.models import ModelManager
+from agent.router_model import get_router_service
 
 logger = logging.getLogger(__name__)
 
@@ -189,5 +190,27 @@ def create_models_router(get_manager: Callable[[], ModelManager], request_lock: 
             return bench.start(body.models, body.quick)
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @router.post("/router/reload")
+    def router_reload() -> dict[str, Any]:
+        svc = get_router_service()
+        if svc is None or not svc.enabled:
+            raise HTTPException(status_code=404, detail="Router pin is disabled")
+        lock = request_lock
+
+        def run() -> dict[str, Any]:
+            try:
+                return svc.force_reload()
+            except RuntimeError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        if lock is None:
+            return _call(run)
+        if not lock.acquire(blocking=False):
+            raise HTTPException(status_code=429, detail="Assistant is busy")
+        try:
+            return run()
+        finally:
+            lock.release()
 
     return router

@@ -168,6 +168,10 @@
           returns an invalid action, or when you say "think harder" / "use the big model".</p>
         <div id="models-status" class="models-status" aria-live="polite">Loading models…</div>
         <div id="models-storage" class="models-storage" aria-live="polite" hidden></div>
+        <div id="models-router-pin" class="models-storage models-router-pin" aria-live="polite" hidden>
+          <span id="models-router-pin-text"></span>
+          <button type="button" id="router-reload-btn" class="secondary small">Reload router on GPU</button>
+        </div>
         <div id="models-list" class="models-list" role="radiogroup" aria-label="Chat models"></div>
         <section class="config-section models-options">
           <div class="config-body">

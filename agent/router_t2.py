@@ -12,6 +12,7 @@ from typing import Any, Callable, Protocol
 from agent.chat_router import RouteContext, RouteDecision, STICKY_CONFIDENCE, resolve_target_chat
 from agent.gpu_config import get_gpu_config
 from agent.models import think_kwargs
+from agent.router_model import router_classify_guard
 from agent.router_t1 import Tier1Hit
 
 logger = logging.getLogger(__name__)
@@ -134,7 +135,8 @@ def classify_tier2(
 
     def call() -> dict[str, Any]:
         kw = {**think_kwargs(model), "options": opts}
-        return chat(model=model, messages=_build_prompt(utterance, ctx), **kw)
+        with router_classify_guard():
+            return chat(model=model, messages=_build_prompt(utterance, ctx), **kw)
 
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:

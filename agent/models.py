@@ -259,6 +259,10 @@ class ModelManager:
             override_dir=self.settings.ollama_models_dir,
             warn_free_gb=self.settings.ollama_models_warn_free_gb,
         )
+        from agent.router_model import get_router_service
+
+        router_svc = get_router_service()
+        router_placement = router_svc.placement_status() if router_svc else {"enabled": False}
         return {"active_model": self.active_model, "active_source": self.active_source,
                 "smallest_model": auto_name,  # legacy key: recommended auto default
                 "auto_default_model": auto_name,
@@ -268,6 +272,7 @@ class ModelManager:
                 "force_fallback": self.force_fallback, "keep_alive": self.keep_alive,
                 "vram_budget": budget_summary(cfg),
                 "router_model": cfg.router_model,
+                "router_placement": router_placement,
                 "vram_active_warning": active_row.get("vram_warning") if active_row else None,
                 "embed_on_cpu": cfg.embed_on_cpu,
                 "model_storage": storage,

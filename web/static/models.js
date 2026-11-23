@@ -57,6 +57,9 @@
   }
 
   let storageEl = document.getElementById("models-storage");
+  const routerPinEl = document.getElementById("models-router-pin");
+  const routerPinText = document.getElementById("models-router-pin-text");
+  const routerReloadBtn = document.getElementById("router-reload-btn");
 
   function renderStorage(storage) {
     if (!storageEl) return;
@@ -88,9 +91,24 @@
     storageEl.textContent = text;
   }
 
+  function renderRouterPlacement(data) {
+    if (!routerPinEl || !routerPinText) return;
+    const p = data.router_placement;
+    if (!p || !p.enabled) {
+      routerPinEl.hidden = true;
+      return;
+    }
+    routerPinEl.hidden = false;
+    const pct = p.gpu_percent != null ? `${p.gpu_percent}% GPU` : (p.state || "—");
+    const last = p.last_check_at ? ` · checked ${new Date(p.last_check_at * 1000).toLocaleTimeString()}` : "";
+    routerPinText.textContent =
+      `Pinned router ${data.router_model || p.model}: ${pct} (${p.state || "unknown"})${last}`;
+  }
+
   function render(data) {
     listEl.innerHTML = "";
     renderStorage(data.model_storage);
+    renderRouterPlacement(data);
     const banner = ensureVramBanner();
     const warn = data.vram_active_warning;
     if (warn && warn.message) {
@@ -203,6 +221,18 @@
   autoFb.addEventListener("change", () => setOptions({ auto_fallback: autoFb.checked }));
   forceFb.addEventListener("change", () => setOptions({ force_fallback: forceFb.checked }));
   document.getElementById("refresh-models-btn").addEventListener("click", refreshModels);
+  if (routerReloadBtn) {
+    routerReloadBtn.addEventListener("click", async () => {
+      setStatus("Reloading pinned router on GPU…");
+      try {
+        const r = await api("/api/models/router/reload");
+        await refreshModels();
+        setStatus(`Router reload done (${r.gpu_percent != null ? r.gpu_percent + "% GPU" : "ok"})`);
+      } catch (err) {
+        setStatus(`Router reload failed: ${err.message}`, true);
+      }
+    });
+  }
 
   function renderBench(latest) {
     benchResults.innerHTML = "";
