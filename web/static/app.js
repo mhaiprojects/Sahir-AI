@@ -271,16 +271,41 @@ function addMessage(role, text, { skipRemember = false, meta = null, numberedIte
   }
   el.className = `msg ${role}`;
   const items = numberedItems || meta?.numbered_items;
-  if ((role === "user" || role === "assistant") && shouldRenderNumberedList(items, text, meta)) {
+  const diagram = meta?.kind === "diagram" && meta?.mermaid;
+  if (role === "assistant" && diagram && typeof renderDiagramBlock === "function") {
+    const content = document.createElement("div");
+    content.className = "msg-content markdown-body";
+    if (text && typeof renderMarkdown === "function") {
+      const intro = document.createElement("div");
+      intro.innerHTML = renderMarkdown(text.split("```")[0].trim());
+      content.appendChild(intro);
+    }
+    renderDiagramBlock(content, {
+      mermaidSource: meta.mermaid,
+      title: meta.diagram_title || "Diagram",
+      messageId: messageId || meta?.id || 0,
+    });
+    if (meta?.calc_code && typeof appendCalcCodeBlock === "function") {
+      appendCalcCodeBlock(content, meta.calc_code, { sandbox: meta.calc_sandbox });
+    }
+    if (!skipRemember) rememberChatTurn(role, text);
+    el.appendChild(content);
+  } else if ((role === "user" || role === "assistant") && shouldRenderNumberedList(items, text, meta)) {
     const content = document.createElement("div");
     content.className = "msg-content markdown-body";
     appendNumberedItems(content, items, { conversationId: homeConversationId, messageId: messageId || meta?.id || 0 });
+    if (meta?.calc_code && typeof appendCalcCodeBlock === "function") {
+      appendCalcCodeBlock(content, meta.calc_code, { sandbox: meta.calc_sandbox });
+    }
     if (!skipRemember) rememberChatTurn(role, text);
     el.appendChild(content);
   } else if ((role === "user" || role === "assistant") && typeof renderMarkdown === "function") {
     const content = document.createElement("div");
     content.className = "msg-content markdown-body";
     content.innerHTML = renderMarkdown(text);
+    if (meta?.calc_code && typeof appendCalcCodeBlock === "function") {
+      appendCalcCodeBlock(content, meta.calc_code, { sandbox: meta.calc_sandbox });
+    }
     el.appendChild(content);
     if (!skipRemember) rememberChatTurn(role, text);
   } else {

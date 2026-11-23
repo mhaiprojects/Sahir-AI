@@ -83,6 +83,20 @@ def execute_s_command(
             sources={},
         )
 
+    if cmd == "calc":
+        payload = decision.payload or {}
+        reply = str(payload.get("reply") or "No result.")
+        return AgentReply(
+            reply=reply,
+            action="calc",
+            action_details={"tier0": True, **{k: v for k, v in payload.items() if k != "reply"}},
+            routed=True,
+            conversation_id=ctx.active_chat_id or 0,
+            user_message_id=0,
+            assistant_message_id=0,
+            sources={},
+        )
+
     if cmd == "run_command":
         command = str(decision.payload.get("command") or "")
         args = list(decision.payload.get("args") or [])

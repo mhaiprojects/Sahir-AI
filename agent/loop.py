@@ -23,6 +23,7 @@ from config import Settings
 from tools import router
 
 from agent.numbered_replies import build_numbered_reply, tts_text_for_reply
+from agent.worker_message_meta import worker_message_meta_from_tasks
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,11 @@ def _save_assistant_reply(
     }
     if tasks:
         meta["tasks"] = tasks
+    wmeta = worker_message_meta_from_tasks(tasks)
+    if wmeta:
+        meta.update(wmeta)
+        if wmeta.get("tts_text"):
+            tts = str(wmeta["tts_text"])
     assistant_id = store.add_message(conv_id, "assistant", display, meta)
     return display, items, assistant_id, tts, numbered_ui
 

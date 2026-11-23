@@ -14,6 +14,8 @@ from agent.llm import OllamaChat, OllamaEmbedder, maybe_voice_e2e_chat
 from agent.loop import Agent
 from agent.orchestrator import Orchestrator
 from agent.store import AgentStore
+from agent.calc_worker import CalcWorker
+from agent.design_worker import DesignWorker
 from agent.workers import CodeWorker, ResearchWorker
 from config import Settings
 
@@ -53,6 +55,8 @@ def build_agent_stack(
     dispatcher.register(ClickUpWorker(clickup))
     dispatcher.register(EmailWorker(email, llm=llm))
     dispatcher.register(CalendarWorker(calendar))
+    dispatcher.register(CalcWorker(llm))
+    dispatcher.register(DesignWorker(llm))
     dispatcher.result_hooks.append(ClickUpSync(clickup))
     agent.orchestrator = Orchestrator(settings, dispatcher)
     agent._integration_email = email  # noqa: SLF001 — numbered action dispatch

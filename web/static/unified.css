@@ -305,6 +305,47 @@
   color: var(--text);
 }
 
+.diagram-message {
+  margin-top: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem;
+  background: var(--surface2, #141c28);
+}
+
+.diagram-head {
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.diagram-render svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.diagram-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.diagram-btn {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+}
+
+.calc-code-block {
+  margin-top: 0.45rem;
+  font-size: 0.78rem;
+}
+
+.calc-code-block pre.calc-code {
+  white-space: pre-wrap;
+  max-height: 12rem;
+  overflow: auto;
+  margin: 0.35rem 0 0;
+}
+
 .chat-mic-state {
   flex: none;
   font-size: 0.78rem;

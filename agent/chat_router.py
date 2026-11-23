@@ -333,6 +333,22 @@ def route(
             return d
 
     if tier0:
+        from agent.calc_eval import try_tier0_calc
+
+        calc = try_tier0_calc(text)
+        if calc:
+            d = RouteDecision(
+                label="S",
+                tier=0,
+                confidence=0.99,
+                command="calc",
+                utterance=text,
+                payload=calc,
+            )
+            d.ms = (time.perf_counter() - t0) * 1000
+            _publish_route(d)
+            return d
+
         m = _RUN_CMD.match(text)
         if m:
             tail = m.group(1).strip()

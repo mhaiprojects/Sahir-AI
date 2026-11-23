@@ -221,6 +221,16 @@ class Orchestrator:
             calls.append({"type": "calendar", "description": text})
         elif "research" in self.dispatcher.workers and heuristic_research_intent(text):
             calls.append({"type": "research", "description": text})
+        if not calls:
+            from agent.design_worker import heuristic_design_intent
+
+            if "design" in self.dispatcher.workers and heuristic_design_intent(text):
+                calls.append({"type": "design", "description": text})
+        if not calls:
+            from agent.calc_worker import CalcWorker
+
+            if "calc" in self.dispatcher.workers and CalcWorker.handles(text):
+                calls.append({"type": "calc", "description": text})
         if "code" in self.dispatcher.workers and not calls:
             if router._looks_like_cursor_cli_query(text) or router._looks_like_code_task(text):
                 calls.append({"type": "code", "description": text})
