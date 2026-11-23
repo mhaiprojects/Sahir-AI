@@ -1,0 +1,463 @@
+{
+  "version": 1,
+  "examples": [
+    {
+      "text": "spin up a chat for the login redesign",
+      "label": "D"
+    },
+    {
+      "text": "start a new chat about API pagination",
+      "label": "D"
+    },
+    {
+      "text": "create a sub chat for mobile layout bugs",
+      "label": "D"
+    },
+    {
+      "text": "open a new thread for the deployment runbook",
+      "label": "D"
+    },
+    {
+      "text": "spawn a chat for the Zigbee firmware issue",
+      "label": "D"
+    },
+    {
+      "text": "can you spin up something for grocery planning",
+      "label": "D"
+    },
+    {
+      "text": "supervisor please start a chat for code review",
+      "label": "D"
+    },
+    {
+      "text": "I need a new chat about the database migration",
+      "label": "D"
+    },
+    {
+      "text": "summarise everything",
+      "label": "D"
+    },
+    {
+      "text": "summarise all chats in this project",
+      "label": "D"
+    },
+    {
+      "text": "give me a summary across every chat",
+      "label": "D"
+    },
+    {
+      "text": "what's the status across chats",
+      "label": "D"
+    },
+    {
+      "text": "how is this project going overall",
+      "label": "D"
+    },
+    {
+      "text": "what chats do we have",
+      "label": "D"
+    },
+    {
+      "text": "list all the chats in this project",
+      "label": "D"
+    },
+    {
+      "text": "which conversations are still active",
+      "label": "D"
+    },
+    {
+      "text": "brief me on the whole project",
+      "label": "D"
+    },
+    {
+      "text": "high level overview of all sub chats",
+      "label": "D"
+    },
+    {
+      "text": "rollup status for the team",
+      "label": "D"
+    },
+    {
+      "text": "project wide summary please",
+      "label": "D"
+    },
+    {
+      "text": "tell me what's happening in each chat",
+      "label": "D"
+    },
+    {
+      "text": "catch me up on everything in this project",
+      "label": "D"
+    },
+    {
+      "text": "supervisor what's the big picture",
+      "label": "D"
+    },
+    {
+      "text": "any blockers across chats",
+      "label": "D"
+    },
+    {
+      "text": "what should I prioritise in this project",
+      "label": "D"
+    },
+    {
+      "text": "merge the notes from every chat",
+      "label": "D"
+    },
+    {
+      "text": "consolidated update for stakeholders",
+      "label": "D"
+    },
+    {
+      "text": "executive summary of our chats",
+      "label": "D"
+    },
+    {
+      "text": "status report for the Saa project",
+      "label": "D"
+    },
+    {
+      "text": "are we on track across workstreams",
+      "label": "D"
+    },
+    {
+      "text": "which chat owns the release checklist",
+      "label": "D"
+    },
+    {
+      "text": "who is working on authentication",
+      "label": "D"
+    },
+    {
+      "text": "map the open topics across chats",
+      "label": "D"
+    },
+    {
+      "text": "summarise backend and frontend chats together",
+      "label": "D"
+    },
+    {
+      "text": "project health check",
+      "label": "D"
+    },
+    {
+      "text": "give me the supervisor view",
+      "label": "D"
+    },
+    {
+      "text": "what did we decide project wide",
+      "label": "D"
+    },
+    {
+      "text": "cross chat action items",
+      "label": "D"
+    },
+    {
+      "text": "inventory of open tasks across chats",
+      "label": "D"
+    },
+    {
+      "text": "panorama of current work",
+      "label": "D"
+    },
+    {
+      "text": "add a test for the login form",
+      "label": "C"
+    },
+    {
+      "text": "make the button blue",
+      "label": "C"
+    },
+    {
+      "text": "what's the weather tomorrow",
+      "label": "C"
+    },
+    {
+      "text": "refactor the handler to use async",
+      "label": "C"
+    },
+    {
+      "text": "write unit tests for UserService",
+      "label": "C"
+    },
+    {
+      "text": "fix the typo in the readme",
+      "label": "C"
+    },
+    {
+      "text": "explain this error message",
+      "label": "C"
+    },
+    {
+      "text": "how do I sort a list in Python",
+      "label": "C"
+    },
+    {
+      "text": "improve the contrast on the sidebar",
+      "label": "C"
+    },
+    {
+      "text": "add loading spinners to the save button",
+      "label": "C"
+    },
+    {
+      "text": "what does this stack trace mean",
+      "label": "C"
+    },
+    {
+      "text": "rename the function to fetchProfile",
+      "label": "C"
+    },
+    {
+      "text": "draft a commit message for these changes",
+      "label": "C"
+    },
+    {
+      "text": "suggest a variable name for the timeout",
+      "label": "C"
+    },
+    {
+      "text": "add input validation on the email field",
+      "label": "C"
+    },
+    {
+      "text": "convert this callback to async await",
+      "label": "C"
+    },
+    {
+      "text": "what is two plus two",
+      "label": "C"
+    },
+    {
+      "text": "help me debug this null pointer",
+      "label": "C"
+    },
+    {
+      "text": "create a markdown table for the results",
+      "label": "C"
+    },
+    {
+      "text": "translate this paragraph to plain English",
+      "label": "C"
+    },
+    {
+      "text": "optimize the SQL query for the reports page",
+      "label": "C"
+    },
+    {
+      "text": "add aria labels to the modal",
+      "label": "C"
+    },
+    {
+      "text": "what's my cat's name again",
+      "label": "C"
+    },
+    {
+      "text": "remember that I prefer dark mode",
+      "label": "C"
+    },
+    {
+      "text": "implement debouncing on the search box",
+      "label": "C"
+    },
+    {
+      "text": "show me an example JSON payload",
+      "label": "C"
+    },
+    {
+      "text": "write a regex for UK postcodes",
+      "label": "C"
+    },
+    {
+      "text": "how tall is the Eiffel tower",
+      "label": "C"
+    },
+    {
+      "text": "patch the CSS so links are underlined",
+      "label": "C"
+    },
+    {
+      "text": "add error handling around file uploads",
+      "label": "C"
+    },
+    {
+      "text": "what libraries support websocket auth",
+      "label": "C"
+    },
+    {
+      "text": "generate pytest fixtures for the API client",
+      "label": "C"
+    },
+    {
+      "text": "fix the mobile menu z-index",
+      "label": "C"
+    },
+    {
+      "text": "explain recursion to a beginner",
+      "label": "C"
+    },
+    {
+      "text": "compare REST vs graphql for this use case",
+      "label": "C"
+    },
+    {
+      "text": "document the environment variables",
+      "label": "C"
+    },
+    {
+      "text": "add a health check endpoint",
+      "label": "C"
+    },
+    {
+      "text": "simplify this nested if statement",
+      "label": "C"
+    },
+    {
+      "text": "what time is it in Tokyo",
+      "label": "C"
+    },
+    {
+      "text": "brainstorm names for the new feature flag",
+      "label": "C"
+    },
+    {
+      "text": "write a bash script to tail logs",
+      "label": "C"
+    },
+    {
+      "text": "how do I merge these two dicts",
+      "label": "C"
+    },
+    {
+      "text": "capitalize the product title in the header",
+      "label": "C"
+    },
+    {
+      "text": "increase the font size on warnings",
+      "label": "C"
+    },
+    {
+      "text": "split this component into smaller pieces",
+      "label": "C"
+    },
+    {
+      "text": "add snapshots for the settings page",
+      "label": "C"
+    },
+    {
+      "text": "mock the payment provider in tests",
+      "label": "C"
+    },
+    {
+      "text": "trim whitespace from user input",
+      "label": "C"
+    },
+    {
+      "text": "provide a code review for this diff",
+      "label": "C"
+    },
+    {
+      "text": "suggest improvements for accessibility",
+      "label": "C"
+    },
+    {
+      "text": "how many days until Christmas",
+      "label": "C"
+    },
+    {
+      "text": "format this date as ISO-8601",
+      "label": "C"
+    },
+    {
+      "text": "enable strict mode in TypeScript",
+      "label": "C"
+    },
+    {
+      "text": "seed the database with demo users",
+      "label": "C"
+    },
+    {
+      "text": "hide the banner on small screens",
+      "label": "C"
+    },
+    {
+      "text": "what does git rebase do",
+      "label": "C"
+    },
+    {
+      "text": "convert pounds to kilograms",
+      "label": "C"
+    },
+    {
+      "text": "add caching headers for static assets",
+      "label": "C"
+    },
+    {
+      "text": "list pros and cons of sqlite here",
+      "label": "C"
+    },
+    {
+      "text": "write docstrings for these methods",
+      "label": "C"
+    },
+    {
+      "text": "fix the flaky test in test_auth",
+      "label": "C"
+    },
+    {
+      "text": "colour the chart series green",
+      "label": "C"
+    },
+    {
+      "text": "stop talking",
+      "label": "S",
+      "command": "stop_speech"
+    },
+    {
+      "text": "cancel that request",
+      "label": "S",
+      "command": "cancel_request"
+    },
+    {
+      "text": "pause listening for a minute",
+      "label": "S",
+      "command": "pause_listening"
+    },
+    {
+      "text": "resume listening",
+      "label": "S",
+      "command": "resume_listening"
+    },
+    {
+      "text": "repeat the last thing you said",
+      "label": "S",
+      "command": "repeat_last"
+    },
+    {
+      "text": "switch to the backend chat",
+      "label": "S",
+      "command": "switch_chat"
+    },
+    {
+      "text": "open the groceries conversation",
+      "label": "S",
+      "command": "switch_chat"
+    },
+    {
+      "text": "go to the other chat",
+      "label": "S",
+      "command": "switch_chat"
+    },
+    {
+      "text": "new chat please",
+      "label": "S",
+      "command": "new_chat"
+    },
+    {
+      "text": "start a brand new conversation",
+      "label": "S",
+      "command": "new_chat"
+    }
+  ]
+}

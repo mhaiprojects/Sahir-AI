@@ -39,6 +39,8 @@ class GpuRuntimeConfig:
     vram_router_gb: float = 0.7
     vram_embed_gb: float = 0.3
     vram_desktop_gb: float = 1.1
+    router_t1_enabled: bool = True
+    router_t1_margin: float = 0.07
 
     @classmethod
     def from_env(cls) -> "GpuRuntimeConfig":
@@ -53,6 +55,8 @@ class GpuRuntimeConfig:
             vram_router_gb=_float("VRAM_ROUTER_GB", 0.7),
             vram_embed_gb=_float("VRAM_EMBED_GB", 0.3),
             vram_desktop_gb=_float("VRAM_DESKTOP_GB", 1.1),
+            router_t1_enabled=_bool("ROUTER_T1_ENABLED", True),
+            router_t1_margin=_float("ROUTER_T1_MARGIN", 0.07),
         )
 
 

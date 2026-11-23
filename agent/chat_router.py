@@ -5,11 +5,14 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from activity import publish
 from agent.store import AgentStore
 from agent.supervisor_intent import parse_directive, resolve_chat_in_project
+
+if TYPE_CHECKING:
+    from agent.router_t1 import RouterEmbedder
 
 STICKY_CONFIDENCE = 0.35
 LABELS = frozenset({"S", "D", "C"})
@@ -45,6 +48,8 @@ class RouteContext:
     command_store: Any | None = None
     tier0_enabled: bool = True
     allow_run_command: bool = False  # legacy /api/chat route=True for typed ``run …``
+    embedder: Any | None = None
+    tier1_enabled: bool = False
 
 
 @dataclass
@@ -300,6 +305,14 @@ def route(utterance: str, ctx: RouteContext, *, store: AgentStore | None = None)
             d.ms = (time.perf_counter() - t0) * 1000
             _publish_route(d)
             return d
+
+    if ctx.tier1_enabled and ctx.embedder is not None:
+        from agent.router_t1 import try_tier1_route
+
+        t1 = try_tier1_route(text, ctx, store=store, embedder=ctx.embedder, t0=t0)
+        if t1 is not None:
+            _publish_route(t1)
+            return t1
 
     d = _sticky(text, ctx)
     d.ms = (time.perf_counter() - t0) * 1000

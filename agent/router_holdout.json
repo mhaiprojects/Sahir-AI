@@ -1,0 +1,76 @@
+{
+  "examples": [
+    {
+      "text": "summarise the whole project for me",
+      "label": "D"
+    },
+    {
+      "text": "start a chat about invoice exports",
+      "label": "D"
+    },
+    {
+      "text": "what chats exist right now",
+      "label": "D"
+    },
+    {
+      "text": "add integration tests for checkout",
+      "label": "C"
+    },
+    {
+      "text": "change the submit button to green",
+      "label": "C"
+    },
+    {
+      "text": "why is the build failing",
+      "label": "C"
+    },
+    {
+      "text": "explain quantum computing simply",
+      "label": "C"
+    },
+    {
+      "text": "open the design chat",
+      "label": "S"
+    },
+    {
+      "text": "stop speaking now",
+      "label": "S"
+    },
+    {
+      "text": "what's on my shopping list",
+      "label": "C"
+    },
+    {
+      "text": "give me a cross chat digest",
+      "label": "D"
+    },
+    {
+      "text": "how is the API refactor going in isolation",
+      "label": "C"
+    },
+    {
+      "text": "spawn something for database backups",
+      "label": "D"
+    },
+    {
+      "text": "make the header sticky on scroll",
+      "label": "C"
+    },
+    {
+      "text": "project level status please",
+      "label": "D"
+    },
+    {
+      "text": "run the linter on this file",
+      "label": "C"
+    },
+    {
+      "text": "never mind cancel",
+      "label": "S"
+    },
+    {
+      "text": "which model are you using",
+      "label": "C"
+    }
+  ]
+}

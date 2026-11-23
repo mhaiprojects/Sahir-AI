@@ -415,6 +415,9 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI):
         # Pin the router model first (background); chat model manager stays lazy until first use.
         start_router_service(_get_settings())
+        from agent.router_t1 import warm_router_index_background
+
+        warm_router_index_background(lambda: _get_agent_stack().agent.embedder)
         yield
         stop_router_service()
 

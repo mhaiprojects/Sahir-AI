@@ -11,6 +11,7 @@ from agent.chat_router import (
     route,
     typed_should_route_tier0,
 )
+from agent.gpu_config import get_gpu_config
 from agent.loop import MODES, AgentReply
 from agent.route_exec import execute_s_command, target_conversation_id
 from agent.store import AgentStore
@@ -133,6 +134,9 @@ def _route_context(
         ctx.tier0_enabled = True
     else:
         ctx.tier0_enabled = False
+    cfg = get_gpu_config()
+    ctx.embedder = agent.embedder
+    ctx.tier1_enabled = bool(cfg.router_t1_enabled and ctx.tier0_enabled)
     return ctx
 
 
