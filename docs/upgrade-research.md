@@ -1,9 +1,13 @@
 # Upgrade research — local-first voice agent (Nov 2026)
 
-Research date: 2026-11-14. Target machine (dev box): **8-core desktop CPU, ample system RAM,
-entry-level 4 GB AMD GPU, no NVIDIA/CUDA**. ROCm does not officially
-support that GPU generation, so every recommendation below is **CPU-first**, with **Vulkan** as the only realistic
-GPU path (llama.cpp / whisper.cpp). Licenses were checked against the upstream repos linked below.
+Research date: 2026-11-14 (GPU facts refreshed 2026-11-23). Target machine (**buspc**): **8-core desktop
+CPU, ample system RAM, AMD Radeon RX 5500 (Navi 14 / RDNA1, 4 GB VRAM), no NVIDIA/CUDA**. ROCm does not
+officially support this GPU (`gfx1012`); Ollama's bundled ROCm backend drops it. **LLM inference already
+runs on the GPU through Ollama's Vulkan backend** (RADV; enabled by default in 0.32.x). STT (faster-whisper),
+TTS (Piper), and embeddings are still mostly **CPU** unless configured otherwise; whisper.cpp and
+llama.cpp-server are optional **Vulkan** paths for STT and LLM if we need more control than Ollama exposes.
+See [research/gpu-acceleration-research.md](./research/gpu-acceleration-research.md) for measured VRAM and
+latency. Licenses were checked against the upstream repos linked below.
 
 ## TL;DR — what we adopted
 
@@ -15,7 +19,7 @@ GPU path (llama.cpp / whisper.cpp). Licenses were checked against the upstream r
 | Memory | none | **Own lightweight memory layer** (SQLite + Ollama JSON extraction + human review queue) | Mem0/Letta are Apache-2.0 but heavyweight (servers/extra DBs); our needs are small |
 | TTS | Piper | **Piper stays default; Kokoro-82M via sherpa-onnx 2.0.1 as optional backend** (`TTS_BACKEND=kokoro`) | Kokoro is markedly more natural, Apache-2.0 weights; `kokoro-onnx` pip pkg requires Python <3.14, sherpa-onnx ships cp314 wheels. Measured caveats below. |
 | STT | faster-whisper tiny/base | **Keep faster-whisper**; document `large-v3-turbo`/`small.en` as quality options; Moonshine / Parakeet as next experiments | Works today; turbo is too slow on 8-core CPU for live, fine for final pass if latency acceptable |
-| LLM serving | Ollama llama3.1:8b | **Keep Ollama**; optional llama.cpp-server (Vulkan) later | The AMD GPU is only usable via Vulkan; Ollama's convenience wins for now |
+| LLM serving | Ollama (Vulkan on RX 5500; `llama3.1:8b` partially offloaded today) | **Keep Ollama**; prefer a small chat model that fits fully in VRAM; optional llama.cpp-server (Vulkan) only if benchmarks justify it | Vulkan is already active—biggest win is VRAM fit and routing model pinning, not swapping the serving stack |
 | Agent loop | stateless router, history from browser | **Server-side agent loop** with persistent conversations, memory + RAG context, tool routing, SSE streaming | Core of the "complete local-first agent" goal |
 
 ## 1. Speech-to-text
@@ -97,8 +101,8 @@ https://github.com/KoljaB/RealtimeSTT · https://github.com/KoljaB/RealtimeTTS �
 
 | Option | License | Fit for this PC |
 |--------|---------|-----------------|
-| **Ollama** (current) | MIT | CPU inference for llama3.1:8b (~5–8 tok/s on an 8-core CPU). Keep. |
-| llama.cpp `llama-server` | MIT | **Vulkan backend works on entry-level AMD cards** (~30 tok/s gen for 9B Q4_K_M reported on an 8 GB card) — biggest possible speed-up; OpenAI-compatible API. Recommended next step if latency matters (model must fit VRAM: 4 GB card → 3–4B Q4; 8 GB → 8B Q4). |
+| **Ollama** (current) | MIT | **Vulkan backend in use on buspc** (`library=Vulkan`, 4.0 GiB total VRAM). `llama3.1:8b` does **not** fit: ~10/33 layers on GPU, generation ~4.8–6.8 tok/s (~70% of weights on CPU). **Keep Ollama**; switch the default orchestrator to a 3–4B Q4 model that fits entirely on the GPU for ~30–60 tok/s generation (see gpu-acceleration research). |
+| llama.cpp `llama-server` | MIT | Same Vulkan stack as Ollama (ggml). Optional alternate OpenAI-compatible server if we need flags Ollama hides; reported ~30 tok/s gen for 9B Q4_K_M on an **8 GB** RDNA1 card—not achievable with 8B on this **4 GB** card. |
 | vLLM | Apache-2.0 | GPU-first (CUDA/ROCm supported cards); CPU backend exists but not worthwhile here |
 | LM Studio | **Proprietary** (free) | Not OSS |
 | LocalAI | MIT | OpenAI-compatible umbrella over llama.cpp/whisper/piper; extra layer we don't need |
@@ -122,21 +126,44 @@ Sources: https://github.com/asg017/sqlite-vec · https://github.com/asg017/sqlit
 https://github.com/lancedb/lancedb · https://github.com/chroma-core/chroma · https://github.com/mem0ai/mem0 ·
 https://github.com/letta-ai/letta · https://ollama.com/library/nomic-embed-text
 
-## Measured on the dev box (2026-11-15)
+## Measured on the dev box
+
+### Application stack (2026-11-15)
 
 | Check | Result |
 |-------|--------|
 | sqlite-vec 0.1.9 in the Python 3.14 venv | loads (`vec_version()` = v0.1.9); `vector_backend=sqlite-vec` |
-| nomic-embed-text via Ollama | 768-d, ~40–120 ms per short text on CPU |
+| nomic-embed-text via Ollama | 768-d, ~40–120 ms per short text on CPU (prefer CPU `num_gpu: 0` so chat models keep VRAM—see [#4](https://github.com/mhaiprojects/Sahir-AI/issues/4)) |
 | Kokoro int8 multi-lang v1.1 via sherpa-onnx 2.0.1 | works; **RTF ≈ 1.6** (4.7 s for 2.9 s of audio, 8 threads) — slower than Piper; sherpa-onnx ≥2.0 **ignores espeak data and needs a lexicon**, so out-of-vocabulary words (e.g. "PC") are **skipped**. Hence Kokoro stays opt-in. The int8 English v0.19 package has no lexicon and produces silence on 2.x. |
-| Realtime voice loop (`/ws/voice`, Piper, Whisper base, llama3.1:8b CPU) | simple question: reply ≈ 8–12 s after end of speech, first audio ≈ 1.5 s after the reply (sentence-streamed TTS). The LLM dominates latency → llama.cpp/Vulkan is the next big win. |
-| Research worker (RAG + Ollama) | 20–31 s per summary on CPU |
+| Realtime voice loop (`/ws/voice`, Piper, Whisper base, Ollama chat model) | simple question with `llama3.1:8b` (partial Vulkan offload): reply ≈ 8–12 s after end of speech, first audio ≈ 1.5 s after the reply (sentence-streamed TTS). **LLM dominates** (~9 s of two Ollama calls; see gpu-acceleration research). |
+| Research worker (RAG + Ollama) | 20–31 s per summary (CPU-heavy RAG + same LLM bottleneck) |
 | Barge-in | speech during TTS → `barge_in` within one VAD window (~0.2 s), remaining sentences dropped |
+
+### GPU, VRAM, and routing latency (2026-11-16 – 2026-11-23)
+
+Hardware: **RX 5500, 4 GB VRAM**. Desktop (KWin + Chrome) uses ~1.1 GB before models load. Ollama 0.32.15,
+Vulkan via RADV; no usable ROCm or CUDA. Full journal numbers: [gpu-acceleration-research.md](./research/gpu-acceleration-research.md).
+
+| Check | Result |
+|-------|--------|
+| `llama3.1:8b` on 4 GB card | ~10/33 layers GPU (~1.56 GiB weights on GPU); generation ~4.8–6.8 tok/s |
+| `qwen3:0.6b` classify (warm, GPU-resident) | wall **p50 ~150 ms** (e.g. p50 161 ms routing JSON bench 2026-11-16; p50 140 ms one-letter classify 2026-11-23) |
+| `qwen3:0.6b` cold load | **~7 s** |
+| VRAM contention | With a larger chat model (e.g. qwen3.5:2b) and `nomic-embed-text` also loaded, `qwen3:0.6b` showed **~77% CPU / 23% GPU** in `ollama ps`—router must be pinned and chat picks must not evict it |
+| VRAM budget (target layout) | router **~0.7 GB** + nomic **~0.3 GB** → **~2.5 GB** of 4 GB left for the active chat model |
+| nomic-embed-text warm (GPU) | p50 ~31 ms (embedding router tier); still recommended on CPU for VRAM [#4](https://github.com/mhaiprojects/Sahir-AI/issues/4) |
+
+Supervisor/router architecture latency goals and tiered router design are in the external architecture doc (§6.1);
+implementation is tracked under Sahir items 2 and 8 in the prioritized task list.
 
 ## Recommended roadmap (after this upgrade)
 
-1. **Moonshine Medium-Streaming for live transcription** (MIT, CPU-optimised) — replace Whisper tiny live tier.
-2. **llama.cpp-server with Vulkan** on the AMD GPU behind an `LLM_BACKEND=openai` option — 3–5× faster replies.
+Prioritized GPU work is in [gpu-acceleration-research.md](./research/gpu-acceleration-research.md) §5 (small
+default model on Vulkan, embeddings on CPU, Ollama memory tuning, optional raw llama-server).
+
+1. **Moonshine Medium-Streaming for live transcription** (MIT, CPU-optimised) — replace Whisper tiny live tier ([#8](https://github.com/mhaiprojects/Sahir-AI/issues/8)).
+2. **Small default Ollama chat model** that fits fully in VRAM on the RX 5500 (Vulkan already enabled)—not a second Vulkan bring-up ([#3](https://github.com/mhaiprojects/Sahir-AI/issues/3)).
 3. **Pipecat WebSocket transport** for full-duplex audio with barge-in.
-4. **Wyoming server** for Home Assistant / satellite mics.
-5. sherpa-onnx KWS for custom wake phrases without training.
+4. **Wyoming server** for Home Assistant / satellite mics ([#29](https://github.com/mhaiprojects/Sahir-AI/issues/29)).
+5. sherpa-onnx KWS for custom wake phrases without training ([#30](https://github.com/mhaiprojects/Sahir-AI/issues/30)).
+6. Optional **llama.cpp-server (Vulkan)** only if Ollama overhead or missing flags block tuning ([#7](https://github.com/mhaiprojects/Sahir-AI/issues/7)).
