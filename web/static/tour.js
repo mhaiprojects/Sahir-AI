@@ -8,7 +8,7 @@ const TOUR_STEPS = [
   },
   {
     title: "Projects rail",
-    body: "Browse projects (General first), open the supervisor ★ or any chat, start + New chat or + New project. Footer links open Memory, Documents, Tasks, Live voice, Models, Settings, and Logs. On a phone, use ☰ to open the rail.",
+    body: "Browse projects (General first), open the supervisor ★ or any chat, start + New chat or + New project. Footer links open Memory, Documents, Tasks, a Hands-free shortcut, Models, Settings, and Logs. On a phone, use ☰ to open the rail.",
     target: "#project-rail",
   },
   {
@@ -23,7 +23,7 @@ const TOUR_STEPS = [
   },
   {
     title: "Composer",
-    body: "Send obeys the mode picker. Ctrl+Enter always sends to Cursor. Hold to listen, Hands-free, and Speak replies are here once.",
+    body: "Send obeys the mode picker. Ctrl+Enter always sends to Cursor. Hold to listen (HTTP PTT), Hands-free (/ws/voice), Stop (barge-in), and Speak replies are here once.",
     target: "#chat-form",
   },
   {

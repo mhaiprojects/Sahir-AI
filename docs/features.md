@@ -6,18 +6,18 @@
 - **Projects rail** (left) — tree of projects and chats (supervisor ★), search, + New chat / + New project; mobile drawer via ☰
 - **Centre chat** — Project · Chat · Mode · Model · mic state; live captions; composer with Send, Hold to listen, Hands-free, Speak replies; Ctrl/Cmd+Enter sends to Cursor (no separate Send to Cursor button)
 - **Routine / WIP panel** (right / sticky bottom on mobile) — SSE activity log with project/chat/router/supervisor header ([ui-layout.md](ui-layout.md))
-- **Rail footer pages** — Memory, Documents, Tasks, Live voice, Models, Settings (voice commands + service/mic status), Logs
+- **Rail footer pages** — Memory, Documents, Tasks, Hands-free shortcut, Models, Settings (voice commands + service/mic status), Logs
 - **Models page** — pick/load/eject chat models, fallback toggles, benchmark ([models.md](models.md))
 - **Model fallback** — escalates to `FALLBACK_MODEL` on invalid tool/action JSON or when you say "think harder" / "use the big model"; each reply is tagged with the model that answered
 - **Live transcription** — visible on the chat view; idle / live draft / final correction
-- **Hold-to-talk** and **Hands-free** (always-listening) with VAD and adaptive noise floor
+- **Hold-to-talk** (HTTP final transcribe + router) and **Hands-free** (`/ws/voice`, server Silero VAD, barge-in, router tiers 0–2)
 - **Text chat** with markdown rendering (marked + DOMPurify in `web/static/vendor/`)
 - **Chat history** — server-side conversations in `data/agent.db`; streaming via `/api/agent/chat/stream`
 - **Voice commands** — SQLite-backed keywords; CRUD in Settings; watcher during busy state
 - **Service health** — `/api/health` (Ollama, Piper, Whisper, ffmpeg, Cursor CLI); badges on Settings
 - **Request log** — SQLite-backed Logs view
 - **Mic permission prompt** — Permissions API check before `getUserMedia`
-- **Saved settings** — per-chat mode (`sahir-chat-mode`), Hands-free (`voice-assistant-always-listen`), Speak replies (`voice-assistant-speak-replies`), mic on/off in `localStorage`
+- **Saved settings** — per-chat mode (`sahir-chat-mode`), Hands-free (`voice-assistant-hands-free`, legacy `voice-assistant-always-listen`), Speak replies (`voice-assistant-speak-replies`), mic on/off in `localStorage`
 - **Auto UI refresh** — `/api/health` `build_id`; reload when assets change (deferred while busy)
 - **Cursor completion message** — Cursor tasks report completion in chat
 - **WebM robustness** — truncated chunks salvaged; `PartialAudioError` on unusable uploads
@@ -25,8 +25,8 @@
 ## Mode and voice (chat bar / composer)
 
 - **Mode** select per conversation: Agent, Tools, Chat, or Cursor (stored on the conversation row)
-- **Hands-free** — open mic for speech-triggered requests (browser has no wake word)
-- **Speak replies** — one toggle for chat TTS and Live voice sessions
+- **Hands-free** — streams PCM to `/ws/voice` (no browser wake word; desktop wake word remains in `bot.py`)
+- **Speak replies** — one toggle: streaming TTS on Hands-free, `/api/speak` on hold-to-listen
 
 ## Desktop mode (`python bot.py`)
 
@@ -43,8 +43,9 @@
 | POST | `/api/chat` | Text chat + optional routing |
 | POST | `/api/cursor` | Explicit Cursor delegation |
 | GET/POST | `/api/projects` | List / create projects (with supervisor chat) |
-| POST | `/api/transcribe` | Final utterance (multipart audio) |
-| POST | `/api/transcribe/live` | Partial live captions |
+| POST | `/api/transcribe` | Hold-to-listen final utterance (`mode=ptt`, `dispatch_routed`) |
+| POST | `/api/transcribe/live` | PTT live captions while recording |
+| WS | `/ws/voice` | Hands-free streaming (VAD, router, TTS) |
 | POST | `/api/speak` | TTS WAV response |
 | GET/POST | `/api/commands` | Voice command CRUD |
 | GET | `/api/logs` | Request history |

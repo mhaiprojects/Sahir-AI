@@ -31,16 +31,16 @@ Open **`https://<host>:<port>/`** — one unified screen (old `/agent` bookmarks
 |------|-----------------|
 | **Projects rail** (left) | Browse projects (General first), open the supervisor ★ or any chat, search, **+ New chat** / **+ New project** |
 | **Chat** (centre) | Voice + text conversation with live captions, per-chat mode, memory/RAG context, streaming replies |
-| **Rail footer** | **Memory**, **Documents**, **Tasks**, **Live voice**, **Models**, **Settings**, **Logs** |
+| **Rail footer** | **Memory**, **Documents**, **Tasks**, **Hands-free** (shortcut), **Models**, **Settings**, **Logs** |
 | **Routine / WIP** (right) | Live activity stream + header (project, active chat, router, supervisor) |
 
 The centre chat uses the same store and orchestrator as the secondary pages (`AGENT_PERSIST_WEB=true`).
-Hands-free and live-caption paths skip Whisper when Silero VAD hears no speech (`VAD_GATE_ENABLED`).
+Hands-free uses server-side Silero VAD on `/ws/voice`; hold-to-listen uses HTTP transcribe only after you release the mic button.
 
 ### Chat bar, composer, and the Routine / WIP panel
 
 - **Chat bar:** **Project** · **Chat** (quick switcher) · **Mode** (Agent / Tools / Chat / Cursor, saved per chat) · **Model** · mic state.
-- **Composer:** **Send**; **Enable microphone** / **Hold to listen**; one **Hands-free** toggle; one **Speak replies** toggle (shared with Live voice). **Ctrl+Enter** (Cmd+Enter on Mac) sends to Cursor — there is no separate Send to Cursor button.
+- **Composer:** **Send**; **Enable microphone** / **Hold to listen**; one **Hands-free** toggle (`/ws/voice`); **Stop** (interrupt); one **Speak replies** toggle. **Ctrl+Enter** (Cmd+Enter on Mac) sends to Cursor — there is no separate Send to Cursor button.
 - **Default model:** smallest installed Ollama chat model (by size) unless you pick one in the chat bar, Models page, or `POST /api/models/select` (`data/model_state.json`).
 - **Routine / WIP panel** (right on desktop; sticky bottom bar below 980px): terminal-style feed from `GET /api/activity/stream`, context strip on top, Clear and Collapse.
 - **Mobile:** **☰** opens the projects rail as a drawer; the activity panel stays the sticky bottom bar.
@@ -115,17 +115,14 @@ Features: unified chat screen with projects rail, text chat with full tool routi
 
 Configure `WEB_HOST`, `WEB_PORT`, and `WEB_DB_PATH` in `.env`. **No authentication** — see the warning at the top; use only on trusted networks or behind an authenticating reverse proxy.
 
-### Two-phase web transcription
+### Web voice paths
 
-While **Hands-free** listening is enabled:
+- **Hands-free** (`#hands-free-toggle`) — PCM via AudioWorklet → **`/ws/voice`**: server Silero VAD, faster-whisper, utterance router (tiers 0–2), streaming TTS with barge-in. Partials and finals show in the captions strip; **Stop** sends `interrupt`.
+- **Hold to listen** — browser `MediaRecorder` + **`/api/transcribe/live`** (draft captions) → **`/api/transcribe?mode=ptt`** (final Whisper + `dispatch_routed`). Optional reply TTS via `/api/speak` when **Speak replies** is on.
 
-1. **Live phase** — audio streams to `/api/transcribe/live` every few seconds using the fast `WHISPER_LIVE_MODEL` (default `tiny`). Captions update in the UI while you speak.
-2. **Final phase** — after **End of Conversation Silence** (default `3` seconds, `WEB_CONVERSATION_SILENCE_SECONDS`), the full recording is sent to `/api/transcribe?phase=final` using `WHISPER_FINAL_MODEL` for higher accuracy before routing to tools.
-
-Tune in `.env`:
+Hold-to-listen tuning in `.env`:
 
 ```
-WEB_CONVERSATION_SILENCE_SECONDS=3
 WEB_LIVE_TRANSCRIBE_INTERVAL_SECONDS=2
 WHISPER_LIVE_MODEL=tiny
 WHISPER_FINAL_MODEL=base

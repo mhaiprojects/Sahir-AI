@@ -3,7 +3,8 @@ const chatForm = document.getElementById("chat-form");
 const messageInput = document.getElementById("message-input");
 // One mode control shared by Home and Agent (#38): agent | route | stream | cursor.
 const homeModeSelect = document.getElementById("chat-mode");
-const alwaysListenToggle = document.getElementById("hands-free-toggle");
+const handsFreeToggle = document.getElementById("hands-free-toggle");
+const handsFreeStopBtn = document.getElementById("hands-free-stop");
 const chatEmptyState = document.getElementById("chat-empty-state");
 const chatMicState = document.getElementById("chat-mic-state");
 const speakRepliesToggle = document.getElementById("speak-replies-toggle");
@@ -32,7 +33,6 @@ const VAD = {
   liveIntervalMs: 1000,
   firstLiveDelayMs: 150,
   minSpeechMs: 450,
-  minSpeechMsAlways: 750,
   maxConversationMs: 120000,
   pollMs: 100,
   speechConfirmMs: 300,
@@ -48,7 +48,8 @@ const WEBM_HEADER_CHUNK_COUNT = 2;
 const CHAT_HISTORY_LIMIT = 20;
 const MIN_UPLOAD_BYTES = 256;
 
-const ALWAYS_LISTEN_KEY = "voice-assistant-always-listen";
+const ALWAYS_LISTEN_KEY = "voice-assistant-always-listen"; // legacy; migrated to HANDSFREE_KEY
+const HANDSFREE_KEY = "voice-assistant-hands-free";
 const ROUTE_CURSOR_KEY = "voice-assistant-route-cursor"; // legacy, migrated to CHAT_MODE_KEY
 const ROUTE_TOOLS_KEY = "voice-assistant-route-tools"; // legacy, migrated to CHAT_MODE_KEY
 const CHAT_MODE_KEY = "sahir-chat-mode";
@@ -79,10 +80,9 @@ let pttActive = false;
 
 let audioContext = null;
 let analyserNode = null;
-let vadTimer = null;
-let listenState = "off"; // off | waiting | in_conversation | paused
-let lastSpeechAt = null;
-let conversationStartedAt = null;
+let handsFreeClient = null;
+let handsFreeWanted = false;
+let handsFreeVoiceState = "off";
 let lastLiveRequestAt = 0;
 let liveDraft = "";
 let liveRequestInFlight = false;
@@ -101,8 +101,6 @@ let voiceCommandsCache = [];
 let chatHistory = [];
 let homeConversationId = null;
 let conversationChunkStart = -1;
-let noiseFloor = 0.008;
-let speechCandidateStartedAt = null;
 let highpassNode = null;
 let serverBuildId = null;
 let healthFailures = 0;
@@ -120,8 +118,8 @@ const ACTION_LABELS = {
   stop_speech: "Stop speaking",
   cancel_request: "Cancel request",
   repeat_last: "Repeat last reply",
-  pause_listening: "Pause always listening",
-  resume_listening: "Resume always listening",
+  pause_listening: "Pause Hands-free",
+  resume_listening: "Resume Hands-free",
 };
 
 function rememberChatTurn(role, text) {
@@ -180,6 +178,151 @@ function homeChatMode({ forceCursor = false } = {}) {
   if (forceCursor) return "cursor";
   return currentChatMode();
 }
+
+function handsFreePrefEnabled() {
+  if (localStorage.getItem(HANDSFREE_KEY) != null) {
+    return localStorage.getItem(HANDSFREE_KEY) === "1";
+  }
+  return localStorage.getItem(ALWAYS_LISTEN_KEY) === "1";
+}
+
+function persistHandsFree(enabled) {
+  const v = enabled ? "1" : "0";
+  localStorage.setItem(HANDSFREE_KEY, v);
+  localStorage.setItem(ALWAYS_LISTEN_KEY, v);
+}
+
+function handsFreeStreaming() {
+  return Boolean(handsFreeClient?.isActive?.());
+}
+
+function updateHandsFreeStopButton() {
+  if (!handsFreeStopBtn) return;
+  const on = handsFreeStreaming();
+  handsFreeStopBtn.disabled = !on;
+}
+
+function ensureHandsFreeClient() {
+  if (handsFreeClient) return handsFreeClient;
+  if (!window.SahirVoiceClient) return null;
+  handsFreeClient = new window.SahirVoiceClient({
+    meterEl: document.getElementById("voice-meter"),
+    getConversationId: () => homeConversationId,
+    getChatMode: () => currentChatMode(),
+    getTts: () => (speakRepliesToggle ? speakRepliesToggle.checked : true),
+    onBeforeStart: () => {
+      handsFreeVoiceState = "connecting";
+      updateMicUi();
+    },
+    onStarted: () => {
+      handsFreeVoiceState = "listening";
+      liveTranscript?.classList.add("active");
+      updateHandsFreeStopButton();
+      updateMicUi();
+    },
+    onState: (state) => {
+      handsFreeVoiceState = state || "listening";
+      if (liveTranscriptStatus) {
+        const labels = {
+          listening: "Hands-free · listening",
+          transcribing: "Transcribing…",
+          thinking: "Thinking…",
+          speaking: "Speaking…",
+          "hearing you": "Hearing you…",
+        };
+        liveTranscriptStatus.textContent = labels[state] || state;
+        liveTranscriptStatus.classList.toggle("thinking", state === "thinking" || state === "transcribing");
+      }
+      updateMicUi();
+    },
+    onPartial: (text) => {
+      showLiveDraft(text);
+    },
+    onTranscript: (text, meta = {}) => {
+      if (!text || meta.discarded) {
+        if (meta.discarded) hideLiveTranscript();
+        return;
+      }
+      showFinalCorrection(liveDraft, text);
+      addMessage("user", text, { skipRemember: false });
+    },
+    onReply: (m) => {
+      const reply = m.text || "";
+      if (m.conversation_id) {
+        homeConversationId = m.conversation_id;
+        localStorage.setItem(CONV_ID_KEY, String(homeConversationId));
+        localStorage.setItem("agentConv", String(homeConversationId));
+      }
+      if (reply) {
+        addMessage("assistant", reply);
+        lastAssistantReply = reply;
+      }
+      if (m.action === "pause_listening") {
+        handsFreeToggle.checked = false;
+        persistHandsFree(false);
+        stopHandsFree({ notify: false });
+        addMessage("system", "Hands-free paused.");
+      } else if (m.action === "resume_listening") {
+        handsFreeToggle.checked = true;
+        persistHandsFree(true);
+        startHandsFree().catch(() => {});
+        addMessage("system", "Hands-free resumed.");
+      } else if (m.action === "switch_chat" && m.conversation_id) {
+        window.sahirOpenConversation?.(m.conversation_id);
+      }
+      updateMicUi();
+    },
+    onBargeIn: () => {
+      addMessage("system", "Barge-in — stopped reply.");
+    },
+    onTtsDone: () => {
+      resetLiveTranscript();
+    },
+    onError: (msg) => {
+      addMessage("system", `Hands-free error: ${msg}`);
+    },
+    onStop: (reason) => {
+      handsFreeVoiceState = "off";
+      updateHandsFreeStopButton();
+      refreshLiveTranscriptIdle();
+      updateMicUi();
+      if (
+        reason !== "user" &&
+        handsFreeWanted &&
+        handsFreeToggle.checked &&
+        !busy &&
+        !pttActive
+      ) {
+        window.setTimeout(() => {
+          startHandsFree().catch(() => {});
+        }, 400);
+      }
+    },
+  });
+  return handsFreeClient;
+}
+
+async function startHandsFree() {
+  if (!handsFreeToggle?.checked) return;
+  handsFreeWanted = true;
+  if (micReady) await teardownMicGraph();
+  const client = ensureHandsFreeClient();
+  if (!client) throw new Error("Voice client unavailable");
+  await client.start();
+}
+
+function stopHandsFree({ notify = true } = {}) {
+  handsFreeWanted = false;
+  handsFreeClient?.stop("user");
+  handsFreeVoiceState = "off";
+  updateHandsFreeStopButton();
+  if (notify) refreshLiveTranscriptIdle();
+  updateMicUi();
+}
+
+window.sahirStartHandsFree = startHandsFree;
+window.sahirStopHandsFree = stopHandsFree;
+window.sahirSpeakRepliesEnabled = () => (speakRepliesToggle ? speakRepliesToggle.checked : true);
 
 function initialChatMode() {
   const saved = localStorage.getItem(CHAT_MODE_KEY);
@@ -360,18 +503,21 @@ function setBusy(nextBusy) {
   busy = nextBusy;
   sendBtn.disabled = busy;
   if (cursorBtn) cursorBtn.disabled = busy;
-  micBtn.disabled = busy || !micReady || alwaysListenToggle.checked;
+  micBtn.disabled = busy || !micReady || handsFreeToggle?.checked;
+  if (busy && handsFreeStreaming()) {
+    stopHandsFree({ notify: false });
+  }
   messageInput.disabled = busy;
 
   if (busy) {
-    pauseMainListening();
+    if (handsFreeStreaming()) stopHandsFree({ notify: false });
   } else {
     stopCommandCapture();
     if (pendingReload) {
       reloadForNewBuild();
     }
-    if (alwaysListenToggle.checked && micReady) {
-      resumeAlwaysListening();
+    if (handsFreeToggle?.checked && handsFreeWanted && !handsFreeStreaming()) {
+      startHandsFree().catch(() => {});
     }
   }
   updateMicUi();
@@ -478,14 +624,14 @@ function updateWakeWordNote(cfg) {
     note.append("Wake word: ");
     const strong = document.createElement("strong");
     strong.textContent = phrase ? `“${phrase}”` : "on";
-    note.append(strong, ". Always listening waits for it before recording.");
+    note.append(strong, ". Hands-free waits for it before recording.");
     return;
   }
   note.innerHTML = "";
   note.append("Wake word: ");
   const strong = document.createElement("strong");
   strong.textContent = "off in the browser";
-  note.append(strong, `. With Always listening on, any speech starts a request.${desktop}`);
+  note.append(strong, `. With Hands-free on, speech streams to the server VAD.${desktop}`);
 }
 
 async function loadWebConfig() {
@@ -514,7 +660,7 @@ function scheduleHealthCheck(delayMs) {
 }
 
 function canReloadNow() {
-  return !busy && !pttActive && listenState !== "in_conversation" && !currentTtsAudio;
+  return !busy && !pttActive && !handsFreeStreaming() && !currentTtsAudio;
 }
 
 function reloadForNewBuild() {
@@ -664,20 +810,26 @@ function getLiveTranscriptIdleState() {
       text: liveDraft || "Waiting for assistant reply…",
     };
   }
-  if (alwaysListenToggle.checked && listenState === "waiting") {
+  if (handsFreeStreaming()) {
     return {
-      status: "Waiting for speech",
-      text: "Speak clearly to start a conversation…",
+      status: "Hands-free active",
+      text: liveDraft || "Speak clearly — server VAD detects end of turn.",
+    };
+  }
+  if (handsFreeToggle?.checked) {
+    return {
+      status: "Hands-free starting…",
+      text: "Connecting streaming voice…",
     };
   }
   return {
     status: "Ready",
-    text: "Hold to listen or enable always listening.",
+    text: "Hold to listen or turn on Hands-free.",
   };
 }
 
 function refreshLiveTranscriptIdle() {
-  if (pttActive || listenState === "in_conversation") return;
+  if (pttActive || handsFreeStreaming()) return;
   if (liveTranscriptStatus?.classList.contains("thinking")) return;
 
   const { status, text } = getLiveTranscriptIdleState();
@@ -785,6 +937,7 @@ function scheduleLiveUpdates() {
 }
 
 function stopCurrentTts() {
+  handsFreeClient?.stopPlayback?.();
   if (currentTtsAudio) {
     currentTtsAudio.pause();
     currentTtsAudio.currentTime = 0;
@@ -893,6 +1046,7 @@ async function executeVoiceCommand(action, keyword, heardText) {
   }
   if (action === "cancel_request") {
     stopCurrentTts();
+    handsFreeClient?.interrupt?.();
     abortActiveRequest();
     setBusy(false);
     return;
@@ -907,22 +1061,23 @@ async function executeVoiceCommand(action, keyword, heardText) {
     return;
   }
   if (action === "pause_listening") {
-    alwaysListenToggle.checked = false;
-    localStorage.setItem(ALWAYS_LISTEN_KEY, "0");
-    stopAlwaysListening();
+    handsFreeToggle.checked = false;
+    persistHandsFree(false);
+    stopHandsFree({ notify: true });
     micBtn.disabled = busy || !micReady;
-    addMessage("system", "Always listening paused.");
+    addMessage("system", "Hands-free paused.");
     updateMicUi();
     return;
   }
   if (action === "resume_listening") {
-    alwaysListenToggle.checked = true;
-    localStorage.setItem(ALWAYS_LISTEN_KEY, "1");
-    if (micReady && !busy) {
-      startAlwaysListening();
+    handsFreeToggle.checked = true;
+    persistHandsFree(true);
+    handsFreeWanted = true;
+    if (!busy) {
+      startHandsFree().catch((err) => addMessage("system", err.message));
     }
     micBtn.disabled = true;
-    addMessage("system", "Always listening resumed.");
+    addMessage("system", "Hands-free resumed.");
     updateMicUi();
   }
 
@@ -968,7 +1123,7 @@ async function finishCommandCapture() {
 
 async function runCommandWatchLoop() {
   if (!micReady || !analyserNode || !busy) return;
-  if (listenState === "in_conversation" || pttActive) return;
+  if (pttActive || handsFreeStreaming()) return;
 
   const level = getMicLevel();
   const now = Date.now();
@@ -1013,10 +1168,10 @@ function updateMicHint() {
     return;
   }
 
-  if (alwaysListenToggle.checked) {
+  if (handsFreeToggle?.checked || handsFreeStreaming()) {
     micHint.classList.remove("hidden");
     micHint.textContent =
-      `Hands-free is on. Background noise is filtered — speak clearly to start. Say command keywords (e.g. "stop", "cancel") while the assistant is speaking. ${silenceSec}s silence ends a conversation.`;
+      `Hands-free streams to the server VAD — speak naturally; barge in by talking over a reply or press Stop. Say command keywords (e.g. "stop", "cancel") while the assistant is speaking.`;
     return;
   }
 
@@ -1052,16 +1207,15 @@ function updateToggleMicButton() {
 }
 
 function updateMicUi() {
-  if (alwaysListenToggle.checked && listenState === "waiting") {
-    micBtn.textContent = "Listening…";
+  if (handsFreeStreaming()) {
+    micBtn.textContent = "Hands-free on";
     micBtn.classList.add("listening");
     micBtn.classList.remove("recording");
-    setMicBadge("ok", "Mic: always listening");
-  } else if (alwaysListenToggle.checked && listenState === "in_conversation") {
-    micBtn.textContent = "In conversation…";
-    micBtn.classList.add("recording");
-    micBtn.classList.remove("listening");
-    setMicBadge("ok", "Mic: conversation");
+    setMicBadge("ok", `Mic: ${handsFreeVoiceState || "hands-free"}`);
+  } else if (handsFreeToggle?.checked) {
+    micBtn.textContent = "Hands-free…";
+    micBtn.classList.add("listening");
+    setMicBadge("ok", "Mic: hands-free");
   } else if (busy && micReady) {
     micBtn.textContent = "Processing…";
     micBtn.classList.remove("listening", "recording");
@@ -1073,9 +1227,10 @@ function updateMicUi() {
   }
   updateToggleMicButton();
   updateMicHint();
-  if (!pttActive && listenState !== "in_conversation" && !liveTranscriptStatus?.classList.contains("thinking")) {
+  if (!pttActive && !handsFreeStreaming() && !liveTranscriptStatus?.classList.contains("thinking")) {
     refreshLiveTranscriptIdle();
   }
+  updateHandsFreeStopButton();
 }
 
 async function ensureMicAccess() {
@@ -1119,15 +1274,12 @@ async function ensureMicAccess() {
   micStream = await getUserMedia(constraints);
 
   micReady = true;
-  micBtn.disabled = alwaysListenToggle.checked;
+  micBtn.disabled = handsFreeToggle.checked;
   setMicBadge("ok", "Mic: ready");
   await setupMicGraph();
   startCommandWatcher();
   updateMicUi();
 
-  if (alwaysListenToggle.checked) {
-    startAlwaysListening();
-  }
 }
 
 async function setupMicGraph() {
@@ -1157,16 +1309,9 @@ async function setupMicGraph() {
 }
 
 async function teardownMicGraph() {
-  stopAlwaysListening();
   stopCommandWatcher();
-  stopAlwaysRecorder();
   clearLiveTimers();
-  hideLiveTranscript();
-
-  if (vadTimer) {
-    clearInterval(vadTimer);
-    vadTimer = null;
-  }
+  if (!handsFreeToggle?.checked) hideLiveTranscript();
 
   if (mediaRecorder && mediaRecorder.state !== "inactive") {
     mediaRecorder.stop();
@@ -1187,7 +1332,6 @@ async function teardownMicGraph() {
   }
 
   micReady = false;
-  listenState = "off";
 }
 
 function getAudioMetrics() {
@@ -1210,58 +1354,6 @@ function getAudioMetrics() {
 
 function getMicLevel() {
   return getAudioMetrics().rms;
-}
-
-function getAdaptiveStartThreshold() {
-  return Math.max(
-    VAD.speechStartThreshold,
-    noiseFloor * VAD.noiseMarginStart + 0.006,
-  );
-}
-
-function getAdaptiveSpeechThreshold() {
-  return Math.max(
-    VAD.speechThreshold,
-    noiseFloor * VAD.noiseMarginSpeech + 0.008,
-  );
-}
-
-function updateNoiseFloor(level) {
-  if (listenState !== "waiting") return;
-  const startThreshold = getAdaptiveStartThreshold();
-  if (level > startThreshold * 0.8) return;
-
-  const alpha = 0.1;
-  noiseFloor = noiseFloor * (1 - alpha) + level * alpha;
-  noiseFloor = Math.min(Math.max(noiseFloor, 0.003), 0.05);
-}
-
-function looksLikeSpeech({ rms, zcr }) {
-  if (rms < getAdaptiveStartThreshold()) return false;
-  return zcr >= VAD.minZcr && zcr <= VAD.maxZcr;
-}
-
-function isActiveSpeech({ rms, zcr }) {
-  const threshold = getAdaptiveSpeechThreshold();
-  if (listenState === "in_conversation") {
-    if (rms < threshold * 0.78) return false;
-    return zcr >= VAD.minZcr * 0.55;
-  }
-  if (rms < threshold) return false;
-  return zcr >= VAD.minZcr * 0.75;
-}
-
-function resetNoiseGate() {
-  noiseFloor = 0.008;
-  speechCandidateStartedAt = null;
-}
-
-function shouldDiscardAlwaysCapture({ speechMs, draft }) {
-  const draftText = String(draft || "").trim();
-  if (draftText.length >= VAD.minLiveDraftChars) return false;
-  if (speechMs < VAD.minSpeechMsAlways) return true;
-  // No live caption and relatively short capture — likely ambient noise.
-  return speechMs < 2200;
 }
 
 function pickRecorderMimeType() {
@@ -1331,65 +1423,6 @@ function beginRecorder() {
   mediaRecorder.start(100);
 }
 
-function beginAlwaysRecorder() {
-  if (!micStream || mediaRecorder || pttActive || busy) return false;
-
-  recordedChunks = [];
-  conversationChunkStart = -1;
-  recorderMimeType = pickRecorderMimeType() || "audio/webm";
-  mediaRecorder = recorderMimeType
-    ? new MediaRecorder(micStream, { mimeType: recorderMimeType })
-    : new MediaRecorder(micStream);
-  attachRecorderHandlers(mediaRecorder, "always-listening");
-
-  mediaRecorder.ondataavailable = (event) => {
-    if (event.data.size > 0) recordedChunks.push(event.data);
-  };
-
-  mediaRecorder.start(100);
-  return true;
-}
-
-function stopAlwaysRecorder() {
-  conversationChunkStart = -1;
-  if (mediaRecorder && mediaRecorder.state !== "inactive") {
-    mediaRecorder.stop();
-  }
-  mediaRecorder = null;
-  recordedChunks = [];
-}
-
-async function finishAlwaysConversationRecording() {
-  const startIndex = conversationChunkStart;
-  let blob = null;
-
-  if (mediaRecorder && mediaRecorder.state !== "inactive") {
-    const recorder = mediaRecorder;
-    await new Promise((resolve) => {
-      recorder.onstop = resolve;
-      recorder.stop();
-    });
-    const chunks = [...recordedChunks];
-    blob = chunks.length ? new Blob(chunks, { type: recorderMimeType }) : null;
-    mediaRecorder = null;
-    recordedChunks = [];
-  } else {
-    blob = getRecordedBlob();
-  }
-
-  conversationChunkStart = -1;
-
-  if (alwaysListenToggle.checked && micReady && !busy && !pttActive) {
-    beginAlwaysRecorder();
-  }
-
-  if (!blob || blob.size < MIN_UPLOAD_BYTES) {
-    logClientError("always-listening capture too small", { size: blob?.size || 0 });
-    return null;
-  }
-  return blob;
-}
-
 async function finishRecorder() {
   if (!mediaRecorder || mediaRecorder.state === "inactive") {
     return null;
@@ -1407,88 +1440,8 @@ async function finishRecorder() {
   return blob && blob.size ? blob : null;
 }
 
-function abortConversationRecording() {
-  clearLiveTimers();
-  conversationChunkStart = -1;
-  lastSpeechAt = null;
-  conversationStartedAt = null;
-  hideLiveTranscript();
-}
-
-function startAlwaysListening() {
-  if (!micReady || !alwaysListenToggle.checked || busy || pttActive) return;
-  window.sahirStopLiveVoice?.("Home always listening");
-
-  listenState = "waiting";
-  lastSpeechAt = null;
-  conversationStartedAt = null;
-  lastLiveRequestAt = 0;
-  resetNoiseGate();
-
-  if (vadTimer) clearInterval(vadTimer);
-  vadTimer = setInterval(runVadLoop, VAD.pollMs);
-  beginAlwaysRecorder();
-  updateMicUi();
-}
-
-function pauseMainListening() {
-  if (vadTimer) {
-    clearInterval(vadTimer);
-    vadTimer = null;
-  }
-
-  stopAlwaysRecorder();
-
-  if (listenState === "in_conversation") {
-    abortConversationRecording();
-  }
-
-  if (listenState !== "off") {
-    listenState = "paused";
-    updateMicUi();
-  }
-}
-
-function pauseAlwaysListening() {
-  pauseMainListening();
-}
-
-function stopAlwaysListening() {
-  if (vadTimer) {
-    clearInterval(vadTimer);
-    vadTimer = null;
-  }
-
-  stopAlwaysRecorder();
-
-  if (listenState === "in_conversation") {
-    abortConversationRecording();
-  }
-
-  listenState = "off";
-  updateMicUi();
-}
-
-function resumeAlwaysListening() {
-  if (!alwaysListenToggle.checked || !micReady || busy || pttActive) return;
-  startAlwaysListening();
-}
-
-function startConversation(now) {
-  listenState = "in_conversation";
-  conversationStartedAt = now;
-  lastSpeechAt = now;
-  lastLiveRequestAt = 0;
-  liveDraft = "";
-  conversationChunkStart = Math.max(0, recordedChunks.length - PREROLL_MAX_CHUNKS);
-  showLiveDraft("");
-  scheduleLiveUpdates();
-  updateMicUi();
-}
-
 async function requestLiveTranscript() {
-  const canRun =
-    listenState === "in_conversation" || (pttActive && mediaRecorder);
+  const canRun = pttActive && mediaRecorder;
   if (liveRequestInFlight || !canRun) return;
 
   const blob = getRecordedBlob();
@@ -1514,85 +1467,6 @@ async function requestLiveTranscript() {
     /* live captions are best-effort */
   } finally {
     liveRequestInFlight = false;
-  }
-}
-
-async function endConversation() {
-  if (listenState !== "in_conversation") return;
-
-  listenState = "waiting";
-  clearLiveTimers();
-  updateMicUi();
-
-  const speechMs = conversationStartedAt ? Date.now() - conversationStartedAt : 0;
-  const draft = liveDraft;
-  showRefiningDraft(draft);
-
-  const blob = await finishAlwaysConversationRecording();
-  lastSpeechAt = null;
-  conversationStartedAt = null;
-
-  if (!blob || speechMs < VAD.minSpeechMsAlways) {
-    hideLiveTranscript();
-    resumeAlwaysListening();
-    return;
-  }
-
-  if (shouldDiscardAlwaysCapture({ speechMs, draft })) {
-    hideLiveTranscript();
-    resumeAlwaysListening();
-    return;
-  }
-
-  await sendAudioBlob(blob, "always", draft);
-}
-
-async function runVadLoop() {
-  if (listenState !== "waiting" && listenState !== "in_conversation") return;
-  if (busy || pttActive) return;
-
-  const metrics = getAudioMetrics();
-  const now = Date.now();
-  updateNoiseFloor(metrics.rms);
-
-  if (listenState === "waiting") {
-    if (!looksLikeSpeech(metrics)) {
-      speechCandidateStartedAt = null;
-      return;
-    }
-    if (!speechCandidateStartedAt) {
-      speechCandidateStartedAt = now;
-      return;
-    }
-    if (now - speechCandidateStartedAt < VAD.speechConfirmMs) {
-      return;
-    }
-    speechCandidateStartedAt = null;
-    startConversation(now);
-    return;
-  }
-
-  if (listenState === "in_conversation") {
-    if (isActiveSpeech(metrics)) {
-      lastSpeechAt = now;
-    }
-
-    const conversationMs = conversationStartedAt ? now - conversationStartedAt : 0;
-    const silentMs = lastSpeechAt ? now - lastSpeechAt : 0;
-
-    if (
-      lastSpeechAt &&
-      !isActiveSpeech(metrics) &&
-      silentMs >= VAD.conversationSilenceMs
-    ) {
-      await endConversation();
-      return;
-    }
-
-    if (conversationMs >= VAD.maxConversationMs) {
-      await endConversation();
-      return;
-    }
   }
 }
 
@@ -1632,11 +1506,6 @@ async function sendAudioBlob(blob, mode = "ptt", livePreview = "") {
     const data = await res.json();
     const finalText = data.transcript || "";
     const draftText = data.live_transcript || livePreview || "";
-
-    if (mode === "always" && (data.discarded || !finalText.trim())) {
-      hideLiveTranscript();
-      return;
-    }
 
     showFinalCorrection(draftText, finalText);
     await new Promise((resolve) => setTimeout(resolve, 800));
@@ -1679,13 +1548,15 @@ async function sendAudioBlob(blob, mode = "ptt", livePreview = "") {
 }
 
 async function startPttRecording() {
-  if (!micReady || !micStream || alwaysListenToggle.checked) {
+  if (handsFreeStreaming() || handsFreeToggle?.checked) {
+    addMessage("system", "Turn off Hands-free to use hold-to-listen.");
+    return;
+  }
+  if (!micReady || !micStream) {
     addMessage("system", "Enable the microphone first.");
     return;
   }
 
-  window.sahirStopLiveVoice?.("Home push-to-talk");
-  pauseAlwaysListening();
   pttActive = true;
   liveDraft = "";
   beginRecorder();
@@ -1709,7 +1580,6 @@ async function stopPttRecording() {
   if (!blob) {
     hideLiveTranscript();
     addMessage("system", "No audio captured.");
-    resumeAlwaysListening();
     return;
   }
 
@@ -1902,40 +1772,40 @@ if (cursorBtn) {
   });
 }
 
-alwaysListenToggle.addEventListener("change", async () => {
-  localStorage.setItem(ALWAYS_LISTEN_KEY, alwaysListenToggle.checked ? "1" : "0");
-
-  if (alwaysListenToggle.checked) {
-    if (!micReady) {
-      try {
-        await promptForMicPermission();
-        await ensureMicAccess();
-        localStorage.setItem(MIC_ENABLED_KEY, "1");
-      } catch (err) {
-        alwaysListenToggle.checked = false;
-        localStorage.setItem(ALWAYS_LISTEN_KEY, "0");
-        addMessage("system", `Could not start always listening: ${err.message}`);
-        return;
-      }
+handsFreeToggle?.addEventListener("change", async () => {
+  persistHandsFree(handsFreeToggle.checked);
+  if (handsFreeToggle.checked) {
+    try {
+      await promptForMicPermission();
+      handsFreeWanted = true;
+      micBtn.disabled = true;
+      await startHandsFree();
+      addMessage("system", "Hands-free enabled (streaming via /ws/voice).");
+    } catch (err) {
+      handsFreeToggle.checked = false;
+      persistHandsFree(false);
+      addMessage("system", `Could not start Hands-free: ${err.message}`);
     }
-    micBtn.disabled = true;
-    startAlwaysListening();
-    addMessage("system", "Always listening enabled.");
   } else {
-    stopAlwaysListening();
+    stopHandsFree();
     micBtn.disabled = busy || !micReady;
-    addMessage("system", "Always listening disabled.");
+    addMessage("system", "Hands-free disabled.");
   }
-
   updateMicUi();
+});
+
+handsFreeStopBtn?.addEventListener("click", () => {
+  handsFreeClient?.interrupt?.();
+  stopCurrentTts();
 });
 
 if (toggleMicBtn) {
   toggleMicBtn.addEventListener("click", async () => {
     if (micReady) {
       toggleMicBtn.disabled = true;
-      alwaysListenToggle.checked = false;
-      localStorage.setItem(ALWAYS_LISTEN_KEY, "0");
+      handsFreeToggle.checked = false;
+      persistHandsFree(false);
+      stopHandsFree({ notify: false });
       localStorage.setItem(MIC_ENABLED_KEY, "0");
       await teardownMicGraph();
       micBtn.disabled = true;
@@ -1953,14 +1823,11 @@ if (toggleMicBtn) {
       await ensureMicAccess();
       localStorage.setItem(MIC_ENABLED_KEY, "1");
       addMessage("system", "Microphone enabled.");
-      if (alwaysListenToggle.checked) {
-        startAlwaysListening();
-      }
     } catch (err) {
       micReady = false;
       micBtn.disabled = true;
-      alwaysListenToggle.checked = false;
-      localStorage.setItem(ALWAYS_LISTEN_KEY, "0");
+      handsFreeToggle.checked = false;
+      persistHandsFree(false);
       localStorage.setItem(MIC_ENABLED_KEY, "0");
       setMicBadge("bad", "Mic: blocked");
       addMessage("system", `Microphone error: ${err.message}`);
@@ -2005,24 +1872,19 @@ micBtn.addEventListener("touchend", (e) => {
   stopPttRecording();
 }, { passive: false });
 
-// Shared microphone state between Home quick voice and Agent live voice (#33).
-// Agent live voice calls this before it opens the mic.
 window.sahirReleaseHomeMic = function sahirReleaseHomeMic() {
   if (pttActive) stopPttRecording();
-  if (alwaysListenToggle.checked) {
-    alwaysListenToggle.checked = false;
-    localStorage.setItem(ALWAYS_LISTEN_KEY, "0");
-    stopAlwaysListening();
-    micBtn.disabled = busy || !micReady;
-    addMessage("system", "Always listening turned off: Agent live voice is using the microphone.");
-    updateMicUi();
-  }
 };
 
-document.getElementById("open-live-voice-btn")?.addEventListener("click", () => {
-  window.sahirActivateView?.("voice");
-  document.getElementById("voice-toggle")?.focus();
-});
+function enableHandsFreeShortcut() {
+  handsFreeToggle.checked = true;
+  persistHandsFree(true);
+  handsFreeWanted = true;
+  window.sahirActivateView?.("chat");
+  startHandsFree().catch((err) => addMessage("system", err.message));
+}
+
+document.getElementById("voice-alias-btn")?.addEventListener("click", enableHandsFreeShortcut);
 
 refreshLogsBtn.addEventListener("click", refreshLogs);
 
@@ -2041,6 +1903,10 @@ function initViewNav() {
   if (!navButtons.length) return;
 
   function activateView(viewName, { updateUrl = true, replaceUrl = false } = {}) {
+    if (viewName === "voice") {
+      enableHandsFreeShortcut();
+      viewName = "chat";
+    }
     navButtons.forEach((btn) => {
       const active = btn.dataset.view === viewName;
       btn.classList.toggle("active", active);
@@ -2071,7 +1937,6 @@ function initViewNav() {
     if (viewName === "memory") window.sahirOnView?.("memory");
     if (viewName === "docs") window.sahirOnView?.("docs");
     if (viewName === "tasks") window.sahirOnView?.("tasks");
-    if (viewName === "voice") window.sahirOnView?.("voice");
     if (viewName === "settings" && typeof refreshHealth === "function") refreshHealth();
     if (viewName === "chat") focusHomeChatInput();
     if (viewName !== "chat") document.querySelector(".unified-layout")?.classList.remove("rail-open");
@@ -2225,8 +2090,7 @@ if (commandForm) {
   });
 }
 
-const savedAlwaysListen = localStorage.getItem(ALWAYS_LISTEN_KEY) === "1";
-alwaysListenToggle.checked = savedAlwaysListen;
+handsFreeToggle.checked = handsFreePrefEnabled();
 
 window.sahirSetChatMode(initialChatMode());
 homeModeSelect?.addEventListener("change", () => window.sahirSetChatMode(homeModeSelect.value));
@@ -2236,6 +2100,7 @@ if (speakRepliesToggle) {
   speakRepliesToggle.addEventListener("change", () => {
     localStorage.setItem(SPEAK_REPLIES_KEY, speakRepliesToggle.checked ? "1" : "0");
     if (!speakRepliesToggle.checked) stopCurrentTts();
+    if (handsFreeStreaming()) handsFreeClient.reconnect().catch(() => {});
   });
 }
 
@@ -2273,4 +2138,13 @@ updateToggleMicButton();
 updateMicHint();
 refreshLiveTranscriptIdle();
 restoreMicPreference();
+if (handsFreeToggle?.checked) {
+  handsFreeWanted = true;
+  promptForMicPermission()
+    .then(() => startHandsFree())
+  .catch(() => {
+      handsFreeToggle.checked = false;
+      persistHandsFree(false);
+    });
+}
 focusHomeChatInput();

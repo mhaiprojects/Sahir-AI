@@ -231,10 +231,10 @@ def run_extended_checks(errors: list[str], cursor: dict) -> None:
     status, res = _post_audio(
         "/api/transcribe?route=false&mode=always", "chunk.webm", "audio/webm", webm[:300]
     )
-    if status == 200 and res.get("discarded"):
-        ok("always-mode truncated webm: discarded")
+    if status == 400 and "ws/voice" in str(res.get("detail", "")):
+        ok("always-mode rejected (use /ws/voice)")
     else:
-        errors.append(f"always-mode truncated webm not discarded: {status} {res}")
+        errors.append(f"always-mode should be rejected: {status} {res}")
 
     status, res = _post_audio(
         "/api/transcribe?route=false&mode=ptt", "chunk.webm", "audio/webm", webm[:300]

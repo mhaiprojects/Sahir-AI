@@ -4,7 +4,8 @@ Protocol (``/ws/voice``):
   client → server
     binary frames            : PCM16 LE mono 16 kHz audio (any frame size; 20–100 ms recommended)
     {"type":"hello", "conversation_id":int|null, "mode":"agent|route|chat", "tts":bool}
-    {"type":"text", "text":"..."}      : inject a typed utterance (skips STT)
+    {"type":"text", "text":"..."}      : inject text (typed router rules)
+    {"type":"text", "text":"...", "as_voice":true} : same routing as STT final (Tier 0–2)
     {"type":"flush"}                   : force end-of-utterance now
     {"type":"interrupt"}               : stop the current reply (manual barge-in)
   server → client (JSON unless noted)
@@ -93,10 +94,16 @@ class VoiceSession:
             logger.info("Barge-in: user spoke during reply; cancelling generation")
             await self.send({"type": "barge_in"})
 
-    def start_turn(self, *, audio: np.ndarray | None = None, text: str | None = None) -> None:
+    def start_turn(
+        self,
+        *,
+        audio: np.ndarray | None = None,
+        text: str | None = None,
+        as_voice: bool = False,
+    ) -> None:
         self.generation += 1
         gen = self.generation
-        self.task = asyncio.create_task(self.run_turn(gen, audio=audio, text=text))
+        self.task = asyncio.create_task(self.run_turn(gen, audio=audio, text=text, as_voice=as_voice))
 
     def _alive(self, gen: int) -> bool:
         return gen == self.generation
@@ -177,10 +184,20 @@ class VoiceSession:
         except asyncio.CancelledError:
             pass
 
-    async def run_turn(self, gen: int, *, audio: np.ndarray | None, text: str | None) -> None:
+    async def run_turn(
+        self,
+        gen: int,
+        *,
+        audio: np.ndarray | None,
+        text: str | None,
+        as_voice: bool = False,
+    ) -> None:
         self.busy = True
         t0 = time.monotonic()
-        input_type = "text" if text is not None else "voice"
+        if text is not None:
+            input_type = "voice" if as_voice else "text"
+        else:
+            input_type = "voice"
         try:
             pipeline = self.get_pipeline()
             self._in_speech = False
@@ -346,7 +363,8 @@ class VoiceSession:
         elif kind == "text" and str(msg.get("text", "")).strip():
             if self.cancel_current():
                 await self.send({"type": "barge_in"})
-            self.start_turn(text=str(msg["text"]).strip())
+            as_voice = bool(msg.get("as_voice"))
+            self.start_turn(text=str(msg["text"]).strip(), as_voice=as_voice)
         elif kind == "flush":
             audio = self.endpointer.flush()
             if audio is not None:

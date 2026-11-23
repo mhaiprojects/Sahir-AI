@@ -216,9 +216,14 @@ class Agent:
                 f"■ supervisor done in {time.monotonic() - started:.1f}s",
                 source="supervisor",
             )
+            out_cid = int(conv["id"])
+            if sup_result.action == "switch_chat":
+                details = sup_result.action_details or {}
+                if details.get("conversation_id"):
+                    out_cid = int(details["conversation_id"])
             return AgentReply(
                 reply=sup_result.reply, action=sup_result.action, action_details=sup_result.action_details,
-                routed=sup_result.routed, conversation_id=conv["id"], user_message_id=user_id,
+                routed=sup_result.routed, conversation_id=out_cid, user_message_id=user_id,
                 assistant_message_id=assistant_id, sources=sources,
             )
 

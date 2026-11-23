@@ -15,6 +15,8 @@ from agent.supervisor_intent import (
     is_roster_question,
     normalize_tool,
     parse_directive,
+    parse_switch_target,
+    resolve_chat_in_project,
     utterance_requests_structural_action,
 )
 from config import Settings
@@ -86,6 +88,9 @@ class SupervisorService:
             f"Sub-chats:\n" + "\n".join(lines)
         )
 
+    def _existing_sub_chat(self, project_id: int, title: str) -> dict[str, Any] | None:
+        return resolve_chat_in_project(self.store, project_id, title, include_archived=False)
+
     def spawn_sub_chat(
         self,
         project_id: int,
@@ -101,6 +106,9 @@ class SupervisorService:
         if not sup_id:
             raise ValueError("Project has no supervisor")
         self._supervisor_row(int(sup_id))
+        existing = self._existing_sub_chat(project_id, title)
+        if existing:
+            return existing
         publish("supervisor", "", source="supervisor", state=f"spawning “{title.strip()[:60]}”")
         conv = self.store.create_conversation(
             title.strip()[:200] or "New sub-chat",
@@ -321,9 +329,20 @@ class SupervisorService:
         if name == "answer":
             return SupervisorReply(reply=str(tool.get("reply") or "Done."), action="supervisor_answer")
         if name == "spawn_sub_chat":
+            title = str(tool.get("title") or "New sub-chat")
+            prior = self._existing_sub_chat(project_id, title)
+            if prior:
+                return SupervisorReply(
+                    reply=(
+                        f"“{prior['title']}” already exists (#{prior['id']}). "
+                        f'Say “switch to {prior['title']}” to open it.'
+                    ),
+                    action="spawn_sub_chat",
+                    action_details={"conversation": prior, "deduplicated": True},
+                )
             conv = self.spawn_sub_chat(
                 project_id,
-                title=str(tool.get("title") or "New sub-chat"),
+                title=title,
                 brief=str(tool.get("brief") or ""),
                 aliases=tool.get("aliases") if isinstance(tool.get("aliases"), list) else None,
                 mode=tool.get("mode"),
@@ -399,12 +418,14 @@ class SupervisorService:
             return self.execute_tool(project_id, supervisor_conv_id, tool, utterance=utterance)
         norm, err = normalize_tool(self.store, project_id, tool, utterance)
         if err:
-            if not utterance_requests_structural_action(utterance) and (
-                is_roster_question(utterance) or "?" in utterance
-            ):
+            if not utterance_requests_structural_action(utterance):
                 return None
             return SupervisorReply(reply=err, action="supervisor_clarify", routed=False)
         if norm is None:
+            if not err:
+                return None
+            if not utterance_requests_structural_action(utterance):
+                return None
             return SupervisorReply(reply=err or "I couldn't do that.", action="supervisor_clarify", routed=False)
         return self.execute_tool(project_id, supervisor_conv_id, norm, utterance=utterance)
 
@@ -455,6 +476,17 @@ class SupervisorService:
         publish("supervisor", "", source="supervisor", state="thinking")
         if on_progress:
             on_progress({"type": "progress", "stage": "supervisor", "message": "Supervisor planning…"})
+
+        switch_hint = parse_switch_target(utterance)
+        if switch_hint:
+            conv = resolve_chat_in_project(self.store, project_id, switch_hint, include_archived=False)
+            if conv:
+                publish("supervisor", "", source="supervisor", state="idle")
+                return SupervisorReply(
+                    reply=f"Switched to “{conv['title']}”.",
+                    action="switch_chat",
+                    action_details={"conversation_id": conv["id"], "success": True, "conversation": conv},
+                )
 
         directive = parse_directive(utterance)
         if directive:

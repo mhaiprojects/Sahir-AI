@@ -1,4 +1,4 @@
-/* Agent Manager: chats, memory, RAG documents, live voice (WebSocket + barge-in), tasks. */
+/* Agent Manager: memory, RAG documents, tasks. Hands-free lives in voice_client.js + app.js. */
 (() => {
   "use strict";
   const $ = (s) => document.querySelector(s);
@@ -36,7 +36,9 @@
     if (view === "memory") loadMemories();
     if (view === "docs") loadDocs();
     if (view === "tasks") loadTasks();
-    if (view === "voice") loadStatus();
+    if (view === "voice") {
+      document.getElementById("voice-alias-btn")?.click();
+    }
   };
 
   async function loadStatus() {
@@ -178,106 +180,6 @@
       || `<tr><td colspan="6" class="empty">No delegated tasks yet</td></tr>`;
   }
   $("#tasks-refresh").addEventListener("click", loadTasks);
-
-  // ---------------------------------------------------------- live voice
-  const voice = { ws: null, ctx: null, stream: null, node: null, mute: null, playing: [], playCtx: null, nextAudioMeta: null, playHead: 0 };
-  const vlog = (html, cls = "") => { const el = $("#voice-log"); el.insertAdjacentHTML("beforeend", `<div class="msg ${cls}">${html}</div>`); el.scrollTop = 1e9; };
-  const setVState = (s) => { $("#voice-state").textContent = s; $("#voice-state").dataset.state = s; };
-
-  function stopPlayback() {
-    voice.playing.forEach((src) => { try { src.stop(); } catch {} });
-    voice.playing = [];
-    if (voice.playCtx) voice.playHead = voice.playCtx.currentTime;
-  }
-
-  async function playWav(buf) {
-    voice.playCtx = voice.playCtx || new AudioContext();
-    const audio = await voice.playCtx.decodeAudioData(buf);
-    const src = voice.playCtx.createBufferSource();
-    src.buffer = audio; src.connect(voice.playCtx.destination);
-    const start = Math.max(voice.playCtx.currentTime, voice.playHead);
-    src.start(start); voice.playHead = start + audio.duration;
-    voice.playing.push(src);
-    src.onended = () => { voice.playing = voice.playing.filter((x) => x !== src); };
-  }
-
-  // Shared microphone state with Home quick voice (#33).
-  window.sahirStopLiveVoice = (reason) => {
-    if (!voice.ws) return;
-    stopVoice();
-    toast(`Live voice stopped: ${reason || "microphone in use"} started.`);
-  };
-
-  async function startVoice() {
-    window.sahirReleaseHomeMic?.();
-    const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    voice.ws = new WebSocket(`${proto}//${location.host}/ws/voice`);
-    voice.ws.binaryType = "arraybuffer";
-    voice.ws.onopen = () => voice.ws.send(JSON.stringify({
-      type: "hello",
-      conversation_id: activeConvId(),
-      mode: "agent",
-      tts: window.sahirSpeakRepliesEnabled?.() ?? true,
-    }));
-    voice.ws.onclose = () => { setVState("disconnected"); stopVoice(true); };
-    voice.ws.onmessage = async (ev) => {
-      if (typeof ev.data !== "string") { await playWav(ev.data); return; }
-      const m = JSON.parse(ev.data);
-      if (m.type === "ready") { setVState("listening"); if (m.tts_backend) vlog(`<i>connected · VAD ${esc(m.vad)} · TTS ${esc(m.tts_backend)}</i>`); }
-      else if (m.type === "speech_start") setVState("hearing you");
-      else if (m.type === "barge_in") { stopPlayback(); vlog("<i>⏹ barge-in — stopped reply</i>"); }
-      else if (m.type === "status") setVState(m.state);
-      else if (m.type === "transcript") { if (m.text) vlog(esc(m.text), "user"); }
-      else if (m.type === "reply") { state.convId = m.conversation_id; vlog(md(m.text) + `<div class="meta"><span class="chip">${esc(m.action)}</span> ${m.latency_ms} ms</div>`, "assistant"); }
-      else if (m.type === "error") vlog("Error: " + esc(m.error), "bad");
-    };
-    voice.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
-    voice.ctx = new AudioContext({ sampleRate: 16000 });
-    const srcNode = voice.ctx.createMediaStreamSource(voice.stream);
-    const handleChunk = (f32) => {
-      let peak = 0; const i16 = new Int16Array(f32.length);
-      for (let i = 0; i < f32.length; i++) { const s = Math.max(-1, Math.min(1, f32[i])); i16[i] = s * 32767; peak = Math.max(peak, Math.abs(s)); }
-      $("#voice-meter").style.width = Math.min(100, peak * 140) + "%";
-      if (voice.ws && voice.ws.readyState === 1) voice.ws.send(i16.buffer);
-    };
-    // 1024-sample chunks ≈ 64 ms @16 kHz. AudioWorklet replaces the deprecated
-    // ScriptProcessorNode, which is only a fallback for old browsers (#44).
-    if (voice.ctx.audioWorklet && window.AudioWorkletNode) {
-      await voice.ctx.audioWorklet.addModule("/static/pcm-capture-worklet.js?v=20261116ui");
-      voice.node = new AudioWorkletNode(voice.ctx, "pcm-capture", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
-      voice.node.port.onmessage = (e) => handleChunk(e.data);
-    } else {
-      voice.node = voice.ctx.createScriptProcessor(1024, 1, 1);
-      voice.node.onaudioprocess = (e) => handleChunk(e.inputBuffer.getChannelData(0));
-    }
-    // The graph must reach the destination to keep running, but through a
-    // zero-gain node so the mic is never played back through the speakers (#44).
-    voice.mute = voice.ctx.createGain();
-    voice.mute.gain.value = 0;
-    srcNode.connect(voice.node); voice.node.connect(voice.mute); voice.mute.connect(voice.ctx.destination);
-    $("#voice-toggle").textContent = "Stop live voice"; $("#voice-interrupt").disabled = false;
-  }
-
-  function stopVoice(fromClose = false) {
-    stopPlayback();
-    try { if (voice.node?.port) voice.node.port.onmessage = null; voice.node && voice.node.disconnect(); } catch {}
-    try { voice.mute && voice.mute.disconnect(); } catch {}
-    voice.stream && voice.stream.getTracks().forEach((t) => t.stop());
-    voice.ctx && voice.ctx.close().catch(() => {});
-    if (!fromClose && voice.ws) voice.ws.close();
-    Object.assign(voice, { ws: null, ctx: null, stream: null, node: null, mute: null });
-    $("#voice-toggle").textContent = "Start live voice"; $("#voice-interrupt").disabled = true;
-    if (!fromClose) setVState("idle");
-    window.sahirRefreshRail?.();
-  }
-
-  $("#voice-toggle").addEventListener("click", () => {
-    if (voice.ws) stopVoice();
-    else startVoice().catch((e) => { toast("Mic/voice error: " + e.message, true); stopVoice(); });
-  });
-  $("#voice-interrupt").addEventListener("click", () => { stopPlayback(); voice.ws && voice.ws.send(JSON.stringify({ type: "interrupt" })); });
-
-  window.sahirSpeakRepliesEnabled = () => document.getElementById("speak-replies-toggle")?.checked ?? true;
 
   (async () => {
     await loadStatus();

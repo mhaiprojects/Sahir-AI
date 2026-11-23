@@ -34,7 +34,7 @@
         <button type="button" class="rail-footer-btn" data-view="memory" id="nav-btn-memory">Memory</button>
         <button type="button" class="rail-footer-btn" data-view="docs" id="nav-btn-docs">Documents</button>
         <button type="button" class="rail-footer-btn" data-view="tasks" id="nav-btn-tasks">Tasks</button>
-        <button type="button" class="rail-footer-btn" data-view="voice" id="nav-btn-voice">Live voice</button>
+        <button type="button" class="rail-footer-btn" data-view="voice" id="nav-btn-voice" title="Opens chat with Hands-free on">Hands-free</button>
         <button type="button" class="rail-footer-btn" data-view="models" id="nav-btn-models">Models</button>
         <button type="button" class="rail-footer-btn" data-view="settings" id="nav-btn-settings">Settings</button>
         <button type="button" class="rail-footer-btn" data-view="logs" id="nav-btn-logs">Logs</button>
@@ -128,16 +128,16 @@
                 <input type="checkbox" id="hands-free-toggle" aria-describedby="wake-word-note">
                 Hands-free
               </label>
-              <label class="checkbox" title="Reads replies aloud on this page and in Live voice">
+              <label class="checkbox" title="Reads replies aloud (streaming TTS on Hands-free; HTTP TTS on hold-to-listen)">
                 <input type="checkbox" id="speak-replies-toggle" checked>
                 Speak replies
               </label>
+              <button type="button" id="hands-free-stop" class="secondary btn-voice" title="Stop speaking or cancel the current voice reply" disabled>Stop</button>
             </div>
           </form>
         </main>
 
-        <p id="wake-word-note" class="voice-mode-note sr-only">Wake word is off in the browser. Hands-free starts a request on speech.</p>
-        <p class="voice-mode-note">Streaming voice with barge-in: open <button type="button" class="linklike" id="open-live-voice-btn">Live voice</button> in the rail footer.</p>
+        <p id="wake-word-note" class="voice-mode-note sr-only">Wake word is off in the browser. Hands-free streams to the server with Silero VAD and barge-in.</p>
 
         <footer class="app-footer">
           <p>Accessible on your LAN at this machine's IP and port <span id="port-label">…</span>.</p>
@@ -213,7 +213,7 @@
             <p class="config-note">Keyword shortcuts active while speaking or processing.</p>
             <form id="command-form" class="command-form">
               <input type="text" id="command-keyword" placeholder="Keyword phrase" aria-label="Keyword phrase" required maxlength="120" data-help="The word or phrase to listen for, up to 120 characters. Capitals don&#x27;t matter, and each phrase can only be used once." data-help-label="Keyword phrase" data-help-place="wrap">
-              <select id="command-action" aria-label="Action" required data-help="What happens when the keyword is heard: stop speaking, cancel the current request, repeat the last reply, or pause or resume Always listening." data-help-label="Action" data-help-place="wrap"></select>
+              <select id="command-action" aria-label="Action" required data-help="What happens when the keyword is heard: stop speaking, cancel the current request, repeat the last reply, or pause or resume Hands-free." data-help-label="Action" data-help-place="wrap"></select>
               <button type="submit" class="small">Add</button>
             </form>
             <div id="command-list" class="command-list" aria-live="polite"></div>
@@ -266,18 +266,14 @@
               </div>
       </div>
 
-      <div id="view-voice" class="view view-voice view-secondary" hidden>
-        <header class="view-header"><h1>Live voice</h1></header>
-              <div class="ag-col">
-                <p class="hint"><b>Streaming conversation</b>: mic → Silero VAD → Whisper → orchestrator → TTS. Barge in by talking over a reply. Uses the global <b>Speak replies</b> toggle on the Chat screen. Hands-free on Chat turns off when Live voice starts.</p>
-                <div class="row">
-                  <button type="button" id="voice-toggle" class="primary">Start live voice</button>
-                  <button type="button" id="voice-interrupt" disabled data-help="Interrupt stops the reply being spoken; you can also start talking to barge in." data-help-label="Live voice controls">Interrupt</button>
-                  <span id="voice-state" class="pill">idle</span>
-                </div>
-                <div class="meter"><div id="voice-meter"></div></div>
-                <div id="voice-log" class="ag-messages small"></div>
-              </div>
+      <div id="view-voice" class="view view-voice view-secondary" hidden aria-hidden="true">
+        <header class="view-header"><h1>Hands-free</h1></header>
+        <div class="ag-col">
+          <p class="hint">Hands-free lives on the Chat screen — one toggle uses <code>/ws/voice</code> (server Silero VAD, router, barge-in). This page is only a shortcut.</p>
+          <button type="button" id="voice-alias-btn" class="primary">Open chat with Hands-free on</button>
+          <span id="voice-state" class="pill sr-only" aria-hidden="true">idle</span>
+          <div class="meter"><div id="voice-meter"></div></div>
+        </div>
       </div>
 
       <div id="view-tasks" class="view view-tasks view-secondary" hidden>
@@ -321,8 +317,9 @@
   <script src="/static/vendor/marked.min.js"></script>
   <script src="/static/vendor/purify.min.js"></script>
   <script src="/static/markdown.js"></script>
-  <script src="/static/app.js?v=20261116ui"></script>
-  <script src="/static/agent.js?v=20261116ui"></script>
+  <script src="/static/voice_client.js?v=20261124hf"></script>
+  <script src="/static/app.js?v=20261124hf"></script>
+  <script src="/static/agent.js?v=20261124hf"></script>
   <script src="/static/models.js?v=20261116ui"></script>
   <script src="/static/tour.js?v=20261124shell"></script>
   <script src="/static/chatbar.js?v=20261124shell"></script>

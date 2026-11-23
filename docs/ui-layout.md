@@ -34,7 +34,7 @@ Narrow screens (`max-width: 980px`): the **☰** bar opens the projects rail as 
 | Memory | `view-memory` | Long-term memory CRUD + review (`agent.js`) |
 | Documents | `view-docs` | RAG upload, retrieval test (`agent.js`) |
 | Tasks | `view-tasks` | Delegation log (`agent.js`) |
-| Live voice | `view-voice` | WebSocket streaming session (`agent.js`) |
+| Hands-free | `view-voice` | Redirect alias → chat + enable Hands-free (`voice_client.js`, `app.js`) |
 | Models | `view-models` | Model pick/load/benchmark (`models.js`) |
 | Settings | `view-settings` | Voice commands, service + mic status |
 | Logs | `view-logs` | Request log (`app.js`) |
@@ -49,9 +49,9 @@ Top to bottom:
 4. **Live transcription** (`#live-transcript`) — draft + corrected captions while speaking
 5. **Empty state** (`#chat-empty-state`) — “Ready…” when the conversation has no user/assistant messages (not wiped when restoring an empty chat)
 6. **Chat log** (`#chat-log`) — markdown messages
-7. **Composer** (`#chat-form`) — message box, Send, mic controls, Hands-free (`#hands-free-toggle`), Speak replies (`#speak-replies-toggle`)
+7. **Composer** (`#chat-form`) — message box, Send, mic controls, Hands-free (`#hands-free-toggle`), Speak replies, **Stop** (`#hands-free-stop`)
 
-Voice behaviour matches the previous Home view: hold-to-talk, Hands-free (stored under `voice-assistant-always-listen` in `localStorage`), speak replies (`voice-assistant-speak-replies`), live `/api/transcribe/live` + final transcribe.
+Voice: **Hands-free** → `/ws/voice` via `voice_client.js` (partials/finals in `#live-transcript`, chat log on reply). **Hold to listen** → `/api/transcribe/live` captions + `/api/transcribe?mode=ptt` with `dispatch_routed`. Hands-free preference: `voice-assistant-hands-free` (legacy key `voice-assistant-always-listen` migrated on read).
 
 ## Routine / WIP panel (`#wip-panel`, `wip.js`)
 

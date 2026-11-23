@@ -312,6 +312,24 @@ def test_normalize_tool_rejects_oob_conversation_id(store: AgentStore) -> None:
     assert norm is None and err and "this project" in err.lower()
 
 
+def test_spawn_dedupes_existing_title(store: AgentStore) -> None:
+    general = store.get_project_by_slug("general")
+    sup_id = int(general["supervisor_conversation_id"])
+    svc = SupervisorService(store, FakeLLM(), Settings())
+    first = svc.spawn_sub_chat(int(general["id"]), title="API refactor", supervisor_conv_id=sup_id)
+    reply = svc.run_turn(
+        "spin up a chat for the API refactor",
+        project_id=int(general["id"]),
+        supervisor_conv_id=sup_id,
+        history=[],
+    )
+    subs = [c for c in store.list_sub_chats(int(general["id"])) if c["title"] == "API refactor"]
+    assert len(subs) == 1
+    assert subs[0]["id"] == first["id"]
+    assert reply.action == "spawn_sub_chat"
+    assert reply.action_details.get("deduplicated")
+
+
 def test_supervisor_run_turn_spawn_json(supervisor_stack: tuple[SupervisorService, Agent]) -> None:
     svc, agent = supervisor_stack
     general = svc.store.get_project_by_slug("general")
@@ -324,7 +342,7 @@ def test_supervisor_run_turn_spawn_json(supervisor_stack: tuple[SupervisorServic
         "mode": "agent",
     })
     reply = svc.run_turn(
-        "start a docs chat",
+        "spin up a chat for Docs pass, brief: Readme cleanup",
         project_id=int(general["id"]),
         supervisor_conv_id=sup_id,
         history=[],

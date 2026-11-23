@@ -28,6 +28,10 @@ _LIST_CHATS = re.compile(
 )
 _LIST_CHATS2 = re.compile(r"(?is)^(?:please\s+)?(?:list|show)\s+(?:me\s+)?(?:the\s+)?(?:sub[- ]?)?chats?\b")
 _STATUS = re.compile(r"(?is)^(?:project\s+|chat\s+)?status\s*\??$")
+_SUP_PREFIX = re.compile(r"(?is)^(?:supervisor|sahir)\s*[,:\s]+\s*(.+)$")
+_SWITCH_TARGET = re.compile(
+    r"(?is)^(?:please\s+)?(?:switch|open|go)\s+(?:to\s+)?(?:the\s+)?(?:chat\s+)?(.+?)\s*\.?$"
+)
 
 STRUCTURAL_ACTION_RE = re.compile(
     r"\b(move|archive|rename|brief|inject|give|unarchive|restore|summari[sz]e|spin\s+up|spawn|start|open|create)\b",
@@ -114,10 +118,21 @@ def utterance_requests_structural_action(utterance: str) -> bool:
     return bool(STRUCTURAL_ACTION_RE.search(utterance or ""))
 
 
+def parse_switch_target(utterance: str) -> str | None:
+    """Extract chat title/hint from a switch/open/go utterance."""
+    m = _SWITCH_TARGET.match((utterance or "").strip())
+    if not m:
+        return None
+    return _strip_article(m.group(1).strip())
+
+
 def parse_directive(utterance: str) -> dict[str, Any] | None:
     text = (utterance or "").strip()
     if not text:
         return None
+    sm = _SUP_PREFIX.match(text)
+    if sm:
+        text = sm.group(1).strip()
 
     if is_roster_question(text):
         return {"tool": "list_chats"}
@@ -242,6 +257,8 @@ def normalize_tool(
         return conv
 
     if name == "spawn_sub_chat":
+        if parse_directive(utterance) is None:
+            return None, None
         return tool, None
 
     if name == "summarise_all":

@@ -741,6 +741,12 @@ def create_app() -> FastAPI:
         if not data:
             raise HTTPException(status_code=400, detail="No audio uploaded")
 
+        if mode == "always":
+            raise HTTPException(
+                status_code=400,
+                detail="Hands-free uses /ws/voice. Hold-to-listen should use mode=ptt.",
+            )
+
         if not _request_lock.acquire(blocking=False):
             raise HTTPException(status_code=429, detail="Assistant is busy.")
 
@@ -753,36 +759,6 @@ def create_app() -> FastAPI:
                 )
             except Exception as exc:
                 duration_ms = int((time.monotonic() - started) * 1000)
-                if mode == "always":
-                    logger.warning(
-                        "Always-listening decode failed (%s bytes): %s",
-                        len(data),
-                        exc,
-                    )
-                    log_id = _record_log(
-                        request=request,
-                        input_type="voice",
-                        user_message=user_label,
-                        ai_reply=None,
-                        routed=route,
-                        action="noise_discard",
-                        action_details={
-                            "stage": "decode",
-                            "content_type": audio.content_type,
-                            "listening_mode": mode,
-                            "error": str(exc),
-                        },
-                        duration_ms=duration_ms,
-                        status="success",
-                    )
-                    return {
-                        "transcript": "",
-                        "reply": "",
-                        "discarded": True,
-                        "action": "noise_discard",
-                        "action_details": {"listening_mode": mode, "stage": "decode"},
-                        "log_id": log_id,
-                    }
                 partial = isinstance(exc, PartialAudioError)
                 log_fn = logger.warning if partial else logger.exception
                 log_fn(
@@ -812,34 +788,6 @@ def create_app() -> FastAPI:
                 raise HTTPException(status_code=400, detail=detail) from exc
 
             pcm = _resample(pcm, sample_rate, settings.sample_rate)
-            if mode == "always":
-                has_speech, speech_secs = _vad_has_speech(pcm)
-                if not has_speech:
-                    duration_ms = int((time.monotonic() - started) * 1000)
-                    log_id = _record_log(
-                        request=request,
-                        input_type="voice",
-                        user_message=user_label,
-                        ai_reply=None,
-                        routed=route,
-                        action="noise_discard",
-                        action_details={
-                            "stage": "vad",
-                            "speech_seconds": round(speech_secs, 3),
-                            "listening_mode": mode,
-                            "reason": "no_speech",
-                        },
-                        duration_ms=duration_ms,
-                        status="success",
-                    )
-                    return {
-                        "transcript": "",
-                        "reply": "",
-                        "discarded": True,
-                        "action": "noise_discard",
-                        "action_details": {"listening_mode": mode, "stage": "vad"},
-                        "log_id": log_id,
-                    }
             pipeline = _get_pipeline()
             if phase == "final":
                 transcript = pipeline.transcribe_final(pcm).strip()
@@ -849,32 +797,6 @@ def create_app() -> FastAPI:
 
             if not transcript:
                 duration_ms = int((time.monotonic() - started) * 1000)
-                if mode == "always":
-                    log_id = _record_log(
-                        request=request,
-                        input_type="voice",
-                        user_message=user_label,
-                        ai_reply=None,
-                        routed=route,
-                        action="noise_discard",
-                        action_details={
-                            "transcript": "",
-                            "content_type": audio.content_type,
-                            "listening_mode": mode,
-                            "reason": "empty_transcript",
-                        },
-                        duration_ms=duration_ms,
-                        status="success",
-                    )
-                    return {
-                        "transcript": "",
-                        "reply": "",
-                        "discarded": True,
-                        "action": "noise_discard",
-                        "action_details": {"transcript": "", "listening_mode": mode},
-                        "log_id": log_id,
-                    }
-
                 reply = "I didn't catch that."
                 log_id = _record_log(
                     request=request,

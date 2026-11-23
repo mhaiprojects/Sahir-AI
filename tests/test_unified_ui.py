@@ -32,6 +32,8 @@ def test_unified_html_single_controls() -> None:
     assert 'id="voice-tts"' not in html
     assert 'id="cursor-btn"' not in html
     assert 'id="hands-free-toggle"' in html
+    assert 'id="hands-free-stop"' in html
+    assert "voice_client.js" in html
     assert 'id="project-rail"' in html
     assert 'id="view-chat"' in html
     assert 'id="view-home"' not in html
