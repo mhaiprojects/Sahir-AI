@@ -1023,10 +1023,15 @@ async function refreshHealth() {
       ["Ollama", healthData.ollama?.ok, healthData.ollama?.target_loaded ? "model ready" : "check model"],
       ["Cursor CLI", healthData.cursor_cli?.ok],
       [ttsName, ttsOk],
-      ["Whisper STT", healthData.whisper?.ok],
+      ["Whisper (final)", healthData.whisper?.ok, tx.whisper_final_model || "base"],
       ["HTTPS", healthData.https_enabled, healthData.https_enabled ? "enabled" : "off"],
-      ["Live STT", true, tx.whisper_live_model || "tiny"],
-      ["Final STT", true, tx.whisper_final_model || "base"],
+      [
+        "Live captions",
+        Boolean(tx.live_stt_backend),
+        tx.live_stt_backend
+          ? `${tx.live_stt_backend}${tx.live_stt_backend === "whisper" ? ` (${tx.whisper_live_model || "tiny"})` : ""}`
+          : "—",
+      ],
     ];
 
     for (const [name, ok, extra] of items) {

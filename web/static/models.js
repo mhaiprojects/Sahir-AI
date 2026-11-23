@@ -177,13 +177,26 @@
     autoFb.checked = !!data.auto_fallback;
     forceFb.checked = !!data.force_fallback;
     const other = (data.other_loaded || []).map((o) => `${o.name} ${fmtBytes(o.size)}`).join(", ");
-    setStatus(`Active: ${data.active_model} · Fallback: ${data.fallback_model}` +
-      (other ? ` · Also loaded: ${other}` : ""));
+    let line = `Active: ${data.active_model} · Fallback: ${data.fallback_model}` +
+      (other ? ` · Also loaded: ${other}` : "");
+    if (data.live_stt_backend) {
+      line += ` · Live captions: ${data.live_stt_backend}`;
+    }
+    setStatus(line);
   }
 
   async function refreshModels() {
     try {
-      render(await api("/api/models"));
+      const data = await api("/api/models");
+      try {
+        const health = await fetch("/api/health", { credentials: "same-origin", cache: "no-store" })
+          .then((r) => r.json());
+        const tx = health.transcription || {};
+        if (tx.live_stt_backend) data.live_stt_backend = tx.live_stt_backend;
+      } catch {
+        /* health optional */
+      }
+      render(data);
     } catch (err) {
       setStatus(`Could not list models: ${err.message}`, true);
     }

@@ -46,6 +46,8 @@ class Settings:
     whisper_final_model: str = "base"
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
+    # Live partial captions: moonshine | whisper (empty = auto: moonshine if model present)
+    web_live_stt_backend: str = ""
     piper_voice: str = "en_US-lessac-medium"
     piper_model_path: Path = field(
         default_factory=lambda: PROJECT_ROOT / "models/piper/en_US-lessac-medium.onnx"
@@ -176,6 +178,7 @@ class Settings:
             ),
             whisper_device=os.getenv("WHISPER_DEVICE", "cpu"),
             whisper_compute_type=os.getenv("WHISPER_COMPUTE_TYPE", "int8"),
+            web_live_stt_backend=os.getenv("WEB_LIVE_STT_BACKEND", "").strip().lower(),
             piper_voice=piper_voice,
             piper_model_path=Path(piper_path),
             tts_backend=os.getenv("TTS_BACKEND", "piper").strip().lower() or "piper",

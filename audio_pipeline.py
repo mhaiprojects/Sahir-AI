@@ -30,6 +30,8 @@ class SpeechPipeline:
         self._kokoro = None
         self._kokoro_failed = False
         self._speak_lock = threading.Lock()
+        self._live_backend = None
+        self._live_backend_logged = False
 
     def _get_whisper(self, model_name: str | None = None) -> WhisperModel:
         model_name = model_name or self.settings.whisper_model
@@ -87,9 +89,26 @@ class SpeechPipeline:
         logger.info("Transcribed (%s/%s): %r", tier, model_name, text)
         return text
 
+    def _get_live_backend(self):
+        if self._live_backend is None:
+            from stt_live import build_live_stt_backend, resolve_live_stt_backend_name
+
+            name = resolve_live_stt_backend_name(self.settings)
+            if not self._live_backend_logged:
+                logger.info("Live STT backend: %s", name)
+                self._live_backend_logged = True
+            self._live_backend = build_live_stt_backend(self.settings, pipeline=self)
+        return self._live_backend
+
+    @property
+    def live_stt_backend(self) -> str:
+        from stt_live import resolve_live_stt_backend_name
+
+        return resolve_live_stt_backend_name(self.settings)
+
     def transcribe_live(self, audio: np.ndarray) -> str:
         """Fast partial transcription while the user is still speaking."""
-        return self.transcribe(audio, tier="live")
+        return self._get_live_backend().transcribe_partial(audio)
 
     def transcribe_final(self, audio: np.ndarray) -> str:
         """Higher-quality transcription after a conversation ends."""

@@ -412,11 +412,16 @@ def check_health(settings: Settings | None = None) -> dict[str, Any]:
         }
     else:
         health["whisper"] = {"ok": False, "reason": "disabled"}
+    from stt_live import live_stt_status
+
+    tx = live_stt_status(settings)
     health["transcription"] = {
         "conversation_silence_seconds": settings.web_conversation_silence_seconds,
         "live_interval_seconds": settings.web_live_transcribe_interval_seconds,
         "whisper_live_model": settings.whisper_live_model,
         "whisper_final_model": settings.whisper_final_model,
+        "live_stt_backend": tx["backend"],
+        "moonshine_ready": tx["moonshine_ready"],
     }
 
     return health

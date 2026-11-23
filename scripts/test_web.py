@@ -485,6 +485,10 @@ def run_all_tests(errors: list[str]) -> None:
         tx = health.get("transcription", {})
         if tx.get("conversation_silence_seconds") != 3.0:
             errors.append(f"unexpected silence seconds: {tx}")
+        if not tx.get("live_stt_backend"):
+            errors.append(f"transcription.live_stt_backend missing: {tx}")
+        else:
+            ok("transcription.live_stt_backend:", tx.get("live_stt_backend"))
         if not health.get("https_enabled"):
             print("warn: HTTPS not enabled (mobile mic needs it)")
 
