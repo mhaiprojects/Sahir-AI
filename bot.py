@@ -10,12 +10,9 @@ import sys
 import threading
 import time
 
-from audio_pipeline import SpeechPipeline
 from config import Settings
 from logging_setup import configure_logging
 from tools.router import chat_text_only, route_utterance
-from triggers.push_to_talk import PushToTalk
-from triggers.wakeword import WakeWordListener
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,6 +28,10 @@ def _init_logging(settings: Settings) -> None:
 
 class VoiceAssistant:
     def __init__(self, settings: Settings) -> None:
+        from audio_pipeline import SpeechPipeline
+        from triggers.push_to_talk import PushToTalk
+        from triggers.wakeword import WakeWordListener
+
         self.settings = settings
         self.pipeline = SpeechPipeline(settings)
         self.ptt = PushToTalk(settings.ptt_hotkey)

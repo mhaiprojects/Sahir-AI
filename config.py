@@ -96,6 +96,7 @@ class Settings:
     web_ssl_key: Path | None = None
     web_conversation_silence_seconds: float = 3.0
     web_live_transcribe_interval_seconds: float = 1.0
+    web_voice_enabled: bool = True
     web_auth_enabled: bool = False
     web_auth_token_file: Path = field(
         default_factory=lambda: Path.home() / ".config" / "jahash-secrets" / "sahir-web-token.txt"
@@ -181,6 +182,8 @@ class Settings:
             web_live_transcribe_interval_seconds=float(
                 os.getenv("WEB_LIVE_TRANSCRIBE_INTERVAL_SECONDS", "1")
             ),
+            web_voice_enabled=os.getenv("WEB_VOICE_ENABLED", "true").lower()
+            in ("1", "true", "yes"),
             web_auth_enabled=os.getenv("WEB_AUTH_ENABLED", "true").lower()
             in ("1", "true", "yes"),
             web_auth_token_file=Path(

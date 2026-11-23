@@ -1,0 +1,115 @@
+# VPS PoC (local trial only): minimal app + internal Ollama on 127.0.0.1:8768.
+# Does NOT bind host 8765 or 11434.
+#
+#   export SAHIR_POC_SECRET_FILE=/tmp/sahir-poc-xxxxx/web_token.txt
+#   cp .env.docker.vps.example .env.docker.vps   # optional overrides
+#   timeout 900 docker compose -f docker-compose.vps.yml up -d --build
+#
+name: sahir-vps-poc
+
+x-sahir-labels: &sahir-labels
+  com.sahir.trial: jw12
+
+services:
+  ollama:
+    image: ollama/ollama:0.12.10
+    container_name: sahir-vps-poc-ollama
+    labels: *sahir-labels
+    restart: unless-stopped
+    volumes:
+      - sahir_vps_ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+  ollama-init:
+    image: ollama/ollama:0.12.10
+    container_name: sahir-vps-poc-ollama-init
+    labels: *sahir-labels
+    depends_on:
+      ollama:
+        condition: service_healthy
+    network_mode: "service:ollama"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        ollama pull qwen3:0.6b
+        ollama pull nomic-embed-text
+    restart: "no"
+
+  app:
+    image: sahir-poc:minimal
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: minimal
+      tags:
+        - sahir-poc:minimal
+    container_name: sahir-vps-poc-app
+    labels: *sahir-labels
+    depends_on:
+      ollama-init:
+        condition: service_completed_successfully
+    env_file:
+      - path: .env.docker.vps
+        required: false
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: qwen3:0.6b
+      EMBED_MODEL: nomic-embed-text
+      FALLBACK_MODEL: ""
+      AGENT_DB_PATH: /app/data/agent.db
+      WEB_HOST: 0.0.0.0
+      WEB_PORT: "8765"
+      WEB_VOICE_ENABLED: "false"
+      WEB_AUTH_ENABLED: "true"
+      WEB_AUTH_TOKEN_FILE: /run/secrets/web_token
+      WEB_SSL_CERT: data/certs/web.crt
+      WEB_SSL_KEY: data/certs/web.key
+      WAKEWORD_ENABLED: "false"
+      HF_HOME: /app/data/huggingface
+      ALLOWED_APPS: ""
+      ALLOWED_COMMANDS: ""
+    secrets:
+      - web_token
+    ports:
+      - "127.0.0.1:8768:8765"
+    volumes:
+      - sahir_vps_data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fk https://127.0.0.1:8765/api/health || curl -f http://127.0.0.1:8765/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 8
+      start_period: 120s
+
+  # Optional production TLS (disabled for local PoC — app uses self-signed certs in data volume).
+  # caddy:
+  #   image: caddy:2.9-alpine
+  #   labels: *sahir-labels
+  #   ports:
+  #     - "443:443"
+  #   volumes:
+  #     - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+  #     - caddy_data:/data
+  #   depends_on:
+  #     app:
+  #       condition: service_healthy
+
+secrets:
+  web_token:
+    file: ${SAHIR_POC_SECRET_FILE:?Set SAHIR_POC_SECRET_FILE to a host token file (16+ chars, not committed)}
+
+volumes:
+  sahir_vps_data:
+    labels:
+      com.sahir.trial: jw12
+  sahir_vps_ollama:
+    labels:
+      com.sahir.trial: jw12
+  # caddy_data:
+  #   labels:
+  #     com.sahir.trial: jw12

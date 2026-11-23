@@ -163,6 +163,65 @@ Or set `PRELOAD_WHISPER=1` in `.env` before `docker compose up --build`.
 | Slow first transcription | Set `PRELOAD_WHISPER=1` and rebuild, or wait for HF download |
 | Old UI in browser | Hard refresh (Ctrl+Shift+R) |
 
+## Image targets
+
+| Target | Tag (PoC) | Contents |
+|--------|-----------|----------|
+| **minimal** | `sahir-poc:minimal` | Agent stack, auth, router tiers, activity UI; `WEB_VOICE_ENABLED=false` (voice APIs return 503) |
+| **full** | `sahir-poc:full` | minimal + `requirements-docker-voice.txt` (Whisper, Piper) |
+
+```bash
+docker build --target minimal -t sahir-poc:minimal .
+docker build --target full -t sahir-poc:full .
+```
+
+`requirements-docker.txt` includes `sqlite-vec`, `pypdf`, and `requests` for the local-first agent layer.
+
+## VPS proof of concept (local trial only)
+
+`docker-compose.vps.yml` runs a **CPU-only** stack for GitHub #23 prep. It does **not** publish host ports **8765** or **11434** (native Sahir / host Ollama stay untouched). The app listens on **`127.0.0.1:8768`**.
+
+| Piece | PoC choice |
+|-------|------------|
+| App | `minimal` image, non-root user `sahir` (uid 10001) |
+| LLM | `ollama/ollama` on the compose network only (no host port) |
+| Models | `ollama-init` pulls `qwen3:0.6b` + `nomic-embed-text` inside the trial volume (&lt;1 GB) |
+| Auth | `WEB_AUTH_TOKEN_FILE=/run/secrets/web_token` — host file via `SAHIR_POC_SECRET_FILE` (never bake or commit) |
+| TLS | Self-signed certs in the `sahir_vps_data` volume; production: **Caddy** (commented service in compose) or mount real certs read-only |
+
+**Sizing (CPU VPS, indicative):** 2 vCPU, **4–8 GB RAM** for minimal + small models; allow **~6–10 GB disk** for Ollama volume + app image (minimal ≈ hundreds of MB; full adds ~1–2 GB for voice libs). Whisper/Piper add RAM at runtime — use **full** only when voice is required.
+
+**Local smoke (from repo root):**
+
+```bash
+TOKEN_DIR=$(mktemp -d)
+head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 32 >"$TOKEN_DIR/web_token.txt"
+export SAHIR_POC_SECRET_FILE="$TOKEN_DIR/web_token.txt"
+timeout 900 docker compose -f docker-compose.vps.yml up -d --build
+# wait for healthy app + completed ollama-init
+curl -sk https://127.0.0.1:8768/api/health | head
+curl -sk https://127.0.0.1:8768/api/projects   # expect 401
+TOKEN=$(tr -d '\n' <"$TOKEN_DIR/web_token.txt")
+curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8768/api/projects
+curl -sk -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"message":"Say hi in one short sentence.","mode":"chat","route":true}' \
+  https://127.0.0.1:8768/api/agent/chat
+timeout 120 docker compose -f docker-compose.vps.yml down -v --rmi local
+rm -rf "$TOKEN_DIR"
+```
+
+All trial resources are labelled `com.sahir.trial=jw12` and use project name **`sahir-vps-poc`**. Tear down with `docker compose -f docker-compose.vps.yml down -v --rmi local` and `docker image rm sahir-poc:minimal` if the tag remains. **Do not** run `docker system prune` on shared hosts.
+
+Optional overrides: copy `.env.docker.vps.example` → `.env.docker.vps`.
+
+### Still needed for a real VPS (pending — no spending in this task)
+
+- [ ] Rent a VPS and static IP
+- [ ] DNS A/AAAA record + firewall (443/22 only)
+- [ ] Production TLS (Let's Encrypt via Caddy or cert mount)
+- [ ] Off-site backups for `data/` and Ollama volume
+- [ ] Monitoring, log rotation, upgrade process
+
 ## Security
 
-No authentication on the web UI. Use only on trusted home networks or put a reverse proxy with auth in front.
+The web UI uses **shared-token auth** when `WEB_AUTH_ENABLED=true` (default). Mount the token file or set `WEB_AUTH_TOKEN` via secrets — never commit tokens. For untrusted networks, keep auth on and terminate TLS at a reverse proxy.

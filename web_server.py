@@ -25,7 +25,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 import activity
 from audio_decode import PartialAudioError, decode_audio_bytes
-from audio_pipeline import SpeechPipeline
 from config import Settings
 from logging_setup import configure_logging
 from tools.cursor_cli import resolve_agent_bin
@@ -68,7 +67,12 @@ STATIC_DIR = Path(__file__).resolve().parent / "web" / "static"
 
 _request_lock = threading.Lock()
 _live_transcribe_lock = threading.Lock()
-_pipeline: SpeechPipeline | None = None
+_pipeline: Any | None = None
+
+_VOICE_UNAVAILABLE = HTTPException(
+    status_code=503,
+    detail="Voice stack disabled (WEB_VOICE_ENABLED=false). Text chat and agent API remain available.",
+)
 _settings: Settings | None = None
 _log_store: RequestLogStore | None = None
 _command_store: VoiceCommandStore | None = None
@@ -159,9 +163,17 @@ def _get_model_manager() -> ModelManager:
     return mgr
 
 
-def _get_pipeline() -> SpeechPipeline:
+def _require_voice_stack() -> None:
+    if not _get_settings().web_voice_enabled:
+        raise _VOICE_UNAVAILABLE
+
+
+def _get_pipeline() -> Any:
     global _pipeline
+    _require_voice_stack()
     if _pipeline is None:
+        from audio_pipeline import SpeechPipeline
+
         _pipeline = SpeechPipeline(_get_settings())
     return _pipeline
 
@@ -372,12 +384,17 @@ def check_health(settings: Settings | None = None) -> dict[str, Any]:
         "path": cursor_bin,
     }
 
+    health["voice_stack"] = {"enabled": settings.web_voice_enabled}
     piper_path = settings.piper_model_path
-    health["piper"] = {"ok": piper_path.exists(), "path": str(piper_path)}
-    health["tts"] = {
-        "backend": settings.tts_backend,
-        "kokoro_model_present": settings.kokoro_model_dir.exists(),
-    }
+    if settings.web_voice_enabled:
+        health["piper"] = {"ok": piper_path.exists(), "path": str(piper_path)}
+        health["tts"] = {
+            "backend": settings.tts_backend,
+            "kokoro_model_present": settings.kokoro_model_dir.exists(),
+        }
+    else:
+        health["piper"] = {"ok": False, "reason": "disabled"}
+        health["tts"] = {"backend": settings.tts_backend, "ok": False, "reason": "disabled"}
     health["vad_gate"] = {
         "enabled": settings.vad_gate_enabled,
         "threshold": settings.vad_threshold,
@@ -385,13 +402,16 @@ def check_health(settings: Settings | None = None) -> dict[str, Any]:
     }
     if _agent_stack is not None:
         health["agent"] = {"ok": True, **_agent_stack.agent.store.stats()}
-    health["whisper"] = {
-        "ok": True,
-        "model": settings.whisper_model,
-        "live_model": settings.whisper_live_model,
-        "final_model": settings.whisper_final_model,
-        "device": settings.whisper_device,
-    }
+    if settings.web_voice_enabled:
+        health["whisper"] = {
+            "ok": True,
+            "model": settings.whisper_model,
+            "live_model": settings.whisper_live_model,
+            "final_model": settings.whisper_final_model,
+            "device": settings.whisper_device,
+        }
+    else:
+        health["whisper"] = {"ok": False, "reason": "disabled"}
     health["transcription"] = {
         "conversation_silence_seconds": settings.web_conversation_silence_seconds,
         "live_interval_seconds": settings.web_live_transcribe_interval_seconds,
@@ -711,6 +731,7 @@ def create_app() -> FastAPI:
     ) -> dict[str, str]:
         """Fast partial transcription while audio is still being captured."""
         settings = _get_settings()
+        _require_voice_stack()
         data = await audio.read()
         if not data:
             raise HTTPException(status_code=400, detail="No audio uploaded")
@@ -758,6 +779,7 @@ def create_app() -> FastAPI:
         conversation_id: int | None = None,
     ) -> dict[str, Any]:
         settings = _get_settings()
+        _require_voice_stack()
         data = await audio.read()
         if not data:
             raise HTTPException(status_code=400, detail="No audio uploaded")

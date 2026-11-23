@@ -20,6 +20,7 @@ systemd/
 .env.*
 !.env.example
 !.env.docker.example
+!.env.docker.vps.example
 data/
 models/
 *.pem

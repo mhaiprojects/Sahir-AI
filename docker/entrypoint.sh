@@ -4,7 +4,12 @@ set -euo pipefail
 
 cd /app
 
-mkdir -p data/logs data/certs models/piper
+if [[ "$(id -u)" -eq 0 ]]; then
+  mkdir -p data/logs data/certs models/piper
+  chown -R sahir:sahir data models/piper 2>/dev/null || chown -R 10001:10001 data models/piper
+else
+  mkdir -p data/logs data/certs models/piper
+fi
 
 # HuggingFace / faster-whisper cache (persisted volume)
 export HF_HOME="${HF_HOME:-/app/data/huggingface}"
@@ -48,10 +53,26 @@ if [[ -n "${OLLAMA_PULL_MODEL:-}" && "${ready}" -eq 1 ]]; then
     -d "{\"name\":\"${OLLAMA_PULL_MODEL}\"}" || echo "WARNING: model pull failed or still in progress"
 fi
 
-VOICE="${PIPER_VOICE:-en_US-lessac-medium}"
-if [[ ! -f "models/piper/${VOICE}.onnx" ]]; then
-  echo "Downloading Piper voice ${VOICE}..."
-  bash scripts/setup_models.sh
+if [[ -n "${OLLAMA_PULL_MODELS:-}" && "${ready}" -eq 1 ]]; then
+  IFS=',' read -ra _models <<< "${OLLAMA_PULL_MODELS}"
+  for _m in "${_models[@]}"; do
+    _m="${_m#"${_m%%[![:space:]]*}"}"
+    _m="${_m%"${_m##*[![:space:]]}"}"
+    [[ -z "${_m}" ]] && continue
+    echo "Pulling Ollama model: ${_m}..."
+    curl -sf -X POST "${OLLAMA_HOST}/api/pull" \
+      -H "Content-Type: application/json" \
+      -d "{\"name\":\"${_m}\"}" || echo "WARNING: pull failed for ${_m}"
+  done
+fi
+
+_voice_on="${WEB_VOICE_ENABLED:-true}"
+if [[ "${_voice_on}" == "1" || "${_voice_on}" == "true" || "${_voice_on}" == "yes" ]]; then
+  VOICE="${PIPER_VOICE:-en_US-lessac-medium}"
+  if [[ ! -f "models/piper/${VOICE}.onnx" ]]; then
+    echo "Downloading Piper voice ${VOICE}..."
+    bash scripts/setup_models.sh
+  fi
 fi
 
 if [[ "${PRELOAD_WHISPER:-0}" == "1" ]]; then
@@ -59,4 +80,7 @@ if [[ "${PRELOAD_WHISPER:-0}" == "1" ]]; then
   python scripts/docker_preload_whisper.py || echo "WARNING: Whisper preload failed; models download on first use."
 fi
 
+if [[ "$(id -u)" -eq 0 ]]; then
+  exec gosu sahir "$@"
+fi
 exec "$@"

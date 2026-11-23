@@ -454,6 +454,11 @@ def register_voice_ws(app: FastAPI, *, get_settings: Callable, get_pipeline: Cal
             reason = "Auth not configured" if web_auth.misconfigured else "Unauthorized"
             await ws.close(code=4401, reason=reason)
             return
+        if not get_settings().web_voice_enabled:
+            await ws.accept()
+            await ws.send_text(json.dumps({"type": "error", "message": "Voice unavailable in this deployment"}))
+            await ws.close(code=1013, reason="Voice disabled")
+            return
         await ws.accept()
         session = VoiceSession(ws, get_settings=get_settings, get_pipeline=get_pipeline, get_agent=get_agent,
                                get_command_store=get_command_store, request_lock=request_lock)
