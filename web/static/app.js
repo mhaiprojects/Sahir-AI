@@ -615,10 +615,6 @@ function updateChatEmptyState() {
   chatEmptyState.classList.toggle("hidden", !!hasMsgs);
 }
 
-function markChatReady() {
-  if (document.body) document.body.dataset.sahirChatReady = "1";
-}
-
 function renderHomeMessagesFromHistory(messages) {
   if (!chatLog) return;
   chatLog.setAttribute("aria-busy", "true");
@@ -640,7 +636,6 @@ function renderHomeMessagesFromHistory(messages) {
   chatLog.removeAttribute("aria-busy");
   updateChatEmptyState();
   scrollChatToLatest();
-  if (messages?.length) markChatReady();
 }
 
 async function loadHomeConversation() {
@@ -649,7 +644,7 @@ async function loadHomeConversation() {
     if (qpConv && window.sahirOpenConversation) {
       await window.sahirOpenConversation(qpConv);
       scrollChatToLatest();
-      markChatReady();
+      updateChatEmptyState();
       return;
     }
     const projRes = await fetch("/api/projects");
@@ -2545,6 +2540,9 @@ document.addEventListener("visibilitychange", () => {
 });
 watchMicPermission();
 updateChatEmptyState();
+if (chatLog) {
+  new MutationObserver(() => updateChatEmptyState()).observe(chatLog, { childList: true });
+}
 setMicBadge("warn", "Mic: not enabled");
 updateToggleMicButton();
 updateMicHint();

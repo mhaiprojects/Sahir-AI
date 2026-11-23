@@ -70,3 +70,13 @@ def test_wip_collapsed_query():
 def test_mobile_main_shell_grid():
     css = (STATIC / "panels.css").read_text(encoding="utf-8")
     assert "minmax(0, 1fr) auto" in css
+
+
+def test_chat_empty_state_follows_log():
+    js = (STATIC / "app.js").read_text(encoding="utf-8")
+    css = (STATIC / "unified.css").read_text(encoding="utf-8")
+    assert "function updateChatEmptyState()" in js
+    assert 'querySelector(".msg.user, .msg.assistant")' in js
+    assert "MutationObserver" in js and "updateChatEmptyState()" in js
+    assert 'body[data-sahir-chat-ready' not in css
+    assert "markChatReady" not in js
