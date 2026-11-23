@@ -50,14 +50,20 @@ bash setup.sh docker    # Docker Compose (Ollama + web)
 
 ```bash
 FORCE=1 bash scripts/generate_secrets.sh native   # or docker
-FORCE=1 bash scripts/generate_web_cert.sh
+FORCE=1 bash scripts/generate_web_cert.sh --keep-prev   # optional backup as *.prev in data/certs
 ```
 
-### LAN IP in certificate
+### HTTPS certificate (LAN + phone mic)
+
+`scripts/generate_web_cert.sh` builds SANs at run time: `localhost`, hostname, all non-docker interface IPs, Tailscale IP/DNS (when `tailscale` is available), `127.0.0.1`, `::1`, plus `EXTRA_SANS` / `WEB_CERT_CN`. Validity capped at **825 days** (iOS).
 
 ```bash
-WEB_CERT_SAN='DNS:localhost,IP:127.0.0.1,IP:192.0.2.10' bash setup.sh docker
+bash scripts/generate_web_cert.sh --check          # exit 1 if SANs are stale
+FORCE=1 bash scripts/generate_web_cert.sh          # regenerate
+EXTRA_SANS='DNS:myphone.local' FORCE=1 bash scripts/generate_web_cert.sh
 ```
+
+After regenerating: restart the web service (`systemctl --user restart voice-assistant-web` or `bash scripts/voice-assistant.sh restart`), then on the phone re-open the site and trust the new cert (iOS: Settings → General → About → Certificate Trust Settings).
 
 ## Docker Compose files
 

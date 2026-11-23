@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 import sqlite3
 import threading
@@ -998,6 +999,16 @@ def run_web_server(settings: Settings | None = None) -> None:
         ssl_kwargs["ssl_certfile"] = str(settings.web_ssl_cert)
         ssl_kwargs["ssl_keyfile"] = str(settings.web_ssl_key)
         scheme = "https"
+        try:
+            from web.ssl_cert_check import check_certificate
+
+            cn = os.environ.get("WEB_CERT_CN", "voice-assistant.local")
+            ok, messages = check_certificate(settings.web_ssl_cert, cn=cn)
+            if not ok:
+                for msg in messages:
+                    logger.warning("TLS certificate: %s", msg)
+        except Exception as exc:
+            logger.debug("TLS SAN check skipped: %s", exc)
     else:
         scheme = "http"
 

@@ -91,9 +91,16 @@ Check the activity panel / stream-json for `shell rejected` vs `shell ok`.
 
 ## Mic blocked on phone/tablet
 
-- Must use **HTTPS** with cert SAN including server LAN IP
-- Regenerate: `WEB_CERT_SAN='DNS:localhost,IP:127.0.0.1,IP:<your-lan-ip>' FORCE=1 bash scripts/generate_web_cert.sh`
-- Accept self-signed cert in browser
+- Must use **HTTPS** with cert SAN including server LAN IP (and Tailscale name/IP if you use Serve)
+- Check SANs: `bash scripts/generate_web_cert.sh --check` (stale → regenerate)
+- Regenerate: `FORCE=1 bash scripts/generate_web_cert.sh` then `systemctl --user restart voice-assistant-web`
+- **Certificate name mismatch** / `ERR_CERT_COMMON_NAME_INVALID`: the LAN or Tailscale IP changed — run `--check`, regenerate, restart, re-accept the cert on the phone
+- **iOS**: trust the self-signed cert for WSS/mic under Settings → General → About → Certificate Trust Settings; hard-refresh Safari after renewal
+- Accept the cert in the browser on first visit
+
+## TLS certificate stale (startup warning)
+
+If logs say `TLS certificate: Certificate is missing current SANs`, run `FORCE=1 bash scripts/generate_web_cert.sh` and restart the web unit. The server logs this at startup when `WEB_SSL_CERT` is set but SANs do not match current addresses.
 
 ## Empty transcription
 
