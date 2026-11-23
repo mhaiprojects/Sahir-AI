@@ -20,7 +20,7 @@ def test_templates_have_no_stale_paths() -> None:
         text = path.read_text(encoding="utf-8")
         assert "_to-del" not in text
         assert "@ROOT@" in text
-        assert "bot.py" in text
+        assert "bot.py" in text or "wyoming_server" in text
 
 
 def test_rendered_web_unit_paths_and_exec() -> None:

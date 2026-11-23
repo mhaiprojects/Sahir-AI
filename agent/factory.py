@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from agent.calendar_integration import CalendarService, CalendarWorker
 from agent.clickup import ClickUpClient, ClickUpSync, ClickUpWorker
@@ -39,10 +40,12 @@ def build_agent_stack(
     clickup: ClickUpClient | None = None,
     email: EmailService | None = None,
     calendar: CalendarService | None = None,
+    embedder: Any | None = None,
+    orchestrator_client: Any | None = None,
 ) -> AgentStack:
     config = config or AgentConfig.from_env()
     store = AgentStore(config.db_path)
-    embedder = OllamaEmbedder(settings.ollama_host, config.embed_model)
+    embedder = embedder or OllamaEmbedder(settings.ollama_host, config.embed_model)
     llm = maybe_voice_e2e_chat(build_chat_llm(settings))
     agent = Agent(settings, config, store, embedder, llm)
     dispatcher = Dispatcher(store)
@@ -57,7 +60,7 @@ def build_agent_stack(
     dispatcher.register(CalcWorker(llm))
     dispatcher.register(DesignWorker(llm))
     dispatcher.result_hooks.append(ClickUpSync(clickup))
-    agent.orchestrator = Orchestrator(settings, dispatcher)
+    agent.orchestrator = Orchestrator(settings, dispatcher, client=orchestrator_client)
     agent._integration_email = email  # noqa: SLF001 — numbered action dispatch
     agent._integration_calendar = calendar  # noqa: SLF001
     logger.info(

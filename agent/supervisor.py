@@ -324,9 +324,30 @@ class SupervisorService:
     def execute_tool(
         self, project_id: int, supervisor_conv_id: int, tool: dict[str, Any], *, utterance: str = "",
     ) -> SupervisorReply:
+        from agent.execution_policy import (
+            CONFIRM_SPOKEN,
+            blocked_under_policy,
+            supervisor_tool_action,
+        )
+
         name = str(tool.get("tool") or "answer")
         if name == "answer":
             return SupervisorReply(reply=str(tool.get("reply") or "Done."), action="supervisor_answer")
+        st_act = supervisor_tool_action(tool)
+        if blocked_under_policy(st_act):
+            from agent.numbered_actions import set_pending_confirm
+
+            set_pending_confirm(
+                supervisor_conv_id,
+                item={"n": 1, "text": utterance[:200] or name, "action": st_act},
+                message_id=0,
+            )
+            return SupervisorReply(
+                reply=CONFIRM_SPOKEN,
+                action="confirm_pending",
+                action_details={"pending": True, "deferred_action": st_act},
+                routed=True,
+            )
         if name == "spawn_sub_chat":
             title = str(tool.get("title") or "New sub-chat")
             prior = self._existing_sub_chat(project_id, title)

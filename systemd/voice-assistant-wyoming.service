@@ -1,0 +1,20 @@
+[Unit]
+Description=Sahir Wyoming protocol server (optional Home Assistant / satellite STT+TTS)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Template only — not installed or enabled by default. @ROOT@ is filled by scripts/install_systemd.sh
+WorkingDirectory=@ROOT@
+EnvironmentFile=-@ROOT@/.env
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONUNBUFFERED=1
+# Loopback by default; set WYOMING_URI and WYOMING_ALLOW_LAN in .env for LAN satellites
+Environment=WYOMING_URI=tcp://127.0.0.1:10300
+ExecStart=@ROOT@/venv/bin/python -m wyoming_server
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

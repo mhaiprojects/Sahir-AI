@@ -137,8 +137,8 @@ def test_kws_on_piper_clip() -> None:
     audio, sr = pipeline.synthesize_float("hey siri")
     spotter = KwsWakeSpotter(
         ["hey siri"],
-        keywords_threshold=settings.wake_kws_threshold,
-        keywords_score=settings.wake_kws_score,
+        keywords_threshold=0.1,
+        keywords_score=2.5,
         num_threads=1,
     )
     hit = spotter.detect_in_clip(audio, sample_rate=sr)

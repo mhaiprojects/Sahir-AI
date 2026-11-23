@@ -353,6 +353,32 @@ class Orchestrator:
 
             if pc_calls and not delegations:
                 n, a = pc_calls[0]
+                from agent.execution_policy import (
+                    action_dict_from_pc_tool,
+                    blocked_under_policy,
+                    current_conversation_id,
+                    defer_side_effect,
+                )
+
+                act = action_dict_from_pc_tool(n, a)
+                if blocked_under_policy(act):
+                    cid = int((base_ctx or {}).get("conversation_id") or current_conversation_id() or 0)
+                    if cid:
+                        from agent.numbered_actions import set_pending_confirm
+
+                        set_pending_confirm(
+                            cid,
+                            item={"n": 1, "text": f"PC tool {n}", "action": act},
+                            message_id=0,
+                        )
+                    from agent.execution_policy import CONFIRM_SPOKEN
+
+                    return OrchestrationResult(
+                        reply=CONFIRM_SPOKEN,
+                        action="confirm_pending",
+                        action_details={"pending": True, "deferred_action": act},
+                        tasks=task_log,
+                    )
                 if on_progress:
                     on_progress({"type": "progress", "stage": "tool", "message": f"Running PC tool: {n}", "tool": n})
                 r = router._execute_tool_call({"function": {"name": n, "arguments": a}}, self.settings)
@@ -383,6 +409,31 @@ class Orchestrator:
             # Workers that consume other workers' output (e.g. clickup) run after the producers in the
             # same round so their context carries the fresh previous_results.
             delegations = [a for a in delegations if a.get("type")]
+            from agent.execution_policy import (
+                CONFIRM_SPOKEN,
+                action_dict_from_delegation,
+                blocked_under_policy,
+                current_conversation_id,
+            )
+
+            for dargs in delegations:
+                dact = action_dict_from_delegation(dargs)
+                if blocked_under_policy(dact):
+                    cid = int((base_ctx or {}).get("conversation_id") or current_conversation_id() or 0)
+                    if cid:
+                        from agent.numbered_actions import set_pending_confirm
+
+                        set_pending_confirm(
+                            cid,
+                            item={"n": 1, "text": str(dargs.get("description") or dargs.get("type") or "Task")[:200], "action": dact},
+                            message_id=0,
+                        )
+                    return OrchestrationResult(
+                        reply=CONFIRM_SPOKEN,
+                        action="confirm_pending",
+                        action_details={"pending": True, "deferred_action": dact},
+                        tasks=task_log,
+                    )
             producers = [a for a in delegations if not self._consumes(a)]
             consumers = [a for a in delegations if self._consumes(a)]
             tasks = [self._make_task(a, base_ctx, summaries) for a in producers]

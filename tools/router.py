@@ -533,6 +533,28 @@ def _execute_tool_call(
     except json.JSONDecodeError:
         args = {}
 
+    from agent.execution_policy import (
+        CONFIRM_SPOKEN,
+        action_dict_from_pc_tool,
+        blocked_under_policy,
+        current_conversation_id,
+    )
+
+    if name in {"open_app", "run_command", "set_volume"}:
+        act = action_dict_from_pc_tool(name, args)
+        if blocked_under_policy(act):
+            cid = current_conversation_id()
+            if cid:
+                from agent.numbered_actions import set_pending_confirm
+
+                set_pending_confirm(cid, item={"n": 1, "text": name, "action": act}, message_id=0)
+            return RouteResult(
+                reply=CONFIRM_SPOKEN,
+                routed=True,
+                action="confirm_pending",
+                action_details={"pending": True, "deferred_action": act},
+            )
+
     if name == "local_chat":
         reply = str(args.get("reply", "Okay."))
         return RouteResult(

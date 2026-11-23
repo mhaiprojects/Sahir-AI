@@ -201,12 +201,18 @@ class Agent:
     def respond(self, text: str, *, conversation_id: int | None = None, mode: str = "agent",
                 source: str = "web", input_type: str = "text", auto_session: bool = False,
                 extra_meta: dict[str, Any] | None = None, on_progress: ProgressFn | None = None,
-                replace_user_message_id: int | None = None) -> AgentReply:
+                replace_user_message_id: int | None = None,
+                side_effects: str | None = None) -> AgentReply:
         text = text.strip()
         if not text:
             raise ValueError("Message is empty")
         if mode not in MODES:
             raise ValueError(f"mode must be one of {MODES}")
+        from agent.execution_policy import normalize_policy, side_effects_scope
+
+        policy = normalize_policy(
+            side_effects or (extra_meta or {}).get("side_effects") or (extra_meta or {}).get("execution_policy")
+        )
         conv = self.resolve_conversation(conversation_id, source=source, auto_session=auto_session)
         if not conv.get("mode") and mode in MODES:
             stored = "chat" if mode == "chat" else mode
@@ -216,6 +222,32 @@ class Agent:
             except ValueError:
                 pass
         started = time.monotonic()
+        with side_effects_scope(policy, conversation_id=int(conv["id"])):
+            return self._respond_impl(
+                text,
+                conv=conv,
+                mode=mode,
+                source=source,
+                input_type=input_type,
+                extra_meta=extra_meta,
+                on_progress=on_progress,
+                replace_user_message_id=replace_user_message_id,
+                started=started,
+            )
+
+    def _respond_impl(
+        self,
+        text: str,
+        *,
+        conv: dict[str, Any],
+        mode: str,
+        source: str,
+        input_type: str,
+        extra_meta: dict[str, Any] | None,
+        on_progress: ProgressFn | None,
+        replace_user_message_id: int | None,
+        started: float,
+    ) -> AgentReply:
         publish("step", f"▶ {mode} request in chat #{conv['id']} ({source}/{input_type}): "
                 f"{' '.join(text.split())[:160]}", source=mode)
         # Mirror every progress event (stages, tool calls, workers, model switches) to the live panel.

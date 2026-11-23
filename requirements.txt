@@ -21,3 +21,5 @@ caldav>=1.3.9
 sherpa-onnx>=2.0.1
 # BPE encoding for sherpa-onnx KWS custom wake phrases (WAKEWORD_ENGINE=kws)
 sentencepiece>=0.2.0
+# Optional Wyoming server for Home Assistant / wyoming-satellite (python -m wyoming_server)
+wyoming>=1.6.0

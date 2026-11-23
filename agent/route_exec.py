@@ -98,8 +98,25 @@ def execute_s_command(
         )
 
     if cmd == "run_command":
+        from agent.execution_policy import blocked_under_policy, current_conversation_id, defer_side_effect
+
         command = str(decision.payload.get("command") or "")
         args = list(decision.payload.get("args") or [])
+        act = {"kind": "run_command", "command": command, "args": args}
+        if blocked_under_policy(act):
+            cid = int(ctx.active_chat_id or current_conversation_id() or 0)
+            if cid:
+                raw = defer_side_effect(agent, cid, act)
+                return AgentReply(
+                    reply=raw.reply,
+                    action=raw.action,
+                    action_details=raw.action_details,
+                    routed=raw.routed,
+                    conversation_id=cid,
+                    user_message_id=0,
+                    assistant_message_id=0,
+                    sources={},
+                )
         result = pc_control.run_command(command, args, agent.settings)
         return RouteResult(
             reply=result.message,

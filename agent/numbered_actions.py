@@ -84,7 +84,16 @@ def pick_item(items: list[dict[str, Any]], index: int) -> dict[str, Any] | None:
 
 
 def execute_numbered_action(agent: "Agent", action: dict[str, Any]) -> RouteResult:
+    from agent.execution_policy import blocked_under_policy, current_conversation_id, defer_side_effect
+
     kind = str(action.get("kind") or "")
+    if blocked_under_policy(action):
+        cid = current_conversation_id()
+        if cid is None:
+            pid = agent.store.general_project_id()
+            conv = agent.store.create_conversation("Wyoming", source="policy", project_id=pid)
+            cid = int(conv["id"])
+        return defer_side_effect(agent, int(cid), action)
     if kind == "run_command":
         cmd = str(action.get("command") or "")
         args = [str(a) for a in (action.get("args") or [])]
