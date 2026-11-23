@@ -1,0 +1,76 @@
+/* Field help icons and popover (help.js). Reuses the theme variables from style.css. */
+button.help-tip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  align-self: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  min-width: 0;
+  min-height: 0;
+  margin: 0 0 0 0.3rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: italic 700 0.7rem/1 Georgia, "Times New Roman", serif;
+  cursor: help;
+  vertical-align: middle;
+  position: relative;
+}
+/* Bigger touch target without a bigger icon. */
+button.help-tip::after {
+  content: "";
+  position: absolute;
+  inset: -0.55rem;
+}
+button.help-tip:hover:not(:disabled),
+button.help-tip:focus-visible,
+button.help-tip[aria-expanded="true"] {
+  background: transparent;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.help-wrap {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.help-wrap > :first-child {
+  min-width: 0;
+}
+.command-form .help-wrap { display: flex; }
+.command-form .help-wrap > input,
+.command-form .help-wrap > select {
+  flex: 1;
+  width: 100%;
+}
+summary button.help-tip { margin-left: 0.45rem; }
+.help-popover {
+  position: fixed;
+  z-index: 10000;
+  max-width: min(20rem, calc(100vw - 16px));
+  padding: 0.55rem 0.7rem;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  font: 400 0.82rem/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  text-align: left;
+  white-space: normal;
+  pointer-events: auto;
+}
+.help-popover[hidden] { display: none; }
+/* The Agent composer row has no room for the two help icons on phones: let it wrap
+   so the message box and Send stay on-screen (select + i on one line, box + Send + i below). */
+@media (max-width: 760px) {
+  .ag-composer:has(.help-tip) { flex-wrap: wrap; }
+  .ag-composer:has(.help-tip) textarea { flex: 1 1 12rem; }
+}
+@media (max-width: 600px) {
+  .help-wrap:has(> .checkbox) { width: 100%; }
+  .help-wrap > .checkbox { width: auto; }
+}
