@@ -261,7 +261,13 @@ def test_auto_default_picks_smallest_on_start(tmp_path: Path, fake: FakeOllama, 
     assert ds["fits_vram"] is True and ds["active_source"] == "auto"
 
 
-def test_auto_default_keeps_user_pick_and_follows_new_smaller_model(tmp_path: Path, fake: FakeOllama) -> None:
+def test_auto_default_keeps_user_pick_and_follows_new_smaller_model(
+    tmp_path: Path, fake: FakeOllama, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "agent.model_selection.bench_results_path",
+        lambda: tmp_path / "no_bench_latest.json",
+    )
     mgr = _auto_manager(tmp_path, fake)
     mgr.select("llama3.2:1b")
     again = _auto_manager(tmp_path, fake)
