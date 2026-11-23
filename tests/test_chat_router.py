@@ -11,6 +11,7 @@ from agent.chat_router import (
     RouteContext,
     build_route_context,
     route,
+    try_tier0_voice_control,
     typed_should_route_tier0,
 )
 from agent.config import AgentConfig
@@ -154,6 +155,28 @@ def test_legacy_route_tier0_run_command(router_env, tmp_path, monkeypatch):
     result = legacy_route_tier0(agent, "run echo hello", conversation_id=a_id, command_store=cmds)
     assert result is not None
     assert result.action == "run_command"
+
+
+@pytest.mark.parametrize(
+    "utterance,command",
+    [
+        ("stop", "stop_speech"),
+        ("Stop.", "stop_speech"),
+        ("Stop!", "stop_speech"),
+        ("stop talking", "stop_speech"),
+        ("be quiet", "stop_speech"),
+        ("cancel", "cancel_request"),
+        ("Top.", "stop_speech"),
+    ],
+)
+def test_stop_voice_control_always_tier0(router_env, utterance, command):
+    store, cmds, _pid, sup_id, a_id, _b_id = router_env
+    chats = [{"id": a_id, "title": "Groceries", "aliases": []}]
+    ctx = _ctx(store, sup_id, sup_id, chats, cmds=cmds)
+    ctl = try_tier0_voice_control(utterance)
+    assert ctl is not None and ctl.command == command
+    d = route(utterance, ctx, store=store, max_tier=2)
+    assert d.label == "S" and d.tier == 0 and d.command == command
 
 
 def test_build_route_context(router_env):

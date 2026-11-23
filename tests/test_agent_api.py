@@ -302,6 +302,26 @@ def test_voice_ws_text_turn_and_tts(client):
         assert "reply" in got and audio_frames == 2  # two sentences → two WAV frames
 
 
+def test_voice_ws_stop_text_as_voice(client):
+    with client.websocket_connect("/ws/voice") as ws:
+        ws.receive_json()
+        ws.send_text(json.dumps({"type": "hello", "mode": "agent", "tts": True}))
+        ws.receive_json()
+        ws.send_text(json.dumps({"type": "text", "text": "Stop.", "as_voice": True}))
+        reply = None
+        for _ in range(25):
+            msg = ws.receive()
+            if msg.get("bytes") is not None:
+                continue
+            ev = json.loads(msg["text"])
+            if ev["type"] == "reply":
+                reply = ev
+                break
+        assert reply is not None
+        assert reply.get("route_tier") == 0
+        assert reply.get("action") == "stop_speech"
+
+
 def test_voice_ws_audio_endpointing(client):
     """Silence → no events; loud noise burst handled by VAD; flush forces an utterance."""
     with client.websocket_connect("/ws/voice") as ws:

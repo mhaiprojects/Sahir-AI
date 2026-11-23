@@ -28,6 +28,9 @@ _SUP_PREFIX = re.compile(r"(?is)^(?:supervisor|sahir)\s*[,:\s]+\s*(.+)$")
 _RELAY = re.compile(r"(?is)^(?:please\s+)?(?:tell|in|to)\s+(?:the\s+)?(.+?)\s+chat\s*[,:\s]+\s*(.+)$")
 _RUN_CMD = re.compile(r"(?is)^run\s+(.+)$")
 _STOP_SPEAK = re.compile(r"(?is)^(?:please\s+)?(?:stop\s+(?:speaking|talking)|be\s+quiet)\s*\.?$")
+_STOP_BARE = re.compile(
+    r"(?is)^(?:please\s+)?(?:stop|cancel|never\s+mind)\s*[!?.…]*\s*$"
+)
 _UNDO_SUP = re.compile(r"(?is)^(?:no,?\s+)?(?:wrong chat|that was (?:for|meant for) the supervisor)\s*\.?$")
 _UNDO_CHAT = re.compile(r"(?is)^(?:no,?\s+)?that was for (?:the\s+)?(.+?)\s*\.?$")
 
@@ -94,6 +97,50 @@ def build_route_context(store: AgentStore, active_chat_id: int | None) -> RouteC
     )
 
 
+_STT_STOP_ALIASES = frozenset({"top", "topped", "stopped", "stops"})
+
+
+def normalize_voice_control_stt(text: str) -> str:
+    """Map common Whisper mis-hearings of short stop commands."""
+    t = (text or "").strip()
+    if not t:
+        return t
+    low = _norm(t)
+    if low in _STT_STOP_ALIASES:
+        return "stop"
+    return t
+
+
+def try_tier0_voice_control(text: str) -> RouteDecision | None:
+    """Tier-0 S commands that must win over supervisor/T2 (stop/cancel), even when idle."""
+    t = normalize_voice_control_stt(text)
+    if not t:
+        return None
+    low = _norm(t)
+    words = low.split()
+    is_stop = bool(
+        _STOP_BARE.match(t)
+        or _STOP_SPEAK.match(t)
+        or (words and words[0] in {"stop", "cancel", "stopped"} and len(words) <= 3)
+        or re.match(r"(?is)^(?:please\s+)?(?:stop|cancel)\b", t)
+    )
+    if not is_stop:
+        return None
+    cmd = (
+        "cancel_request"
+        if low in {"cancel", "never mind"} or low.startswith("never mind")
+        else "stop_speech"
+    )
+    return RouteDecision(
+        label="S",
+        tier=0,
+        confidence=0.99,
+        command=cmd,
+        utterance=t,
+        payload={"via": "voice_control"},
+    )
+
+
 def typed_should_route_tier0(text: str) -> bool:
     t = text.strip()
     low = t.lower()
@@ -138,7 +185,7 @@ def route(
     """Tier 0 → 1 → 2 + sticky default. Publishes a ``route`` activity event."""
     t0 = time.perf_counter()
     timing: dict[str, float] = {}
-    text = (utterance or "").strip()
+    text = normalize_voice_control_stt((utterance or "").strip())
     if not text:
         d = _sticky("", ctx)
         d.ms = (time.perf_counter() - t0) * 1000
@@ -148,6 +195,14 @@ def route(
     from agent.router_partials import prefix_meaning_changed
 
     tier0 = ctx.tier0_enabled
+
+    if tier0:
+        voice_ctl = try_tier0_voice_control(text)
+        if voice_ctl is not None:
+            voice_ctl.ms = (time.perf_counter() - t0) * 1000
+            voice_ctl.timing = {"tier0_ms": voice_ctl.ms}
+            _publish_route(voice_ctl)
+            return voice_ctl
 
     if (
         cached_partial is not None

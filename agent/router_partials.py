@@ -34,7 +34,7 @@ def prefix_meaning_changed(before: str, after: str) -> bool:
 
 @dataclass
 class PartialStabilizer:
-    min_words: int = 5
+    min_words: int = 3
     max_words: int = 8
 
     _last: str = ""

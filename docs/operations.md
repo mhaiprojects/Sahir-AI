@@ -76,6 +76,8 @@ Health: `curl -k https://localhost:8765/api/health`
 ```bash
 source venv/bin/activate   # native
 python scripts/test_web.py
+python scripts/voice_e2e_check.py   # throwaway server; Piper → /ws/voice + PTT + barge-in
+python scripts/voice_e2e_check.py --use-running --skip-lan   # live server + LAN optional
 python scripts/smoke_test.py
 python scripts/test_audio_decode.py
 ```
