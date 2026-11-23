@@ -397,6 +397,13 @@ def register_voice_ws(app: FastAPI, *, get_settings: Callable, get_pipeline: Cal
                       get_command_store: Callable | None = None, request_lock: threading.Lock) -> None:
     @app.websocket("/ws/voice")
     async def voice_ws(ws: WebSocket) -> None:
+        from web.auth import get_web_auth
+
+        web_auth = get_web_auth()
+        if web_auth and web_auth.auth_required and not web_auth.websocket_authenticated(ws):
+            reason = "Auth not configured" if web_auth.misconfigured else "Unauthorized"
+            await ws.close(code=4401, reason=reason)
+            return
         await ws.accept()
         session = VoiceSession(ws, get_settings=get_settings, get_pipeline=get_pipeline, get_agent=get_agent,
                                get_command_store=get_command_store, request_lock=request_lock)

@@ -42,6 +42,13 @@ from web.agent_api import create_agent_router
 from web.models_api import create_models_router
 from agent.models import ModelManager, get_manager, set_manager
 from agent.router_model import start_router_service, stop_router_service
+from web.auth import (
+    ensure_web_auth_ready,
+    get_web_auth,
+    init_web_auth,
+    register_auth_routes,
+    WebAuthMiddleware,
+)
 from web.voice_ws import register_voice_ws
 from web.commands import VALID_ACTIONS, VoiceCommandStore
 from web.db import RequestLogStore
@@ -422,6 +429,8 @@ def create_app() -> FastAPI:
         stop_router_service()
 
     app = FastAPI(title="Sahir", version="1.1.0", lifespan=lifespan)
+    settings = _get_settings()
+    auth = init_web_auth(settings)
     app.add_middleware(MicPermissionMiddleware)
     app.add_middleware(
         CORSMiddleware,
@@ -429,6 +438,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    if auth.auth_required:
+        app.add_middleware(WebAuthMiddleware, auth=auth)
+        register_auth_routes(app, auth, static_dir=STATIC_DIR)
 
     # Live routine / WIP panel: every command, CLI line, tool call and background step (activity.py).
     activity.install_log_bridge()
@@ -482,7 +494,13 @@ def create_app() -> FastAPI:
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     @app.get("/api/health")
-    def api_health() -> dict[str, Any]:
+    def api_health(request: Request) -> dict[str, Any]:
+        if auth.auth_required and (auth.misconfigured or not auth.is_authenticated(request)):
+            return {
+                "status": "ok",
+                "auth_required": True,
+                "auth_configured": auth.configured,
+            }
         return check_health()
 
     @app.get("/api/config")
@@ -962,6 +980,7 @@ def create_app() -> FastAPI:
 
 def run_web_server(settings: Settings | None = None) -> None:
     settings = settings or Settings.from_env()
+    ensure_web_auth_ready(settings)
     log_path = configure_logging(settings.log_dir)
     logger.info("Logging to %s", log_path)
     _get_log_store()

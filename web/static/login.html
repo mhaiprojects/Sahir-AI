@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sahir — Log in</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 22rem; margin: 2.5rem auto; padding: 1rem; }
+    h1 { font-size: 1.25rem; }
+    label { display: block; margin: 1rem 0 0.25rem; }
+    input[type=password] { width: 100%; padding: 0.5rem; font-size: 1rem; }
+    button { margin-top: 1rem; padding: 0.5rem 1rem; font-size: 1rem; width: 100%; }
+    .err { color: #b00020; margin-top: 0.5rem; }
+    .hint { font-size: 0.85rem; color: #444; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Log in to Sahir</h1>
+  <p class="hint">Paste the access token from <code>~/.config/jahash-secrets/sahir-web-token.txt</code> on the server (once per browser).</p>
+  <form id="login-form">
+    <label for="token">Access token</label>
+    <input id="token" name="token" type="password" autocomplete="off" required minlength="16">
+    <button type="submit">Log in</button>
+    <p id="error" class="err" hidden>Login failed. Check the token and try again.</p>
+  </form>
+  <script>
+    fetch("/api/auth/status").then((r) => r.json()).then((st) => {
+      if (st.message) {
+        const el = document.getElementById("error");
+        el.textContent = st.message;
+        el.hidden = false;
+        document.getElementById("login-form").hidden = true;
+      }
+    }).catch(() => {});
+    if (new URLSearchParams(location.search).get("error")) {
+      document.getElementById("error").hidden = false;
+    }
+    document.getElementById("login-form").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const token = document.getElementById("token").value.trim();
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ token }),
+      });
+      if (res.ok) {
+        location.href = "/";
+        return;
+      }
+      document.getElementById("error").hidden = false;
+    });
+  </script>
+</body>
+</html>

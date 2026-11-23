@@ -26,8 +26,11 @@
   }
 
   async function api(path, body) {
-    const res = await fetch(path, body === undefined ? {} : {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    const res = await fetch(path, body === undefined ? { credentials: "same-origin" } : {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);

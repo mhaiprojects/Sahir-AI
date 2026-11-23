@@ -17,6 +17,7 @@ Application source, web static files, Docker files, example env templates, scrip
 |------|----------------|
 | `.env` | `scripts/generate_secrets.sh` / `setup.sh` |
 | `data/certs/*` | `scripts/generate_web_cert.sh` |
+| Web login token | `scripts/generate_web_token.sh` → `~/.config/jahash-secrets/sahir-web-token.txt` |
 | `data/logs/`, SQLite DB | runtime |
 | `models/piper/*.onnx` | `scripts/setup_models.sh` |
 | `venv/` | `setup.sh native` / `install.sh` |
@@ -40,6 +41,7 @@ bash setup.sh docker    # Docker Compose (Ollama + web)
 | `setup.sh` | Orchestrates secrets, certs, install or Docker |
 | `scripts/generate_secrets.sh` | Copy `.env.example` or `.env.docker.example` → `.env` |
 | `scripts/generate_web_cert.sh` | Self-signed TLS + update `.env` paths |
+| `scripts/generate_web_token.sh` | Shared web UI token (`WEB_AUTH_TOKEN_FILE`, not in `.env`) |
 | `scripts/install.sh` | Arch packages, Ollama, venv, pip, Piper download |
 | `scripts/setup_models.sh` | Download Piper ONNX from HuggingFace |
 | `scripts/docker-up.sh` | Wrapper: `setup.sh docker` |

@@ -1,3 +1,9 @@
+(() => {
+  const _fetch = window.fetch.bind(window);
+  window.fetch = (input, init = {}) =>
+    _fetch(input, { credentials: "same-origin", ...init, credentials: init.credentials ?? "same-origin" });
+})();
+
 const chatLog = document.getElementById("chat-log");
 const chatForm = document.getElementById("chat-form");
 const messageInput = document.getElementById("message-input");
@@ -2158,4 +2164,8 @@ if (handsFreeToggle?.checked) {
       persistHandsFree(false);
     });
 }
+document.getElementById("auth-logout-btn")?.addEventListener("click", async () => {
+  await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+  window.location.href = "/login";
+});
 focusHomeChatInput();

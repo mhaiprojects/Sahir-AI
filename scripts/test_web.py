@@ -26,6 +26,7 @@ import io
 import json
 import os
 import re
+import secrets
 import shutil
 import socket
 import sqlite3
@@ -42,6 +43,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 _OVERRIDE_BASE_URL: str | None = None
 CREATED_CONV_IDS: list[int] = []
+_THROWAWAY_BEARER: str | None = None
 
 
 def _set_base_url(url: str) -> None:
@@ -116,6 +118,29 @@ def _venv_python() -> Path:
     return candidate if candidate.is_file() else Path(sys.executable)
 
 
+def _web_auth_enabled() -> bool:
+    return os.getenv("WEB_AUTH_ENABLED", "true").lower() not in ("0", "false", "no")
+
+
+def _resolve_bearer_token() -> str | None:
+    if not _web_auth_enabled():
+        return None
+    if _THROWAWAY_BEARER:
+        return _THROWAWAY_BEARER
+    env = os.getenv("WEB_AUTH_TOKEN", "").strip()
+    if env:
+        return env
+    from config import Settings
+    from web.auth import load_web_auth_token
+
+    return load_web_auth_token(Settings.from_env())
+
+
+def _auth_headers() -> dict[str, str]:
+    tok = _resolve_bearer_token()
+    return {"Authorization": f"Bearer {tok}"} if tok else {}
+
+
 def _pick_free_port(host: str = "127.0.0.1") -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind((host, 0))
@@ -137,6 +162,7 @@ def _wait_for_health(base_url: str, timeout: float = 180.0) -> None:
 
 
 def _start_throwaway_server() -> tuple[subprocess.Popen[bytes], Path, str]:
+    global _THROWAWAY_BEARER
     temp_dir = Path(tempfile.mkdtemp(prefix="sahir-test-web-"))
     port = int(os.getenv("TEST_WEB_THROWAWAY_PORT", "0") or "0")
     if port <= 0:
@@ -148,6 +174,11 @@ def _start_throwaway_server() -> tuple[subprocess.Popen[bytes], Path, str]:
     env["WEB_DB_PATH"] = str(temp_dir / "web.db")
     env["WEB_SSL_CERT"] = ""
     env["WEB_SSL_KEY"] = ""
+    token_path = temp_dir / "web-auth-token.txt"
+    token_path.write_text(secrets.token_urlsafe(32))
+    env["WEB_AUTH_ENABLED"] = "true"
+    env["WEB_AUTH_TOKEN_FILE"] = str(token_path)
+    _THROWAWAY_BEARER = token_path.read_text().strip()
     proc = subprocess.Popen(
         [str(_venv_python()), str(ROOT / "bot.py"), "--web"],
         cwd=str(ROOT),
@@ -193,12 +224,14 @@ def _request(
     data: bytes | None = None,
     headers: dict[str, str] | None = None,
     timeout: float = 120.0,
+    auth: bool = True,
 ) -> tuple[int, dict | bytes]:
     import ssl
 
     url = _base_url() + path
     req = Request(url, data=data, method=method)
-    for key, value in (headers or {}).items():
+    merged = {**(_auth_headers() if auth else {}), **(headers or {})}
+    for key, value in merged.items():
         req.add_header(key, value)
 
     ctx = ssl.create_default_context()
@@ -405,12 +438,45 @@ def run_extended_checks(errors: list[str], cursor: dict) -> None:
         errors.append(f"ptt truncated webm unexpected: {status} {res}")
 
 
+def _run_auth_checks(errors: list[str]) -> None:
+    if not _web_auth_enabled():
+        return
+    status, _ = _request("GET", "/api/config", auth=False)
+    if status != 401:
+        errors.append(f"auth: expected 401 without credentials, got {status}")
+    else:
+        ok("auth: protected API returns 401")
+    status, _ = _request("GET", "/api/health", auth=False)
+    if status != 200 or not isinstance(_, dict) or _.get("status") != "ok":
+        errors.append(f"auth: public health unexpected: {status} {_}")
+    else:
+        ok("auth: public health ok")
+    tok = _resolve_bearer_token()
+    if not tok:
+        errors.append("auth: no bearer token for integration tests")
+        return
+    status, login = _request(
+        "POST",
+        "/api/auth/login",
+        data=json.dumps({"token": "not-the-token"}).encode(),
+        headers={"Content-Type": "application/json"},
+        auth=False,
+    )
+    if status != 401:
+        errors.append(f"auth: bad login should be 401, got {status}")
+    else:
+        ok("auth: bad login rejected")
+
+
 def run_all_tests(errors: list[str]) -> None:
     """Exercise the web API; append failures to errors."""
+    _run_auth_checks(errors)
 
     status, health = _request("GET", "/api/health")
     if status != 200:
         errors.append(f"health failed: {status} {health}")
+    elif health.get("auth_required"):
+        ok("health: ok (minimal)")
     else:
         ok("health: ok")
         for key in ("ollama", "cursor_cli", "piper", "whisper"):

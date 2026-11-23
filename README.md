@@ -5,10 +5,10 @@ private voice assistant that stays listening on your own machine and hands off c
 tasks to agents. Repository: `Sahir-AI`.
 
 > [!WARNING]
-> **No authentication.** The web UI has no login and binds to all network interfaces
-> (`WEB_HOST=0.0.0.0`) by default. Anyone who can reach the port can chat with the agent, read
-> chat history/memory/documents, and trigger PC-control and Cursor tasks. Run it only on trusted
-> networks, set `WEB_HOST=127.0.0.1`, or put it behind a reverse proxy that enforces authentication.
+> The web UI binds to all interfaces (`WEB_HOST=0.0.0.0`) by default for LAN phones. **Web login is
+> on by default** (`WEB_AUTH_ENABLED=true`) using a shared token file — see [Logging in](#logging-in).
+> Without auth, anyone on the LAN could read activity, chat history, and trigger Cursor/PC tasks.
+> Use HTTPS on LAN, rotate the token if needed, or set `WEB_AUTH_ENABLED=false` only on a trusted network.
 
 Custom local voice assistant using trusted open-source components:
 
@@ -113,7 +113,18 @@ http://<this-pc-ip>:8765
 
 Features: unified chat screen with projects rail, text chat with full tool routing, hold-to-talk, Hands-free mode, two-phase web transcription, Routine/WIP activity panel, optional TTS, and a request log in SQLite.
 
-Configure `WEB_HOST`, `WEB_PORT`, and `WEB_DB_PATH` in `.env`. **No authentication** — see the warning at the top; use only on trusted networks or behind an authenticating reverse proxy.
+Configure `WEB_HOST`, `WEB_PORT`, and `WEB_DB_PATH` in `.env`. Web access uses a **shared login token** (see [Logging in](#logging-in) below). Set `WEB_AUTH_ENABLED=false` only on a fully trusted LAN.
+
+### Logging in
+
+1. Create the token file (once per machine): `bash scripts/generate_web_token.sh`
+2. Default path: `~/.config/jahash-secrets/sahir-web-token.txt` (mode `600`). Show it with `bash scripts/generate_web_token.sh --show` or `cat ~/.config/jahash-secrets/sahir-web-token.txt` on the server.
+3. **Desktop browser:** open the web UI → you are redirected to `/login` → paste the token once → session cookie lasts ~30 days.
+4. **Phone (HTTPS):** on the server, build a one-time link (do not share in chat logs): `https://<this-pc-ip>:8765/login?token=<paste-token>` — opens Sahir and drops the token from the URL.
+5. **Scripts / `test_web.py`:** `Authorization: Bearer <token>` or set `WEB_AUTH_TOKEN` in the environment (not in committed `.env`).
+6. **Rotate:** `bash scripts/generate_web_token.sh --rotate` — invalidates old cookies; log in again on each device. Use **Settings → Log out** to end a session on one browser.
+
+Do **not** put the token in `.env`, git, or activity logs.
 
 ### Web voice paths
 

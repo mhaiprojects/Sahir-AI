@@ -68,6 +68,12 @@ class FakeLLM:
             yield word + " "
 
 
+@pytest.fixture(autouse=True)
+def _disable_web_auth_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Most tests expect an open API; auth tests opt in explicitly."""
+    monkeypatch.setenv("WEB_AUTH_ENABLED", "false")
+
+
 @pytest.fixture
 def store(tmp_path: Path) -> AgentStore:
     return AgentStore(tmp_path / "agent.db")

@@ -45,6 +45,14 @@ Do **not** grep for plain text `Could not decode audio` — WARNING lines contai
 - Native: `systemctl status ollama`, `ollama pull llama3.1:8b`
 - Docker: `docker compose logs ollama`, check `OLLAMA_HOST=http://ollama:11434` inside container
 
+## Web login / 401 on every request
+
+- Ensure `bash scripts/generate_web_token.sh` has been run and `WEB_AUTH_TOKEN_FILE` points at the file (default `~/.config/jahash-secrets/sahir-web-token.txt`).
+- Open `/login` and paste the token, or use a one-time `/login?token=…` link on your phone (HTTPS).
+- Scripts: `Authorization: Bearer <token>` or `WEB_AUTH_TOKEN` in the environment (not in committed `.env`).
+- `WEB_AUTH_ENABLED=false` disables auth entirely (trusted LAN only).
+- Server refuses to start when auth is enabled but the token file is missing — run `generate_web_token.sh` first.
+
 ## Cursor CLI delegation hangs
 
 - Long tasks run with `CURSOR_TIMEOUT_SECONDS` (default 300)

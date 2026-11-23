@@ -93,6 +93,10 @@ class Settings:
     web_ssl_key: Path | None = None
     web_conversation_silence_seconds: float = 3.0
     web_live_transcribe_interval_seconds: float = 1.0
+    web_auth_enabled: bool = False
+    web_auth_token_file: Path = field(
+        default_factory=lambda: Path.home() / ".config" / "jahash-secrets" / "sahir-web-token.txt"
+    )
     log_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "data" / "logs")
 
     # Security whitelists
@@ -168,6 +172,12 @@ class Settings:
             web_live_transcribe_interval_seconds=float(
                 os.getenv("WEB_LIVE_TRANSCRIBE_INTERVAL_SECONDS", "1")
             ),
+            web_auth_enabled=os.getenv("WEB_AUTH_ENABLED", "true").lower()
+            in ("1", "true", "yes"),
+            web_auth_token_file=Path(
+                os.getenv("WEB_AUTH_TOKEN_FILE", "").strip()
+                or str(Path.home() / ".config" / "jahash-secrets" / "sahir-web-token.txt")
+            ).expanduser(),
             allowed_apps=_split_csv(
                 os.getenv("ALLOWED_APPS", ""),
                 ["firefox", "cursor", "code", "thunar", "xdg-open"],

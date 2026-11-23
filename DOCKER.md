@@ -74,6 +74,31 @@ Change host ports in `.env`: `WEB_PUBLISH_PORT`, `OLLAMA_PUBLISH_PORT`.
 | `./models/piper/` | Piper voice ONNX |
 | Docker volume `ollama_data` | Ollama models |
 
+## Web login token (required by default)
+
+The image runs `python bot.py --web` with **`WEB_AUTH_ENABLED=true`** by default. Before the container will accept traffic you must provide a token:
+
+1. On the host (or in the image build context), run `bash scripts/generate_web_token.sh` so  
+   `~/.config/jahash-secrets/sahir-web-token.txt` exists (or set `WEB_AUTH_TOKEN_FILE` to another path).
+2. Mount that file into the container and set the env var, for example in `docker-compose.yml`:
+
+   ```yaml
+   environment:
+     WEB_AUTH_TOKEN_FILE: /run/secrets/sahir-web-token
+   volumes:
+     - ${HOME}/.config/jahash-secrets/sahir-web-token.txt:/run/secrets/sahir-web-token:ro
+   ```
+
+   Or pass **`WEB_AUTH_TOKEN`** via a Docker secret / env (never commit it).
+
+3. Open `https://<host-ip>:8765/login` and paste the token once (or use `/login?token=…` on a phone).
+
+If the token is missing, the app **fails closed**: only `/login`, `/api/health`, and `/api/auth/status` respond; everything else returns **503** until a token is configured. `bot.py --web` still **exits at startup** with the same message (preferred for native/systemd).
+
+For a trusted isolated lab only, set `WEB_AUTH_ENABLED=false` in `.env` (not recommended on LAN).
+
+Entrypoints unchanged: **`Dockerfile` CMD** `python bot.py --web`, **`systemd`/`voice-assistant.sh`** — all require the token file or env when auth is enabled.
+
 ## Commands
 
 ```bash
