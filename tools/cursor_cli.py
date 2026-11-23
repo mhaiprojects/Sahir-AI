@@ -18,6 +18,12 @@ from activity import publish
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_REJECTION_HINT = (
+    "blocked by Cursor CLI permissions or Auto-review in non-interactive -p mode "
+    "(set CURSOR_AGENT_FORCE=true or add Shell(...) rules under permissions.allow "
+    "in ~/.cursor/cli-config.json)"
+)
+
 
 @dataclass
 class CursorResult:
@@ -36,26 +42,19 @@ def resolve_agent_bin(agent_bin: str) -> str:
     return agent_bin
 
 
-def run_cursor_agent(
+def build_cursor_agent_command(
     prompt: str,
     *,
     workspace: Path,
     model: str,
     agent_bin: str = "cursor-agent",
-    api_key: str = "",
-    timeout_seconds: int = 300,
     plan_mode: bool = False,
     stream_partial: bool = False,
-) -> CursorResult:
-    """Run cursor-agent in print mode and return spoken summary text."""
-    if not Path(workspace).is_dir():
-        return CursorResult(
-            text=f"Cursor workspace does not exist: {workspace}. Check CURSOR_WORKSPACE in .env.",
-            returncode=2,
-        )
-
-    # Always run with stream-json so the live activity panel can show the agent's tool calls
-    # and shell commands as they happen; the reply text is rebuilt from the events below.
+    force: bool = True,
+    sandbox: str | None = None,
+    auto_review: bool = False,
+) -> list[str]:
+    """argv for cursor-agent in print / stream-json mode (prompt is the final argument)."""
     cmd = [
         resolve_agent_bin(agent_bin),
         "-p",
@@ -67,11 +66,54 @@ def run_cursor_agent(
         "--model",
         model,
     ]
+    if force:
+        cmd.append("--force")
+    if auto_review:
+        cmd.append("--auto-review")
+    if sandbox in ("enabled", "disabled"):
+        cmd.extend(["--sandbox", sandbox])
     if plan_mode:
         cmd.append("--plan")
     if stream_partial:
         cmd.append("--stream-partial-output")
     cmd.append(prompt)
+    return cmd
+
+
+def run_cursor_agent(
+    prompt: str,
+    *,
+    workspace: Path,
+    model: str,
+    agent_bin: str = "cursor-agent",
+    api_key: str = "",
+    timeout_seconds: int = 300,
+    plan_mode: bool = False,
+    stream_partial: bool = False,
+    force: bool = True,
+    sandbox: str | None = None,
+    auto_review: bool = False,
+) -> CursorResult:
+    """Run cursor-agent in print mode and return spoken summary text."""
+    if not Path(workspace).is_dir():
+        return CursorResult(
+            text=f"Cursor workspace does not exist: {workspace}. Check CURSOR_WORKSPACE in .env.",
+            returncode=2,
+        )
+
+    # Always run with stream-json so the live activity panel can show the agent's tool calls
+    # and shell commands as they happen; the reply text is rebuilt from the events below.
+    cmd = build_cursor_agent_command(
+        prompt,
+        workspace=workspace,
+        model=model,
+        agent_bin=agent_bin,
+        plan_mode=plan_mode,
+        stream_partial=stream_partial,
+        force=force,
+        sandbox=sandbox,
+        auto_review=auto_review,
+    )
 
     env = os.environ.copy()
     if api_key:
@@ -166,6 +208,7 @@ def run_cursor_agent(
     if not text:
         text = "The Cursor agent finished but returned no text."
 
+    text = _append_shell_rejection_notes(text, events)
     return CursorResult(text=_truncate_for_speech(text), returncode=0)
 
 
@@ -193,11 +236,18 @@ class _StreamEvents:
         self._result: str | None = None
         self._assistant: list[str] = []
         self._thinking: list[str] = []
+        self._shell_rejections: list[tuple[str, str]] = []
 
     def text(self) -> str:
         if self._result and self._result.strip():
             return self._result.strip()
         return "".join(self._assistant).strip()
+
+    def shell_rejection_reply_lines(self) -> list[str]:
+        return [
+            f"Cursor declined to run: {cmd} — {reason}"
+            for cmd, reason in self._shell_rejections
+        ]
 
     def flush(self) -> None:
         if self._thinking:
@@ -237,7 +287,14 @@ class _StreamEvents:
                 else:
                     publish("tool", f"{name}: {arg}".rstrip(": "), source="cursor", tool=name)
             elif sub == "completed":
-                publish(*_describe_result(name, arg, result), source="cursor", tool=name)
+                kind, text = _describe_result(name, arg, result)
+                level = "error" if kind == "error" else "info"
+                publish(kind, text, source="cursor", tool=name, level=level)
+                if name == "shell" and isinstance(result, dict) and "rejected" in result:
+                    body = result["rejected"] if isinstance(result["rejected"], dict) else {}
+                    cmd = arg or str(body.get("command") or "").strip()
+                    reason = str(body.get("reason") or "").strip() or _DEFAULT_REJECTION_HINT
+                    self._shell_rejections.append((cmd, reason))
         elif t == "assistant":
             parts = [c.get("text", "") for c in (ev.get("message") or {}).get("content") or []
                      if isinstance(c, dict) and c.get("type") == "text"]
@@ -268,8 +325,28 @@ def _describe_result(name: str, arg: str, result: Any) -> tuple[str, str]:
                 snippet = snippet[:1500] + " …"
             return "out", f"{head}\n{snippet}"
         return "out", head
+    if status == "rejected":
+        cmd = arg or str(body.get("command") or name)
+        reason = str(body.get("reason") or body.get("error") or body.get("message") or "").strip()
+        if not reason:
+            reason = _DEFAULT_REJECTION_HINT
+        if name == "shell":
+            return "error", f"Cursor declined to run: {cmd} — {reason}"
+        return "error", f"{name} rejected: {reason or cmd}"
     reason = body.get("reason") or body.get("error") or body.get("message") or ""
     return "error", f"{name} {status}{': ' + str(reason) if reason else ''}{' — ' + arg if arg else ''}"
+
+
+def _append_shell_rejection_notes(text: str, events: _StreamEvents) -> str:
+    lines = events.shell_rejection_reply_lines()
+    if not lines:
+        return text
+    if all(part in text for part in lines):
+        return text
+    block = "\n".join(lines)
+    if "Cursor declined to run:" in text:
+        return text
+    return f"{text}\n\n{block}" if text.strip() else block
 
 
 def _extract_stream_json_text(stdout: str) -> str:

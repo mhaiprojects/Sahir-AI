@@ -51,6 +51,36 @@ Do **not** grep for plain text `Could not decode audio` — WARNING lines contai
 - No log lines while agent runs — normal
 - Requires `cursor-agent` on PATH and valid login; optional in Docker via compose override
 
+## Cursor CLI rejects shell commands (Cursor mode)
+
+### Symptom
+
+Activity panel shows **`error`** lines like `Cursor declined to run: echo … — …` while the spoken reply may still describe what the agent *would* have run. `stream-json` tool results use `result.rejected` with an empty `reason`.
+
+### Cause
+
+In non-interactive **`cursor-agent -p`** mode, shell tools follow **`~/.cursor/cli-config.json`** `permissions.allow` / `permissions.deny` and Auto-review. A narrow allowlist (for example only `Shell(ls)`) rejects other commands (`echo`, `git`, …) with no interactive approval prompt.
+
+Sahir already passes **`--trust`** for the workspace. That does not override shell allowlists.
+
+### Fix in Sahir (defaults)
+
+- **`CURSOR_AGENT_FORCE=true`** (default): adds **`--force`** so print-mode agents can run shell tools unless explicitly denied.
+- Optional **`CURSOR_AGENT_SANDBOX=enabled|disabled`** → `cursor-agent --sandbox …`
+- Optional **`CURSOR_AGENT_AUTO_REVIEW=true`** → server Auto-review classifier (still pair with `--force` for unattended use)
+
+Set **`CURSOR_AGENT_FORCE=false`** only if you want strict allowlist behavior; widen **`permissions.allow`** (e.g. `Shell(echo)` or broader patterns) instead.
+
+### Verify
+
+```bash
+TMP=$(mktemp -d)
+venv/bin/python -c "from pathlib import Path; from tools.cursor_cli import run_cursor_agent; print(run_cursor_agent('Run: echo ok && ls', workspace=Path('$TMP'), model='composer-2.5', timeout_seconds=120).text)"
+rm -rf "$TMP"
+```
+
+Check the activity panel / stream-json for `shell rejected` vs `shell ok`.
+
 ## Mic blocked on phone/tablet
 
 - Must use **HTTPS** with cert SAN including server LAN IP

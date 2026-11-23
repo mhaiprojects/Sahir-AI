@@ -197,6 +197,9 @@ def _run_cursor_task(
     full_prompt = _build_cursor_prompt(prompt, history)
     if on_long_task:
         on_long_task()
+    sandbox = settings.cursor_agent_sandbox or None
+    if sandbox and sandbox not in ("enabled", "disabled"):
+        sandbox = None
     cursor_result = run_cursor_agent(
         full_prompt,
         workspace=settings.cursor_workspace,
@@ -205,6 +208,9 @@ def _run_cursor_task(
         api_key=settings.cursor_api_key,
         timeout_seconds=settings.cursor_timeout_seconds,
         plan_mode=plan_mode,
+        force=settings.cursor_agent_force,
+        sandbox=sandbox,
+        auto_review=settings.cursor_agent_auto_review,
     )
     details: dict[str, Any] = {
         "prompt": prompt,

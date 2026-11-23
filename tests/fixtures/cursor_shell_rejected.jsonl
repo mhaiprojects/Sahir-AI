@@ -1,0 +1,3 @@
+{"type": "tool_call", "subtype": "started", "tool_call": {"shellToolCall": {"args": {"command": "echo sahir-shell-ok && ls"}}}}
+{"type": "tool_call", "subtype": "completed", "tool_call": {"shellToolCall": {"args": {"command": "echo sahir-shell-ok && ls"}, "result": {"rejected": {"command": "echo sahir-shell-ok && ls", "workingDirectory": "/tmp/example-workspace", "reason": "", "isReadonly": false}}}}}
+{"type": "result", "subtype": "success", "result": "Could not run shell.", "duration_ms": 800}

@@ -77,6 +77,11 @@ class Settings:
     cursor_agent_bin: str = "cursor-agent"
     cursor_timeout_seconds: int = 300
     cursor_use_plan_mode: bool = False
+    # -p mode: --force allows shell tools when ~/.cursor/cli-config.json would block them.
+    cursor_agent_force: bool = True
+    # Empty = omit; otherwise "enabled" or "disabled" for cursor-agent --sandbox.
+    cursor_agent_sandbox: str = ""
+    cursor_agent_auto_review: bool = False
 
     # Web interface (LAN)
     web_host: str = "0.0.0.0"
@@ -140,6 +145,11 @@ class Settings:
             cursor_api_key=os.getenv("CURSOR_API_KEY", ""),
             cursor_agent_bin=os.getenv("CURSOR_AGENT_BIN", "cursor-agent"),
             cursor_timeout_seconds=int(os.getenv("CURSOR_TIMEOUT_SECONDS", "300")),
+            cursor_agent_force=os.getenv("CURSOR_AGENT_FORCE", "true").lower()
+            in ("1", "true", "yes"),
+            cursor_agent_sandbox=os.getenv("CURSOR_AGENT_SANDBOX", "").strip().lower(),
+            cursor_agent_auto_review=os.getenv("CURSOR_AGENT_AUTO_REVIEW", "false").lower()
+            in ("1", "true", "yes"),
             web_host=os.getenv("WEB_HOST", "0.0.0.0"),
             web_port=int(os.getenv("WEB_PORT", "8765")),
             web_db_path=Path(
