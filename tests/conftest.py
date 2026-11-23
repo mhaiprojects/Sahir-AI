@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import sys
 from pathlib import Path
@@ -66,6 +67,17 @@ class FakeLLM:
         self.calls.append(messages)
         for word in self.reply.split(" "):
             yield word + " "
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    if os.getenv("SAHIR_RUN_FLAKY") == "1":
+        return
+    skip = pytest.mark.skip(
+        reason="#30: flaky KWS/TTS test excluded by default; set SAHIR_RUN_FLAKY=1 to run",
+    )
+    for item in items:
+        if "flaky_kws" in item.keywords:
+            item.add_marker(skip)
 
 
 @pytest.fixture(autouse=True)

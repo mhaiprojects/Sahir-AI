@@ -388,9 +388,12 @@ def check_health(settings: Settings | None = None) -> dict[str, Any]:
     piper_path = settings.piper_model_path
     if settings.web_voice_enabled:
         health["piper"] = {"ok": piper_path.exists(), "path": str(piper_path)}
+        from tts_backends import kokoro_tts_health
+
         health["tts"] = {
             "backend": settings.tts_backend,
             "kokoro_model_present": settings.kokoro_model_dir.exists(),
+            **kokoro_tts_health(),
         }
     else:
         health["piper"] = {"ok": False, "reason": "disabled"}

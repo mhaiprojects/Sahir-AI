@@ -5,8 +5,10 @@ from __future__ import annotations
 import base64
 import json
 import os
+import signal
 import socket
 import struct
+import shutil
 import subprocess
 import tempfile
 import time
@@ -167,6 +169,70 @@ def _pick_free_port() -> int:
         return int(s.getsockname()[1])
 
 
+def _reap_process_group(pgid: int) -> None:
+    while True:
+        try:
+            pid, _ = os.waitpid(-pgid, os.WNOHANG)
+            if pid == 0:
+                break
+        except ChildProcessError:
+            break
+
+
+def stop_chrome_process_group(proc: subprocess.Popen[bytes], *, grace_s: float = 8.0) -> None:
+    """SIGTERM/SIGKILL the Chrome session group started with ``start_new_session=True``."""
+    if proc.poll() is not None:
+        try:
+            pgid = os.getpgid(proc.pid)
+        except (ProcessLookupError, OSError):
+            return
+        _reap_process_group(pgid)
+        return
+    try:
+        pgid = os.getpgid(proc.pid)
+    except (ProcessLookupError, OSError):
+        proc.terminate()
+        try:
+            proc.wait(timeout=grace_s)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=3)
+        return
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    deadline = time.monotonic() + grace_s
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            _reap_process_group(pgid)
+            return
+        time.sleep(0.05)
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
+    _reap_process_group(pgid)
+
+
+def remove_chrome_user_data_dir(path: Path, *, retries: int = 3, delay_s: float = 0.35) -> None:
+    """Remove a Chrome profile temp dir after the browser process group has exited."""
+    p = Path(path)
+    for attempt in range(retries):
+        if not p.exists():
+            return
+        shutil.rmtree(p, ignore_errors=True)
+        if not p.exists():
+            return
+        time.sleep(delay_s * (attempt + 1))
+    if p.exists():
+        shutil.rmtree(p, ignore_errors=True)
+
+
 def capture_viewport(
     chrome: str,
     url: str,
@@ -181,32 +247,40 @@ def capture_viewport(
 ) -> dict[str, Any]:
     """One Chrome session at fixed window size (set before navigation); CDP screenshot, no post-load resize."""
     own_ud = user_data is None
-    user_data = user_data or Path(tempfile.mkdtemp(prefix="sahir-chrome-ud-"))
+    created_ud: Path | None = None
+    if user_data is None:
+        created_ud = Path(tempfile.mkdtemp(prefix="sahir-chrome-ud-"))
+        user_data = created_ud
+    else:
+        user_data = Path(user_data)
     dbg_port = _pick_free_port()
-    proc = subprocess.Popen(
-        [
-            chrome,
-            "--headless=new",
-            "--disable-gpu",
-            f"--window-size={width},{height}",
-            f"--user-data-dir={user_data}",
-            f"--remote-debugging-port={dbg_port}",
-            "--no-first-run",
-            "--no-default-browser-check",
-            url,
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    ws_url = ""
-    deadline = time.monotonic() + 50.0
-    metrics: dict[str, Any] = {
-        "width": width,
-        "height": height,
-        "chat_log_client_height": 0,
-        "layout": {},
-    }
+    proc: subprocess.Popen[bytes] | None = None
     try:
+        proc = subprocess.Popen(
+            [
+                chrome,
+                "--headless=new",
+                "--disable-gpu",
+                "--disable-breakpad",
+                f"--window-size={width},{height}",
+                f"--user-data-dir={user_data}",
+                f"--remote-debugging-port={dbg_port}",
+                "--no-first-run",
+                "--no-default-browser-check",
+                url,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        ws_url = ""
+        deadline = time.monotonic() + 50.0
+        metrics: dict[str, Any] = {
+            "width": width,
+            "height": height,
+            "chat_log_client_height": 0,
+            "layout": {},
+        }
         while time.monotonic() < deadline:
             try:
                 targets = json.loads(
@@ -265,13 +339,7 @@ def capture_viewport(
         finally:
             sock.close()
     finally:
-        if proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=8)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-        if own_ud:
-            import shutil
-
-            shutil.rmtree(user_data, ignore_errors=True)
+        if proc is not None:
+            stop_chrome_process_group(proc)
+        if own_ud and created_ud is not None:
+            remove_chrome_user_data_dir(created_ud)

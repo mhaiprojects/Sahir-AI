@@ -1,0 +1,11 @@
+# Kokoro user lexicon (copy to models/kokoro/user_lexicon.txt).
+# Format A — IPA phonemes (Kokoro/sherpa lexicon line, appended to model lexicons):
+#   word p h o n e m e s
+# Format B — respelling (plain words Kokoro already knows):
+#   brand -> click up
+#   tricky -> replacement phrase
+
+# Product / project names (phoneme lines are optional; fallbacks spell or split without them).
+sahir s ə ˈ h i ɹ
+ollama ə ˈ l ɑ m ə
+clickup click up
