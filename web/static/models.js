@@ -41,8 +41,29 @@
     return b;
   }
 
+  let vramBannerEl = document.getElementById("models-vram-banner");
+
+  function ensureVramBanner() {
+    if (vramBannerEl) return vramBannerEl;
+    vramBannerEl = document.createElement("div");
+    vramBannerEl.id = "models-vram-banner";
+    vramBannerEl.className = "models-vram-banner";
+    vramBannerEl.hidden = true;
+    statusEl.insertAdjacentElement("afterend", vramBannerEl);
+    return vramBannerEl;
+  }
+
   function render(data) {
     listEl.innerHTML = "";
+    const banner = ensureVramBanner();
+    const warn = data.vram_active_warning;
+    if (warn && warn.message) {
+      banner.hidden = false;
+      banner.textContent = warn.message;
+    } else {
+      banner.hidden = true;
+      banner.textContent = "";
+    }
     for (const m of data.models) {
       const card = document.createElement("div");
       card.className = `model-card${m.active ? " active" : ""}`;
@@ -77,6 +98,7 @@
       if (m.default) badges.appendChild(badge("Default", ""));
       if (m.loaded) badges.appendChild(badge(`Loaded · GPU ${m.loaded.gpu_percent}%`, "loaded"));
       if (m.thinking) badges.appendChild(badge("Thinking off", ""));
+      if (m.vram_warning) badges.appendChild(badge("VRAM tight", "vram-warn"));
       text.append(name, meta, badges);
       label.append(radio, text);
 

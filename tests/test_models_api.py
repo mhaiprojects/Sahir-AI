@@ -43,6 +43,9 @@ class FakeOllama:
                 self.loaded.pop(payload["model"], None)
             else:
                 self.loaded[payload["model"]] = 1 * GB
+            if payload.get("keep_alive") not in (0, "0"):
+                opts = payload.get("options") or {}
+                assert "num_ctx" in opts
             return {"done": True, "load_duration": 1_500_000_000}
         raise AssertionError(path)
 
@@ -78,6 +81,12 @@ def test_list_models_excludes_embeddings_and_reports_split(client: TestClient) -
     assert big["loaded"]["gpu_percent"] == 50
     assert big["loaded"]["size_ram"] == big["loaded"]["size_vram"]
     assert data["active_model"] == "llama3.1:8b" and data["fallback_model"] == "llama3.1:8b"
+    assert big["vram_warning"] and big["vram_warning"]["vram_tight"]
+    small = next(m for m in data["models"] if m["name"] == "qwen3:0.6b")
+    assert small["vram_warning"] is None
+    assert data["vram_budget"]["chat_budget_gb"] == 1.9
+    assert data["vram_active_warning"] is not None
+    assert data["embed_on_cpu"] is True
 
 
 def test_select_persists_and_updates_settings(client: TestClient, manager: ModelManager, tmp_path: Path,

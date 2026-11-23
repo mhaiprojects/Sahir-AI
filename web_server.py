@@ -9,6 +9,7 @@ import shutil
 import sqlite3
 import threading
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,7 @@ from agent.vad import speech_seconds
 from web.agent_api import create_agent_router
 from web.models_api import create_models_router
 from agent.models import ModelManager, get_manager, set_manager
+from agent.router_model import start_router_service, stop_router_service
 from web.voice_ws import register_voice_ws
 from web.commands import VALID_ACTIONS, VoiceCommandStore
 from web.db import RequestLogStore
@@ -400,7 +402,14 @@ def _resample(audio: np.ndarray, src_rate: int, dst_rate: int) -> np.ndarray:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Sahir", version="1.1.0")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # Pin the router model first (background); chat model manager stays lazy until first use.
+        start_router_service(_get_settings())
+        yield
+        stop_router_service()
+
+    app = FastAPI(title="Sahir", version="1.1.0", lifespan=lifespan)
     app.add_middleware(MicPermissionMiddleware)
     app.add_middleware(
         CORSMiddleware,

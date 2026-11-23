@@ -28,6 +28,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 from activity import publish
+from agent.gpu_config import get_gpu_config
+from agent.vram_budget import budget_summary, vram_warning_for_model
+from agent.ollama_runtime import chat_options
 from config import Settings
 
 logger = logging.getLogger(__name__)
@@ -200,24 +203,33 @@ class ModelManager:
                 loaded = {"size": size, "size_vram": vram, "size_ram": max(size - vram, 0),
                           "gpu_percent": round(100 * vram / size) if size else 0,
                           "expires_at": r.get("expires_at"), "context_length": r.get("context_length")}
+            size = int(m.get("size") or 0)
+            warn = vram_warning_for_model(size)
             models.append({
-                "name": name, "size": int(m.get("size") or 0),
+                "name": name, "size": size,
                 "parameter_size": details.get("parameter_size"),
                 "quantization": details.get("quantization_level"), "family": details.get("family"),
                 "thinking": is_thinking_model(name),
                 "active": name == self.active_model, "fallback": name == self.fallback_model,
                 "default": name == self.default_model, "loaded": loaded,
+                "vram_warning": warn,
             })
         models.sort(key=lambda x: x["size"])
         other_loaded = [
             {"name": n, "size": int(r.get("size") or 0), "size_vram": int(r.get("size_vram") or 0)}
             for n, r in running.items() if _EMBED_RE.search(n or "")
         ]
+        cfg = get_gpu_config()
+        active_row = next((m for m in models if m["active"]), None)
         return {"active_model": self.active_model, "active_source": self.active_source,
                 "smallest_model": self._smallest(installed),
                 "fallback_model": self.fallback_model,
                 "default_model": self.default_model, "auto_fallback": self.auto_fallback,
                 "force_fallback": self.force_fallback, "keep_alive": self.keep_alive,
+                "vram_budget": budget_summary(cfg),
+                "router_model": cfg.router_model,
+                "vram_active_warning": active_row.get("vram_warning") if active_row else None,
+                "embed_on_cpu": cfg.embed_on_cpu,
                 "models": models, "other_loaded": other_loaded}
 
     def _require_installed(self, name: str) -> None:
@@ -253,7 +265,9 @@ class ModelManager:
         publish("model", f"loading {name} into memory…", source="models")
         t0 = time.monotonic()
         resp = self._http("POST", self._url("/api/generate"),
-                          {"model": name, "prompt": "", "stream": False, "keep_alive": keep_alive or self.keep_alive},
+                          {"model": name, "prompt": "", "stream": False,
+                           "keep_alive": keep_alive or self.keep_alive,
+                           "options": chat_options()},
                           300)
         return {"model": name, "loaded": True, "seconds": round(time.monotonic() - t0, 2),
                 "load_duration_ms": round((resp.get("load_duration") or 0) / 1e6)}

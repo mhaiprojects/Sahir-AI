@@ -24,6 +24,27 @@ them (`agent.models.think_kwargs`) so voice replies are not delayed by hidden re
 | `FALLBACK_MODEL` | `llama3.1:8b` | Big model used for escalation |
 | `MODEL_KEEP_ALIVE` | `30m` | How long **Load** keeps a model in memory |
 | `MODEL_STATE_PATH` | `data/model_state.json` | Persisted runtime choice (gitignored) |
+| `OLLAMA_NUM_CTX` | `4096` | `num_ctx` sent on every Sahir chat/generate call ([#5](https://github.com/mhaiprojects/Sahir-AI/issues/5)) |
+| `EMBED_ON_CPU` | `true` | `num_gpu: 0` on Ollama embed calls so `nomic-embed-text` stays off the GPU ([#4](https://github.com/mhaiprojects/Sahir-AI/issues/4)) |
+| `ROUTER_MODEL` | `qwen3:0.6b` | Model pinned at startup for the future utterance router |
+| `ROUTER_NUM_CTX` | `1024` | Context window for router pin / keep-warm |
+| `ROUTER_PIN_ENABLED` | `true` | Load router model at web server start (`keep_alive: -1`) |
+| `ROUTER_KEEP_WARM_SEC` | `120` | Periodic minimal generate to avoid RDNA1 clock ramp |
+| `VRAM_*_GB` | see `.env.example` | Budget used for **VRAM tight** warnings on this page |
+
+### Ollama service tuning (4 GB AMD / Vulkan)
+
+Sahir cannot change the Ollama daemon's environment. For an RX 5500–class **4 GB** card, set on the
+**Ollama service** (then restart Ollama yourself):
+
+| Variable | Suggested | Notes |
+|----------|-----------|--------|
+| `OLLAMA_FLASH_ATTENTION` | `1` | Lower KV RAM |
+| `OLLAMA_KV_CACHE_TYPE` | `q8_0` | Quantised KV |
+| `LLAMA_ARG_FIT_TARGET` | `256`–`384` | MiB free VRAM margin for llama.cpp fit |
+
+Example user systemd drop-in (paths vary by install): see comments in `.env.example`. Full rationale:
+[upgrade-research.md](./upgrade-research.md) and [gpu-acceleration-research.md](./research/gpu-acceleration-research.md).
 
 ## Models view (web UI)
 
@@ -34,7 +55,10 @@ Open the ◈ **Models** item in the left nav rail:
 - **Load / Reload** — preloads the model (`/api/generate` with `keep_alive`), shows how long it took.
 - **Eject** — unloads it (`keep_alive: 0`).
 - Each card shows size on disk, parameters, quantisation and, when loaded, the in-memory size
-  split between VRAM and RAM (GPU %). Badges mark **Active**, **Fallback**, **Default**.
+  split between VRAM and RAM (GPU %). Badges mark **Active**, **Fallback**, **Default**, and
+  **VRAM tight** when the on-disk model is larger than the configured chat budget (router +
+  embeddings + desktop reserved).
+- A red banner appears when the **active** model would likely evict the pinned router model.
 - **Auto-fallback** — retry with the fallback model when the small model returns an invalid
   action (unknown tool, unparseable JSON, missing required argument, invalid enum, or a tool
   call written as plain text).

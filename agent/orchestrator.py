@@ -18,7 +18,8 @@ ProgressFn = Callable[[dict[str, Any]], None]
 import ollama
 
 from agent.delegation import Dispatcher, Task, TaskResult
-from agent.models import get_manager, think_kwargs, tool_calls_invalid
+from agent.models import get_manager, tool_calls_invalid
+from agent.ollama_runtime import ollama_chat_kwargs
 from config import Settings
 from tools import router
 
@@ -68,7 +69,7 @@ class Orchestrator:
         return self._model or self.settings.ollama_model
 
     def _chat(self, messages: list[dict[str, Any]], **kwargs: Any) -> Any:
-        return self._client.chat(model=self.model, messages=messages, **think_kwargs(self.model), **kwargs)
+        return self._client.chat(model=self.model, messages=messages, **ollama_chat_kwargs(self.model, **kwargs))
 
     def _tools(self) -> list[dict[str, Any]]:
         types = list(self.dispatcher.workers)

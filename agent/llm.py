@@ -7,7 +7,7 @@ from typing import Any, Callable, Iterator, Protocol
 
 import ollama
 
-from agent.models import think_kwargs
+from agent.ollama_runtime import embed_options, ollama_chat_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class OllamaEmbedder:
         out: list[list[float]] = []
         for i in range(0, len(texts), self.batch_size):
             batch = texts[i : i + self.batch_size]
-            resp = self._client.embed(model=self.model, input=batch)
+            resp = self._client.embed(model=self.model, input=batch, options=embed_options())
             out.extend([list(map(float, v)) for v in resp["embeddings"]])
         return out
 
@@ -75,12 +75,14 @@ class OllamaChat:
 
     def chat(self, messages: list[dict[str, str]], **kwargs: Any) -> dict[str, Any]:
         model = self.model
-        resp = self._client.chat(model=model, messages=messages, **think_kwargs(model), **kwargs)
+        resp = self._client.chat(model=model, messages=messages, **ollama_chat_kwargs(model, **kwargs))
         return {"content": (resp.get("message", {}) or {}).get("content", "") or ""}
 
     def chat_stream(self, messages: list[dict[str, str]], **kwargs: Any) -> Iterator[str]:
         model = self.model
-        for part in self._client.chat(model=model, messages=messages, stream=True, **think_kwargs(model), **kwargs):
+        kw = ollama_chat_kwargs(model, **kwargs)
+        kw["stream"] = True
+        for part in self._client.chat(model=model, messages=messages, **kw):
             token = (part.get("message", {}) or {}).get("content", "")
             if token:
                 yield token

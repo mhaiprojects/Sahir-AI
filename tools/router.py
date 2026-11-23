@@ -99,9 +99,9 @@ def _pick_model(text: str, settings: Settings) -> tuple[str, dict[str, Any]]:
 
 
 def _chat(client: Any, model: str, messages: list[dict[str, Any]], **kwargs: Any) -> Any:
-    from agent.models import think_kwargs
+    from agent.ollama_runtime import ollama_chat_kwargs
 
-    return client.chat(model=model, messages=messages, **think_kwargs(model), **kwargs)
+    return client.chat(model=model, messages=messages, **ollama_chat_kwargs(model, **kwargs))
 
 
 def _maybe_escalate(client: Any, model: str, messages: list[dict[str, Any]], response: Any,
