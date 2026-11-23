@@ -22,6 +22,7 @@
       <div class="project-rail-search">
         <label for="rail-search" class="sr-only">Search chats in the rail</label>
         <input id="rail-search" type="search" placeholder="Search chats…" autocomplete="off">
+        <label class="rail-archived-toggle"><input type="checkbox" id="rail-show-archived" /> Show archived</label>
       </div>
       <div id="project-rail-tree" class="project-rail-tree" role="tree" aria-label="Projects and chats"></div>
       <div class="project-rail-actions">
@@ -85,6 +86,8 @@
             <a id="conv-export-md" class="secondary small conv-export">Export .md</a>
             <a id="conv-export-json" class="secondary small conv-export">Export .json</a>
             <button type="button" id="conv-extract">Extract memories</button>
+            <button type="button" id="conv-move" class="secondary small" hidden>Move to project…</button>
+            <button type="button" id="conv-supervisor-bg" class="secondary small" hidden>Ask supervisor for background</button>
             <button type="button" id="conv-delete" class="danger">Delete</button>
           </div>
         </div>

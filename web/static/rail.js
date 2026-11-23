@@ -15,6 +15,7 @@
   let conversations = [];
   let currentProjectId = null;
   let filter = "";
+  let showArchived = false;
 
   const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const trim = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
@@ -37,6 +38,7 @@
 
   function chatsForProject(projectId, supervisorId) {
     let list = conversations.filter((c) => c.project_id === projectId);
+    if (!showArchived) list = list.filter((c) => c.status !== "archived");
     if (filter) {
       const f = filter.toLowerCase();
       list = list.filter((c) => (c.title || "").toLowerCase().includes(f));
@@ -68,7 +70,7 @@
       }).join("");
       const expanded = chats.length > 0 ? "true" : "false";
       return `<div class="rail-project" data-project="${p.id}">
-        <button type="button" class="rail-project-head" aria-expanded="${expanded}">
+        <button type="button" class="rail-project-head" aria-expanded="${expanded}" title="Double-click for project settings (Cursor workdir)">
           <span class="rail-chevron" aria-hidden="true">▾</span>
           <span>${esc(p.name)}</span>
         </button>
@@ -80,6 +82,11 @@
   tree.addEventListener("click", async (e) => {
     const head = e.target.closest(".rail-project-head");
     if (head) {
+      if (e.detail >= 2) {
+        const pid = Number(head.closest(".rail-project")?.dataset.project);
+        if (pid) editProjectSettings(pid);
+        return;
+      }
       const open = head.getAttribute("aria-expanded") === "true";
       head.setAttribute("aria-expanded", open ? "false" : "true");
       return;
@@ -97,10 +104,29 @@
     }
   });
 
+  async function editProjectSettings(projectId) {
+    const p = projects.find((x) => x.id === projectId);
+    const cur = (p?.settings?.cursor_workdir || "").trim();
+    const wd = prompt(`Cursor workdir for “${p?.name || "project"}” (blank = global default)`, cur);
+    if (wd === null) return;
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cursor_workdir: wd.trim() || "" }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+      await refresh();
+      window.sahirToast?.("Project settings saved.", false);
+    } catch (err) {
+      window.sahirToast?.(err.message, true);
+    }
+  }
+
   async function refresh() {
     const [projRes, convRes] = await Promise.all([
       fetch("/api/projects"),
-      fetch("/api/conversations?limit=300"),
+      fetch(`/api/conversations?limit=300&include_archived=${showArchived ? "true" : "false"}`),
     ]);
     const projData = await projRes.json();
     const convData = await convRes.json();
@@ -114,6 +140,12 @@
   search?.addEventListener("input", () => {
     filter = search.value.trim();
     renderTree();
+  });
+
+  const archivedToggle = document.getElementById("rail-show-archived");
+  archivedToggle?.addEventListener("change", () => {
+    showArchived = !!archivedToggle.checked;
+    refresh();
   });
 
   newChatBtn?.addEventListener("click", async () => {

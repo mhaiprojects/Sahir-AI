@@ -114,7 +114,7 @@ class RagService:
         self.overlap = overlap
         self.max_bytes = max_bytes
 
-    def ingest(self, filename: str, data: bytes, mime: str | None = None) -> IngestResult:
+    def ingest(self, filename: str, data: bytes, mime: str | None = None, *, project_id: int | None = None) -> IngestResult:
         filename = Path(filename or "upload.txt").name[:200]
         if not data:
             raise IngestError("File is empty")
@@ -137,12 +137,13 @@ class RagService:
             chunks=chunks,
             embeddings=embeddings,
             embed_model=self.embedder.model,
+            project_id=project_id,
         )
         logger.info("Ingested %s: %d chunks", filename, len(chunks))
         return IngestResult(document=doc)
 
-    def search(self, query: str, k: int = 4, min_score: float = 0.0) -> list[ScoredChunk]:
+    def search(self, query: str, k: int = 4, min_score: float = 0.0, *, project_id: int | None = None) -> list[ScoredChunk]:
         if not query.strip():
             return []
         vec = self.embedder.embed_query(query)
-        return [c for c in self.store.search_chunks(vec, k=k) if c.score >= min_score]
+        return [c for c in self.store.search_chunks(vec, k=k, project_id=project_id) if c.score >= min_score]

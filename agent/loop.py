@@ -18,6 +18,7 @@ from agent.llm import ChatLLM, Embedder
 from agent.memory import MemoryService
 from agent.rag import RagService
 from agent.store import AgentStore
+from agent.supervisor import SupervisorService
 from config import Settings
 from tools import router
 
@@ -83,6 +84,7 @@ class Agent:
         self.rag = RagService(store, embedder, chunk_size=config.chunk_size, overlap=config.chunk_overlap,
                               max_bytes=config.max_upload_mb * 1024 * 1024)
         self.orchestrator = orchestrator
+        self.supervisor: SupervisorService | None = None
         self._bg_threads: list[threading.Thread] = []
 
     # ------------------------------------------------------------ helpers
@@ -101,9 +103,15 @@ class Agent:
 
     def history(self, conversation_id: int) -> list[dict[str, str]]:
         msgs = self.store.get_messages(conversation_id, limit=self.config.history_turns * 2)
-        return [{"role": m["role"], "content": m["content"]} for m in msgs if m["role"] in {"user", "assistant"}]
+        out: list[dict[str, str]] = []
+        for m in msgs:
+            if m["role"] in {"user", "assistant"}:
+                out.append({"role": m["role"], "content": m["content"]})
+            elif m["role"] == "system" and (m.get("meta") or {}).get("injection"):
+                out.append({"role": "system", "content": m["content"]})
+        return out
 
-    def retrieve(self, text: str) -> RetrievedContext:
+    def retrieve(self, text: str, *, project_id: int | None = None) -> RetrievedContext:
         ctx = RetrievedContext()
         try:
             qvec = self.embedder.embed_query(text)
@@ -111,10 +119,12 @@ class Agent:
             logger.warning("Context retrieval skipped (embedding failed): %s", exc)
             ctx.error = str(exc)
             return ctx
-        for mem, score in self.store.search_memories(qvec, k=self.config.memory_top_k):
+        for mem, score in self.store.search_memories(
+            qvec, k=self.config.memory_top_k, project_id=project_id,
+        ):
             if score >= self.config.memory_min_score:
                 ctx.memories.append({**mem, "score": round(score, 4)})
-        for chunk in self.store.search_chunks(qvec, k=self.config.rag_top_k):
+        for chunk in self.store.search_chunks(qvec, k=self.config.rag_top_k, project_id=project_id):
             if chunk.score >= self.config.rag_min_score:
                 ctx.chunks.append(chunk.to_dict())
         return ctx
@@ -133,7 +143,9 @@ class Agent:
             publish("step", f"background: extracting memories from chat #{conversation_id}", source="memory")
             try:
                 recent = self.store.get_messages(conversation_id, limit=4)
-                self.memory.extract_from_messages(recent, conversation_id=conversation_id)
+                conv = self.store.get_conversation(conversation_id)
+                pid = int(conv["project_id"]) if conv and conv.get("project_id") else None
+                self.memory.extract_from_messages(recent, conversation_id=conversation_id, project_id=pid)
             except Exception as exc:
                 logger.warning("Background memory extraction failed: %s", exc)
 
@@ -171,7 +183,8 @@ class Agent:
         history = self.history(conv["id"])
         if mode != "cursor" and on_progress:
             on_progress({"type": "progress", "stage": "context", "message": "Retrieving memories and documents…"})
-        ctx = self.retrieve(text) if mode != "cursor" else RetrievedContext()
+        pid = int(conv["project_id"]) if conv.get("project_id") else None
+        ctx = self.retrieve(text, project_id=pid) if mode != "cursor" else RetrievedContext()
         if on_progress and ctx.memories:
             on_progress({"type": "progress", "stage": "context",
                          "message": f"Found {len(ctx.memories)} relevant memories"})
@@ -181,6 +194,33 @@ class Agent:
         block = ctx.to_block()
         user_id = self.store.add_message(conv["id"], "user", text, {"input_type": input_type, **(extra_meta or {})})
         self._auto_title(conv, text)
+
+        if conv.get("kind") == "supervisor":
+            if self.supervisor is None:
+                self.supervisor = SupervisorService(self.store, self.llm, self.settings)
+            sup_result = self.supervisor.run_turn(
+                text,
+                project_id=int(conv["project_id"]),
+                supervisor_conv_id=int(conv["id"]),
+                history=history,
+                context_block=block,
+                on_progress=on_progress,
+            )
+            sources = ctx.sources()
+            assistant_id = self.store.add_message(
+                conv["id"], "assistant", sup_result.reply or "(no reply)",
+                {"action": sup_result.action, "action_details": sup_result.action_details, "sources": sources},
+            )
+            publish(
+                "step",
+                f"■ supervisor done in {time.monotonic() - started:.1f}s",
+                source="supervisor",
+            )
+            return AgentReply(
+                reply=sup_result.reply, action=sup_result.action, action_details=sup_result.action_details,
+                routed=sup_result.routed, conversation_id=conv["id"], user_message_id=user_id,
+                assistant_message_id=assistant_id, sources=sources,
+            )
 
         if mode == "agent" and self.orchestrator is None:
             if on_progress:
@@ -195,7 +235,10 @@ class Agent:
                 on_progress=on_progress,
             )
         elif mode == "cursor":
-            result = router.run_cursor_task_detailed(text, self.settings, history=history, on_progress=on_progress)
+            workspace = self.store.cursor_workspace_for_conversation(conv["id"], self.settings.cursor_workspace)
+            result = router.run_cursor_task_detailed(
+                text, self.settings, history=history, on_progress=on_progress, workspace=workspace,
+            )
         elif mode == "route":
             if on_progress:
                 on_progress({"type": "progress", "stage": "route", "message": "Routing via tool layer…"})
@@ -231,7 +274,8 @@ class Agent:
             raise ValueError("Message is empty")
         conv = self.resolve_conversation(conversation_id, source=source)
         history = self.history(conv["id"])
-        ctx = self.retrieve(text)
+        pid = int(conv["project_id"]) if conv.get("project_id") else None
+        ctx = self.retrieve(text, project_id=pid)
         user_id = self.store.add_message(conv["id"], "user", text, {"input_type": "text", "stream": True})
         self._auto_title(conv, text)
         yield {"type": "meta", "conversation_id": conv["id"], "user_message_id": user_id, "sources": ctx.sources()}

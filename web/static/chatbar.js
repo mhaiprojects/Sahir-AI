@@ -44,8 +44,12 @@
       if (js) js.href = `/api/conversations/${conv.id}/export?format=json`;
       const rename = document.getElementById("conv-rename");
       const del = document.getElementById("conv-delete");
+      const move = document.getElementById("conv-move");
+      const supBg = document.getElementById("conv-supervisor-bg");
       if (rename) rename.hidden = isSup;
       if (del) del.hidden = isSup;
+      if (move) move.hidden = isSup;
+      if (supBg) supBg.hidden = isSup || conv.kind === "supervisor";
     }
     applyProjectSelectValue(conv.project_id);
     window.sahirSetCurrentProject?.(conv.project_id);
@@ -170,6 +174,58 @@
     document.getElementById("conv-actions").hidden = true;
     await refreshChats();
     window.sahirRefreshRail?.();
+  });
+
+  document.getElementById("conv-move")?.addEventListener("click", async () => {
+    if (!homeConversationId) return;
+    const projRes = await fetch("/api/projects");
+    const { projects, general_project_id: gId } = await projRes.json();
+    const names = (projects || []).map((p) => `${p.id}: ${p.name}`).join("\n");
+    const raw = prompt(`Move to project id (current projects):\n${names}`);
+    if (!raw?.trim()) return;
+    const pid = Number(raw.split(":")[0].trim()) || Number(raw.trim());
+    if (!pid) return;
+    try {
+      const res = await fetch(`/api/conversations/${homeConversationId}/move`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: pid }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+      await openChat(homeConversationId);
+      window.sahirRefreshRail?.();
+      window.sahirToast?.("Chat moved.", false);
+    } catch (err) {
+      window.sahirToast?.(err.message, true);
+    }
+  });
+
+  document.getElementById("conv-supervisor-bg")?.addEventListener("click", async () => {
+    if (!homeConversationId) return;
+    const reason = prompt("Optional reason for background injection", "user requested context") || "user requested context";
+    const content = prompt("What background should the supervisor inject?");
+    if (!content?.trim()) return;
+    try {
+      const convRes = await fetch(`/api/conversations/${homeConversationId}`);
+      const conv = await convRes.json();
+      const proj = projects.find((p) => p.id === conv.project_id);
+      const fromId = proj?.supervisor_conversation_id;
+      const res = await fetch("/api/supervisor/inject", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversation_id: homeConversationId,
+          content: content.trim(),
+          reason,
+          from_conversation_id: fromId,
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+      await openChat(homeConversationId);
+      window.sahirToast?.("Background injected.", false);
+    } catch (err) {
+      window.sahirToast?.(err.message, true);
+    }
   });
 
   document.getElementById("conv-extract")?.addEventListener("click", async () => {

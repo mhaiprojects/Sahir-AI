@@ -61,6 +61,13 @@
       ctxSupervisor.textContent = t;
       ctxSupervisor.title = t;
     }
+    if ((ev.kind === "spawn" || ev.kind === "inject") && ctxSupervisor) {
+      const t = ev.kind === "spawn"
+        ? `spawning “${d.chat_title || d.title || "sub-chat"}”`
+        : `injecting → ${d.chat_title || d.title || "chat"}`;
+      ctxSupervisor.textContent = t;
+      ctxSupervisor.title = t;
+    }
   }
 
   function applyHeaderFromBacklog(events) {

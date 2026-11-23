@@ -133,8 +133,25 @@ function rememberChatTurn(role, text) {
   }
 }
 
-function addMessage(role, text, { skipRemember = false } = {}) {
+function addMessage(role, text, { skipRemember = false, meta = null } = {}) {
   const el = document.createElement("div");
+  if (meta?.injection) {
+    el.className = "msg injection";
+    const details = document.createElement("details");
+    details.className = "injection-block";
+    details.open = false;
+    const sum = document.createElement("summary");
+    sum.textContent = "Background from supervisor";
+    const body = document.createElement("div");
+    body.className = "injection-body";
+    body.textContent = text.replace(/^Background from supervisor[^\n]*\n+/i, "");
+    details.append(sum, body);
+    el.appendChild(details);
+    chatLog.appendChild(el);
+    chatLog.scrollTop = chatLog.scrollHeight;
+    updateChatEmptyState();
+    return;
+  }
   el.className = `msg ${role}`;
   if ((role === "user" || role === "assistant") && typeof renderMarkdown === "function") {
     const content = document.createElement("div");
@@ -250,7 +267,10 @@ function renderHomeMessagesFromHistory(messages) {
   chatLog.innerHTML = "";
   chatHistory = [];
   for (const m of messages) {
-    if (m.role === "user" || m.role === "assistant") {
+    const meta = m.meta || {};
+    if (m.role === "system" && meta.injection) {
+      addMessage("system", m.content, { skipRemember: true, meta });
+    } else if (m.role === "user" || m.role === "assistant") {
       addMessage(m.role, m.content, { skipRemember: false });
     }
   }

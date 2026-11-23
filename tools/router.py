@@ -269,6 +269,7 @@ def run_cursor_task_detailed(
     plan_mode: bool = False,
     on_long_task: Callable[[], None] | None = None,
     on_progress: Callable[[dict[str, Any]], None] | None = None,
+    workspace: Any | None = None,
 ) -> RouteResult:
     """Force a task through Cursor CLI."""
     prompt = text.strip()
@@ -295,9 +296,18 @@ def run_cursor_task_detailed(
 
     if on_progress:
         on_progress({"type": "progress", "stage": "cursor", "message": "Starting Cursor CLI agent…"})
+    ws = workspace if workspace is not None else settings.cursor_workspace
+
+    def _cursor_settings() -> Settings:
+        if ws == settings.cursor_workspace:
+            return settings
+        from dataclasses import replace
+
+        return replace(settings, cursor_workspace=ws)
+
     return _run_cursor_task(
         prompt,
-        settings,
+        _cursor_settings(),
         history=history,
         plan_mode=plan_mode,
         on_long_task=_long,

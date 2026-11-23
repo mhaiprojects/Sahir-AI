@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from agent.loop import MODES, Agent
 from agent.rag import SUPPORTED_EXTENSIONS, IngestError
+from agent.supervisor import SupervisorService
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,38 @@ class AgentChatRequest(BaseModel):
     mode: str = Field(default="agent", pattern="^(agent|route|chat|cursor|stream)$")
 
 
+class ProjectSettingsPatch(BaseModel):
+    cursor_workdir: str | None = Field(default=None, max_length=500)
+
+
+class SupervisorSpawn(BaseModel):
+    project_id: int
+    title: str = Field(..., min_length=1, max_length=200)
+    brief: str = Field(default="", max_length=4000)
+    aliases: list[str] = Field(default_factory=list)
+    mode: str | None = Field(default=None, pattern="^(agent|route|chat|cursor|stream|tools)$")
+
+
+class BriefPatch(BaseModel):
+    brief: str = Field(..., max_length=4000)
+
+
+class InjectRequest(BaseModel):
+    conversation_id: int
+    content: str = Field(..., min_length=1, max_length=8000)
+    reason: str | None = Field(default=None, max_length=200)
+    from_conversation_id: int | None = None
+
+
+class MoveConversation(BaseModel):
+    project_id: int
+
+
+class SummariseRequest(BaseModel):
+    project_id: int | None = None
+    conversation_id: int | None = None
+
+
 def _md_export(conv: dict[str, Any], messages: list[dict[str, Any]]) -> str:
     lines = [f"# {conv['title']}", "", f"_Conversation {conv['id']} · created {conv['created_at']}_", ""]
     for m in messages:
@@ -74,6 +107,12 @@ def _md_export(conv: dict[str, Any], messages: list[dict[str, Any]]) -> str:
 def create_agent_router(get_agent: Callable[[], Agent], request_lock: threading.Lock | None = None) -> APIRouter:
     api = APIRouter()
     lock = request_lock or threading.Lock()
+
+    def supervisor_svc() -> SupervisorService:
+        agent = get_agent()
+        if agent.supervisor is None:
+            agent.supervisor = SupervisorService(agent.store, agent.llm, agent.settings)
+        return agent.supervisor
 
     # ----------------------------------------------------------------- status
     @api.get("/api/agent/status")
@@ -103,18 +142,42 @@ def create_agent_router(get_agent: Callable[[], Agent], request_lock: threading.
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
 
+    @api.patch("/api/projects/{project_id}")
+    def patch_project(project_id: int, body: ProjectSettingsPatch) -> dict[str, Any]:
+        patch: dict[str, Any] = {}
+        if body.cursor_workdir is not None:
+            patch["cursor_workdir"] = body.cursor_workdir.strip() or None
+        try:
+            return get_agent().store.update_project_settings(project_id, patch)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @api.get("/api/projects/{project_id}/sub-chats")
+    def list_sub_chats(
+        project_id: int,
+        include_archived: bool = Query(False),
+    ) -> dict[str, Any]:
+        store = get_agent().store
+        if not store.get_project(project_id):
+            raise HTTPException(404, "Project not found")
+        return {"sub_chats": store.list_sub_chats(project_id, include_archived=include_archived)}
+
     @api.get("/api/conversations")
     def list_conversations(
         q: str | None = None,
         project_id: int | None = None,
+        include_archived: bool = Query(True),
         limit: int = Query(100, ge=1, le=500),
         offset: int = 0,
     ) -> dict[str, Any]:
-        return {
-            "conversations": get_agent().store.list_conversations(
-                q=q, limit=limit, offset=offset, project_id=project_id
-            )
-        }
+        status = None if include_archived else "active"
+        # status filter is exact; also return idle chats when hiding archived
+        convs = get_agent().store.list_conversations(
+            q=q, limit=limit, offset=offset, project_id=project_id,
+        )
+        if not include_archived:
+            convs = [c for c in convs if c.get("status") != "archived"]
+        return {"conversations": convs}
 
     @api.post("/api/conversations")
     def create_conversation(body: ConversationCreate) -> dict[str, Any]:
@@ -163,6 +226,73 @@ def create_agent_router(get_agent: Callable[[], Agent], request_lock: threading.
         if not ok:
             raise HTTPException(404, "Conversation not found")
         return {"deleted": True}
+
+    @api.patch("/api/conversations/{conv_id}/move")
+    def move_conversation(conv_id: int, body: MoveConversation) -> dict[str, Any]:
+        try:
+            return supervisor_svc().move_sub_chat(conv_id, body.project_id)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @api.patch("/api/conversations/{conv_id}/brief")
+    def patch_brief(conv_id: int, body: BriefPatch) -> dict[str, Any]:
+        try:
+            return supervisor_svc().update_brief(conv_id, body.brief)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @api.post("/api/conversations/{conv_id}/archive")
+    def archive_conversation(conv_id: int) -> dict[str, Any]:
+        try:
+            return supervisor_svc().archive_sub_chat(conv_id)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @api.post("/api/conversations/{conv_id}/unarchive")
+    def unarchive_conversation(conv_id: int) -> dict[str, Any]:
+        try:
+            return supervisor_svc().unarchive_sub_chat(conv_id)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @api.post("/api/supervisor/spawn")
+    def supervisor_spawn(body: SupervisorSpawn) -> dict[str, Any]:
+        try:
+            return supervisor_svc().spawn_sub_chat(
+                body.project_id,
+                title=body.title,
+                brief=body.brief,
+                aliases=body.aliases,
+                mode=body.mode,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @api.post("/api/supervisor/inject")
+    def supervisor_inject(body: InjectRequest) -> dict[str, Any]:
+        try:
+            return supervisor_svc().inject_context(
+                body.conversation_id,
+                body.content,
+                from_conversation_id=body.from_conversation_id,
+                reason=body.reason,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @api.post("/api/supervisor/summarise")
+    def supervisor_summarise(body: SummariseRequest) -> dict[str, Any]:
+        svc = supervisor_svc()
+        try:
+            if body.conversation_id is not None:
+                conv = svc.summarise_sub_chat(body.conversation_id)
+                return {"conversations": [conv]}
+            if body.project_id is None:
+                raise ValueError("project_id or conversation_id required")
+            convs = svc.summarise_all(body.project_id)
+            return {"conversations": convs, "count": len(convs)}
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
 
     @api.get("/api/conversations/{conv_id}/export")
     def export_conversation(conv_id: int, format: str = Query("md", pattern="^(md|json)$")):
@@ -240,13 +370,16 @@ def create_agent_router(get_agent: Callable[[], Agent], request_lock: threading.
         return {"documents": get_agent().store.list_documents()}
 
     @api.post("/api/rag/documents")
-    async def upload_documents(files: list[UploadFile] = File(...)) -> dict[str, Any]:
+    async def upload_documents(
+        files: list[UploadFile] = File(...),
+        project_id: int | None = None,
+    ) -> dict[str, Any]:
         agent = get_agent()
         results: list[dict[str, Any]] = []
         for f in files:
             data = await f.read()
             try:
-                res = agent.rag.ingest(f.filename or "upload.txt", data, f.content_type)
+                res = agent.rag.ingest(f.filename or "upload.txt", data, f.content_type, project_id=project_id)
                 results.append({"filename": f.filename, "ok": True, "duplicate": res.duplicate, "document": res.document})
             except IngestError as exc:
                 results.append({"filename": f.filename, "ok": False, "error": str(exc)})

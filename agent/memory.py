@@ -38,12 +38,21 @@ class MemoryService:
             logger.warning("Memory embedding failed (stored without vector): %s", exc)
             return None
 
-    def add(self, content: str, *, category: str = "fact", status: str = "active", source: str = "manual",
-            source_conversation_id: int | None = None) -> dict[str, Any]:
+    def add(
+        self,
+        content: str,
+        *,
+        category: str = "fact",
+        status: str = "active",
+        source: str = "manual",
+        source_conversation_id: int | None = None,
+        project_id: int | None = None,
+    ) -> dict[str, Any]:
         category = category if category in CATEGORIES else "other"
         return self.store.add_memory(
             content, category=category, status=status, source=source,
-            source_conversation_id=source_conversation_id, embedding=self._embed(content),
+            source_conversation_id=source_conversation_id, project_id=project_id,
+            embedding=self._embed(content),
         )
 
     def update(self, mem_id: int, *, content: str | None = None, category: str | None = None,
@@ -70,8 +79,14 @@ class MemoryService:
         hits = self.store.search_memories(vec, k=1, statuses=("active", "pending", "rejected"))
         return bool(hits and hits[0][1] >= self.dedup_threshold)
 
-    def extract_from_messages(self, messages: list[dict[str, Any]], *, conversation_id: int | None = None,
-                              status: str = "pending") -> list[dict[str, Any]]:
+    def extract_from_messages(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        conversation_id: int | None = None,
+        project_id: int | None = None,
+        status: str = "pending",
+    ) -> list[dict[str, Any]]:
         """Ask the LLM for candidate memories; store new ones as pending for user review."""
         if self.llm is None:
             raise RuntimeError("No LLM configured for memory extraction")
@@ -95,7 +110,7 @@ class MemoryService:
                 continue
             created.append(self.store.add_memory(
                 cand["content"], category=cand["category"], status=status, source="auto",
-                source_conversation_id=conversation_id, embedding=vec,
+                source_conversation_id=conversation_id, project_id=project_id, embedding=vec,
             ))
         logger.info("Memory extraction: %d candidates, %d new", len(candidates), len(created))
         return created

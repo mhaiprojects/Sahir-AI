@@ -275,6 +275,36 @@
   background: var(--surface2, #141c28);
 }
 
+.rail-archived-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 0.25rem;
+}
+
+.msg.injection .injection-block {
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  background: var(--surface2, #141c28);
+}
+
+.msg.injection summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.msg.injection .injection-body {
+  margin-top: 0.35rem;
+  white-space: pre-wrap;
+  color: var(--text);
+}
+
 .chat-mic-state {
   flex: none;
   font-size: 0.78rem;

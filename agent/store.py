@@ -328,6 +328,7 @@ class AgentStore:
         offset: int = 0,
         *,
         project_id: int | None = None,
+        status: str | None = None,
     ) -> list[dict[str, Any]]:
         base = """SELECT c.*, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id=c.id) AS message_count,
                   (SELECT content FROM messages m WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) AS last_message
@@ -337,6 +338,9 @@ class AgentStore:
         if project_id is not None:
             conditions.append("c.project_id=?")
             params.append(project_id)
+        if status:
+            conditions.append("c.status=?")
+            params.append(status)
         if q and q.strip():
             conditions.append("""(c.title LIKE ? OR c.id IN (
                         SELECT m.conversation_id FROM messages m JOIN messages_fts f ON f.rowid=m.id
@@ -358,8 +362,116 @@ class AgentStore:
         title = title.strip()[:200]
         if not title:
             raise ValueError("Title is empty")
+        conv = self.get_conversation(conv_id)
+        if conv and conv.get("kind") == "supervisor":
+            raise ValueError("Supervisor conversations cannot be renamed")
         cur = self._exec("UPDATE conversations SET title=? WHERE id=?", (title, conv_id))
         return self.get_conversation(conv_id) if cur.rowcount else None
+
+    def update_conversation_brief(self, conv_id: int, brief: str) -> dict[str, Any] | None:
+        brief = (brief or "").strip()[:4000]
+        cur = self._exec(
+            "UPDATE conversations SET brief=?, updated_at=? WHERE id=?",
+            (brief, utcnow(), conv_id),
+        )
+        return self.get_conversation(conv_id) if cur.rowcount else None
+
+    def set_conversation_status(self, conv_id: int, status: str) -> dict[str, Any] | None:
+        if status not in {"active", "idle", "archived"}:
+            raise ValueError(f"Invalid status {status!r}")
+        conv = self.get_conversation(conv_id)
+        if conv and conv.get("kind") == "supervisor":
+            raise ValueError("Supervisor conversation status is fixed")
+        cur = self._exec(
+            "UPDATE conversations SET status=?, updated_at=? WHERE id=?",
+            (status, utcnow(), conv_id),
+        )
+        return self.get_conversation(conv_id) if cur.rowcount else None
+
+    def set_conversation_aliases(self, conv_id: int, aliases: list[str]) -> dict[str, Any] | None:
+        clean = [str(a).strip()[:80] for a in aliases if str(a).strip()][:20]
+        cur = self._exec(
+            "UPDATE conversations SET aliases=?, updated_at=? WHERE id=?",
+            (json.dumps(clean, ensure_ascii=False), utcnow(), conv_id),
+        )
+        return self.get_conversation(conv_id) if cur.rowcount else None
+
+    def move_conversation(self, conv_id: int, project_id: int) -> dict[str, Any]:
+        conv = self.get_conversation(conv_id)
+        if not conv:
+            raise ValueError("Conversation not found")
+        if conv.get("kind") == "supervisor":
+            raise ValueError("Cannot move a supervisor conversation")
+        proj = self.get_project(project_id)
+        if not proj:
+            raise ValueError("Project not found")
+        parent_id = conv.get("parent_id")
+        if conv.get("kind") == "sub":
+            parent_id = proj.get("supervisor_conversation_id")
+        elif parent_id and parent_id == conv.get("id"):
+            parent_id = None
+        self._exec(
+            "UPDATE conversations SET project_id=?, parent_id=?, updated_at=? WHERE id=?",
+            (project_id, parent_id, utcnow(), conv_id),
+        )
+        out = self.get_conversation(conv_id)
+        if out is None:
+            raise ValueError("Conversation not found")
+        return out
+
+    def list_sub_chats(
+        self,
+        project_id: int,
+        *,
+        include_archived: bool = False,
+        supervisor_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        proj = self.get_project(project_id)
+        if not proj:
+            return []
+        sup_id = supervisor_id or proj.get("supervisor_conversation_id")
+        conditions = ["c.project_id=?", "c.kind IN ('sub', 'chat')", "c.id != ?"]
+        params: list[Any] = [project_id, sup_id or -1]
+        if not include_archived:
+            conditions.append("c.status != 'archived'")
+        sql = f"""SELECT c.*, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id=c.id) AS message_count
+                  FROM conversations c WHERE {" AND ".join(conditions)}
+                  ORDER BY c.updated_at DESC, c.id DESC"""
+        return [_conversation_dict(r, include_project=False) for r in self._query(sql, params)]
+
+    def update_project_settings(self, project_id: int, patch: dict[str, Any]) -> dict[str, Any]:
+        proj = self.get_project(project_id)
+        if not proj:
+            raise ValueError("Project not found")
+        settings = dict(proj.get("settings") or {})
+        for key, val in patch.items():
+            if val is None:
+                settings.pop(key, None)
+            else:
+                settings[key] = val
+        self._exec(
+            "UPDATE projects SET settings=?, updated_at=? WHERE id=?",
+            (json.dumps(settings, ensure_ascii=False), utcnow(), project_id),
+        )
+        out = self.get_project(project_id)
+        if out is None:
+            raise ValueError("Project not found")
+        return out
+
+    def cursor_workspace_for_conversation(self, conv_id: int, default: Any) -> Any:
+        conv = self.get_conversation(conv_id)
+        if not conv or not conv.get("project_id"):
+            return default
+        proj = self.get_project(int(conv["project_id"]))
+        if not proj:
+            return default
+        wd = (proj.get("settings") or {}).get("cursor_workdir")
+        if wd and str(wd).strip():
+            from pathlib import Path
+
+            p = Path(str(wd)).expanduser()
+            return p if p.is_dir() else default
+        return default
 
     def delete_conversation(self, conv_id: int) -> bool:
         conv = self.get_conversation(conv_id)
@@ -431,6 +543,7 @@ class AgentStore:
         status: str = "active",
         source: str = "manual",
         source_conversation_id: int | None = None,
+        project_id: int | None = None,
         embedding: list[float] | np.ndarray | None = None,
     ) -> dict[str, Any]:
         content = content.strip()
@@ -440,9 +553,9 @@ class AgentStore:
             raise ValueError(f"Invalid status {status!r}")
         now = utcnow()
         cur = self._exec(
-            """INSERT INTO memories (content, category, status, source, source_conversation_id, embedding, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?)""",
-            (content[:2000], (category or "fact")[:40], status, source, source_conversation_id,
+            """INSERT INTO memories (content, category, status, source, source_conversation_id, project_id, embedding, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (content[:2000], (category or "fact")[:40], status, source, source_conversation_id, project_id,
              pack(embedding) if embedding is not None else None, now, now),
         )
         return self.get_memory(int(cur.lastrowid))  # type: ignore[return-value]
@@ -501,20 +614,31 @@ class AgentStore:
         return self._exec("DELETE FROM memories WHERE id=?", (mem_id,)).rowcount > 0
 
     def search_memories(
-        self, query_vec: list[float] | np.ndarray, k: int = 5, statuses: tuple[str, ...] = ("active",)
+        self,
+        query_vec: list[float] | np.ndarray,
+        k: int = 5,
+        statuses: tuple[str, ...] = ("active",),
+        *,
+        project_id: int | None = None,
     ) -> list[tuple[dict[str, Any], float]]:
         placeholders = ",".join("?" for _ in statuses)
+        scope_sql = ""
+        scope_params: list[Any] = []
+        if project_id is not None:
+            scope_sql = " AND (project_id IS NULL OR project_id=?)"
+            scope_params.append(project_id)
         q = np.asarray(query_vec, dtype=np.float32)
         if self.vector_backend == "sqlite-vec":
             rows = self._query(
                 f"""SELECT *, 1 - vec_distance_cosine(embedding, ?) AS score FROM memories
-                    WHERE embedding IS NOT NULL AND length(embedding)=? AND status IN ({placeholders})
+                    WHERE embedding IS NOT NULL AND length(embedding)=? AND status IN ({placeholders}){scope_sql}
                     ORDER BY score DESC LIMIT ?""",
-                (pack(q), q.nbytes, *statuses, k),
+                (pack(q), q.nbytes, *statuses, *scope_params, k),
             )
             return [(_memory_dict(r), float(r["score"])) for r in rows]
         rows = self._query(
-            f"SELECT * FROM memories WHERE embedding IS NOT NULL AND status IN ({placeholders})", statuses
+            f"SELECT * FROM memories WHERE embedding IS NOT NULL AND status IN ({placeholders}){scope_sql}",
+            (*statuses, *scope_params),
         )
         scored = [(_memory_dict(r), cosine(q, unpack(r["embedding"]))) for r in rows]
         scored.sort(key=lambda t: t[1], reverse=True)
@@ -535,6 +659,7 @@ class AgentStore:
         chunks: list[str],
         embeddings: list[list[float]] | None,
         embed_model: str | None,
+        project_id: int | None = None,
     ) -> dict[str, Any]:
         with self._lock:
             conn = self._connect()
@@ -543,7 +668,7 @@ class AgentStore:
                     """INSERT INTO documents (filename, mime, size_bytes, sha256, chunk_count, embed_model,
                        project_id, created_at)
                        VALUES (?,?,?,?,?,?,?,?)""",
-                    (filename, mime, size_bytes, sha256, len(chunks), embed_model, None, utcnow()),
+                    (filename, mime, size_bytes, sha256, len(chunks), embed_model, project_id, utcnow()),
                 )
                 doc_id = int(cur.lastrowid)
                 conn.executemany(
@@ -575,24 +700,33 @@ class AgentStore:
     def delete_document(self, doc_id: int) -> bool:
         return self._exec("DELETE FROM documents WHERE id=?", (doc_id,)).rowcount > 0
 
-    def search_chunks(self, query_vec: list[float] | np.ndarray, k: int = 4) -> list[ScoredChunk]:
+    def search_chunks(
+        self, query_vec: list[float] | np.ndarray, k: int = 4, *, project_id: int | None = None,
+    ) -> list[ScoredChunk]:
         q = np.asarray(query_vec, dtype=np.float32)
+        scope_sql = ""
+        scope_params: list[Any] = []
+        if project_id is not None:
+            scope_sql = " AND (d.project_id IS NULL OR d.project_id=?)"
+            scope_params.append(project_id)
         if self.vector_backend == "sqlite-vec":
             rows = self._query(
-                """SELECT ch.id, ch.document_id, ch.idx, ch.content, d.filename,
+                f"""SELECT ch.id, ch.document_id, ch.idx, ch.content, d.filename,
                           1 - vec_distance_cosine(ch.embedding, ?) AS score
                    FROM chunks ch JOIN documents d ON d.id = ch.document_id
-                   WHERE ch.embedding IS NOT NULL AND length(ch.embedding)=?
+                   WHERE ch.embedding IS NOT NULL AND length(ch.embedding)=?{scope_sql}
                    ORDER BY score DESC LIMIT ?""",
-                (pack(q), q.nbytes, k),
+                (pack(q), q.nbytes, *scope_params, k),
             )
             return [
                 ScoredChunk(r["id"], r["document_id"], r["filename"], r["idx"], r["content"], float(r["score"]))
                 for r in rows
             ]
         rows = self._query(
-            """SELECT ch.id, ch.document_id, ch.idx, ch.content, ch.embedding, d.filename
-               FROM chunks ch JOIN documents d ON d.id = ch.document_id WHERE ch.embedding IS NOT NULL"""
+            f"""SELECT ch.id, ch.document_id, ch.idx, ch.content, ch.embedding, d.filename, d.project_id
+               FROM chunks ch JOIN documents d ON d.id = ch.document_id
+               WHERE ch.embedding IS NOT NULL{scope_sql}""",
+            tuple(scope_params),
         )
         scored = [
             ScoredChunk(r["id"], r["document_id"], r["filename"], r["idx"], r["content"], cosine(q, unpack(r["embedding"])))
