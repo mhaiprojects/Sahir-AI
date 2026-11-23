@@ -30,14 +30,15 @@ class VoiceAssistant:
     def __init__(self, settings: Settings) -> None:
         from audio_pipeline import SpeechPipeline
         from triggers.push_to_talk import PushToTalk
-        from triggers.wakeword import WakeWordListener
+        from wake_kws import resolve_wakeword_engine
 
         self.settings = settings
+        self._wake_engine = resolve_wakeword_engine(settings)
         self.pipeline = SpeechPipeline(settings)
         self.ptt = PushToTalk(settings.ptt_hotkey)
         self._busy = threading.Lock()
         self._ptt_thread: threading.Thread | None = None
-        self._wake_listener: WakeWordListener | None = None
+        self._wake_listener: object | None = None
 
     def _handle_transcript(self, transcript: str, source: str) -> None:
         transcript = transcript.strip()
@@ -77,7 +78,7 @@ class VoiceAssistant:
         self._ptt_thread = threading.Thread(target=record_and_process, daemon=True)
         self._ptt_thread.start()
 
-    def _on_wake_word(self) -> None:
+    def _on_wake_word(self, _phrase: str = "") -> None:
         if self._busy.locked():
             return
 
@@ -97,15 +98,31 @@ class VoiceAssistant:
         self.ptt.start()
 
         if self.settings.wakeword_enabled:
-            self._wake_listener = WakeWordListener(
-                model_name=self.settings.wakeword_model,
-                sample_rate=self.settings.sample_rate,
-                on_detected=self._on_wake_word,
-            )
+            if self._wake_engine == "kws":
+                from triggers.kws_wakeword import KwsWakeListener
+
+                self._wake_listener = KwsWakeListener(
+                    self.settings,
+                    sample_rate=self.settings.sample_rate,
+                    on_detected=self._on_wake_word,
+                )
+            else:
+                from triggers.wakeword import WakeWordListener
+
+                self._wake_listener = WakeWordListener(
+                    model_name=self.settings.wakeword_model,
+                    sample_rate=self.settings.sample_rate,
+                    on_detected=lambda: self._on_wake_word(),
+                )
             self._wake_listener.start()
 
         hotkey = self.settings.ptt_hotkey
-        wake = self.settings.wakeword_model if self.settings.wakeword_enabled else "disabled"
+        if not self.settings.wakeword_enabled:
+            wake = "disabled"
+        elif self._wake_engine == "kws":
+            wake = self.settings.wake_phrases.replace(",", " or ")
+        else:
+            wake = self.settings.wakeword_model
         self.pipeline.speak(
             f"Sahir ready. Hold {hotkey} to talk, or say {wake}."
         )

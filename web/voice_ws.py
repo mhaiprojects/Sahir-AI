@@ -94,13 +94,46 @@ class VoiceSession:
         self._barge_trace = BargeTrace()
         self._barge_pcm_chunks_while_armed = 0
         self._trace_ws = trace_ws_enabled()
+        self.wake_gate_enabled = False
+        from wake_gate import WakeGate
+
+        self._wake_gate = WakeGate(
+            utterance_timeout_s=float(self.settings.wake_utterance_timeout_s),
+        )
+        self._wake_spotter = None
 
     async def _trace(self, name: str, **data: object) -> None:
         entry = self._barge_trace.mark(name, **data)
         if self._trace_ws:
             await self.send({"type": "voice_trace", **entry})
 
+    def _ensure_wake_spotter(self) -> None:
+        if self._wake_spotter is not None:
+            return
+        from wake_kws import build_kws_spotter
+
+        self._wake_spotter = build_kws_spotter(self.settings)
+        self._wake_gate.spotter = self._wake_spotter
+
+    async def _maybe_send_wake_listen(self) -> None:
+        if not self.wake_gate_enabled or self.busy:
+            return
+        from wake_kws import parse_wake_phrases
+
+        phrases = parse_wake_phrases(self.settings.wake_phrases)
+        label = phrases[0] if len(phrases) == 1 else ", ".join(f"'{p}'" for p in phrases[:3])
+        await self.send(
+            {
+                "type": "status",
+                "state": "wake_listen",
+                "phrases": phrases,
+                "message": f"Listening for {label}…",
+            }
+        )
+
     def _feed_pcm(self, pcm: np.ndarray) -> list[tuple[str, np.ndarray | None]]:
+        if self.wake_gate_enabled and not self.busy and not self._wake_gate.vad_may_run():
+            return []
         ep = self.endpointer
         if self.busy and self._tts_armed:
             if self._barge_pcm_chunks_while_armed == 0:
@@ -636,8 +669,12 @@ class VoiceSession:
             pending = self._pending_text_fold
             self._pending_text_fold = None
             self.busy = False
+            self._wake_gate.on_turn_complete()
             try:
-                await self.send({"type": "status", "state": "listening"})
+                if self.wake_gate_enabled:
+                    await self._maybe_send_wake_listen()
+                else:
+                    await self.send({"type": "status", "state": "listening"})
             except Exception:
                 pass
             if pending:
@@ -654,9 +691,22 @@ class VoiceSession:
             self.conversation_id = msg.get("conversation_id") or None
             self.mode = msg.get("mode") if msg.get("mode") in {"agent", "route", "chat"} else "agent"
             self.tts = bool(msg.get("tts", True))
+            self.wake_gate_enabled = bool(msg.get("wake_word", False))
+            self._wake_gate.set_enabled(self.wake_gate_enabled)
+            if self.wake_gate_enabled:
+                try:
+                    self._ensure_wake_spotter()
+                except Exception as exc:
+                    self.wake_gate_enabled = False
+                    self._wake_gate.set_enabled(False)
+                    await self.send({"type": "error", "error": f"Wake word unavailable: {exc}"})
+            wake_ready = self.wake_gate_enabled and self._wake_spotter is not None
             await self.send({"type": "ready", "conversation_id": self.conversation_id, "mode": self.mode,
                              "vad": self.endpointer.vad.backend, "sample_rate": 16000,
-                             "tts_backend": self.get_pipeline().tts_backend})
+                             "tts_backend": self.get_pipeline().tts_backend,
+                             "wake_word": wake_ready})
+            if wake_ready:
+                await self._maybe_send_wake_listen()
         elif kind == "text" and str(msg.get("text", "")).strip():
             body = str(msg["text"]).strip()
             as_voice = bool(msg.get("as_voice"))
@@ -685,6 +735,15 @@ class VoiceSession:
                 break
             if msg.get("bytes") is not None:
                 pcm = np.frombuffer(msg["bytes"], dtype=np.int16).astype(np.float32) / 32768.0
+                if self.wake_gate_enabled and not self.busy:
+                    ev, phrase = self._wake_gate.process_pcm(pcm)
+                    if ev == "wake_detected" and phrase:
+                        await self.send({"type": "wake_detected", "phrase": phrase})
+                        await self.send({"type": "status", "state": "wake_armed", "phrase": phrase})
+                    elif ev == "utterance_timeout":
+                        await self._maybe_send_wake_listen()
+                if not self._wake_gate.vad_may_run() and self.wake_gate_enabled and not self.busy:
+                    continue
                 for event, audio in self._feed_pcm(pcm):
                     if event == "speech_start":
                         await self.on_speech_start()

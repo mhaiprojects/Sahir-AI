@@ -10,6 +10,7 @@ const messageInput = document.getElementById("message-input");
 // One mode control shared by Home and Agent (#38): agent | route | stream | cursor.
 const homeModeSelect = document.getElementById("chat-mode");
 const handsFreeToggle = document.getElementById("hands-free-toggle");
+const wakeWordToggle = document.getElementById("wake-word-toggle");
 const handsFreeStopBtn = document.getElementById("hands-free-stop");
 const chatEmptyState = document.getElementById("chat-empty-state");
 const chatMicState = document.getElementById("chat-mic-state");
@@ -56,6 +57,35 @@ const MIN_UPLOAD_BYTES = 256;
 
 const ALWAYS_LISTEN_KEY = "voice-assistant-always-listen"; // legacy; migrated to HANDSFREE_KEY
 const HANDSFREE_KEY = "voice-assistant-hands-free";
+const WAKE_WORD_KEY = "voice-assistant-wake-word";
+
+function wakeWordPrefEnabled() {
+  return localStorage.getItem(WAKE_WORD_KEY) === "1";
+}
+
+function persistWakeWord(on) {
+  localStorage.setItem(WAKE_WORD_KEY, on ? "1" : "0");
+}
+
+function playWakeChime() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = audioContext && audioContext.state !== "closed" ? audioContext : new Ctx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.frequency.value = 880;
+    gain.gain.value = 0.08;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    const t = ctx.currentTime;
+    osc.start(t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    osc.stop(t + 0.2);
+  } catch {
+    /* ignore */
+  }
+}
 const ROUTE_CURSOR_KEY = "voice-assistant-route-cursor"; // legacy, migrated to CHAT_MODE_KEY
 const ROUTE_TOOLS_KEY = "voice-assistant-route-tools"; // legacy, migrated to CHAT_MODE_KEY
 const CHAT_MODE_KEY = "sahir-chat-mode";
@@ -361,6 +391,7 @@ function ensureHandsFreeClient() {
     getConversationId: () => homeConversationId,
     getChatMode: () => currentChatMode(),
     getTts: () => (speakRepliesToggle ? speakRepliesToggle.checked : true),
+    getWakeWord: () => Boolean(wakeWordToggle?.checked && handsFreeToggle?.checked),
     onBeforeStart: () => {
       handsFreeVoiceState = "connecting";
       updateMicUi();
@@ -371,17 +402,26 @@ function ensureHandsFreeClient() {
       updateHandsFreeStopButton();
       updateMicUi();
     },
-    onState: (state) => {
+    onWakeDetected: (m) => {
+      playWakeChime();
+      const p = m?.phrase ? ` (“${m.phrase}”)` : "";
+      addMessage("system", `Wake phrase detected${p}.`);
+    },
+    onState: (state, meta) => {
       handsFreeVoiceState = state || "listening";
       if (liveTranscriptStatus) {
         const labels = {
           listening: "Hands-free · listening",
+          wake_listen: "Listening for wake phrase…",
+          wake_armed: "Wake phrase heard · speak now",
           transcribing: "Transcribing…",
           thinking: "Thinking…",
           speaking: "Speaking…",
           "hearing you": "Hearing you…",
         };
-        liveTranscriptStatus.textContent = labels[state] || state;
+        let line = labels[state] || state;
+        if (state === "wake_listen" && meta?.message) line = meta.message;
+        liveTranscriptStatus.textContent = line;
         liveTranscriptStatus.classList.toggle("thinking", state === "thinking" || state === "transcribing");
       }
       updateMicUi();
@@ -2116,7 +2156,26 @@ if (cursorBtn) {
   });
 }
 
+function syncWakeWordToggle() {
+  if (!wakeWordToggle) return;
+  const hf = Boolean(handsFreeToggle?.checked);
+  wakeWordToggle.disabled = !hf;
+  if (!hf) {
+    wakeWordToggle.checked = false;
+    persistWakeWord(false);
+  }
+}
+
+wakeWordToggle?.addEventListener("change", async () => {
+  persistWakeWord(wakeWordToggle.checked);
+  if (handsFreeStreaming()) {
+    await handsFreeClient?.reconnect?.();
+  }
+  updateMicUi();
+});
+
 handsFreeToggle?.addEventListener("change", async () => {
+  syncWakeWordToggle();
   persistHandsFree(handsFreeToggle.checked);
   if (handsFreeToggle.checked) {
     try {
@@ -2440,6 +2499,10 @@ if (commandForm) {
 }
 
 handsFreeToggle.checked = handsFreePrefEnabled();
+if (wakeWordToggle) {
+  wakeWordToggle.checked = wakeWordPrefEnabled();
+  syncWakeWordToggle();
+}
 
 window.sahirSetChatMode(initialChatMode());
 homeModeSelect?.addEventListener("change", () => window.sahirSetChatMode(homeModeSelect.value));

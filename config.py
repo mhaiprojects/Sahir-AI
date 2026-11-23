@@ -86,6 +86,11 @@ class Settings:
     # Activation
     wakeword_model: str = "hey_jarvis"
     wakeword_enabled: bool = True
+    wakeword_engine: str = "openwakeword"
+    wake_phrases: str = "hey sahir,okay sahir"
+    wake_kws_threshold: float = 0.25
+    wake_kws_score: float = 1.5
+    wake_utterance_timeout_s: float = 8.0
     ptt_hotkey: str = "ctrl_r"
 
     # Cursor CLI
@@ -215,6 +220,11 @@ class Settings:
             wakeword_model=os.getenv("WAKEWORD_MODEL", "hey_jarvis"),
             wakeword_enabled=os.getenv("WAKEWORD_ENABLED", "true").lower()
             in ("1", "true", "yes"),
+            wakeword_engine=os.getenv("WAKEWORD_ENGINE", "openwakeword").strip().lower(),
+            wake_phrases=os.getenv("WAKE_PHRASES", "hey sahir,okay sahir").strip(),
+            wake_kws_threshold=float(os.getenv("WAKE_KWS_THRESHOLD", "0.25")),
+            wake_kws_score=float(os.getenv("WAKE_KWS_SCORE", "1.5")),
+            wake_utterance_timeout_s=float(os.getenv("WAKE_UTTERANCE_TIMEOUT_S", "8")),
             ptt_hotkey=os.getenv("PTT_HOTKEY", "ctrl_r"),
             cursor_workspace=_resolve_workspace(os.getenv("CURSOR_WORKSPACE", "")),
             cursor_model=os.getenv("CURSOR_MODEL", "composer-2.5"),

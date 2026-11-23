@@ -19,3 +19,5 @@ requests>=2.31
 caldav>=1.3.9
 # Optional: Kokoro-82M TTS backend (TTS_BACKEND=kokoro) via sherpa-onnx
 sherpa-onnx>=2.0.1
+# BPE encoding for sherpa-onnx KWS custom wake phrases (WAKEWORD_ENGINE=kws)
+sentencepiece>=0.2.0

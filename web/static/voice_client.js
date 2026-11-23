@@ -122,6 +122,8 @@
             this.hooks.onContextAdded?.(m.text || "", m);
           } else if (t === "status") {
             this.hooks.onState?.(m.state || "listening", m);
+          } else if (t === "wake_detected") {
+            this.hooks.onWakeDetected?.(m);
           } else if (t === "transcript_partial") {
             if (m.text) this.hooks.onPartial?.(m.text, m);
           } else if (t === "transcript") {
@@ -141,6 +143,7 @@
             conversation_id: this.hooks.getConversationId?.() ?? null,
             mode: wsModeFromChatMode(this.hooks.getChatMode?.() || "agent"),
             tts: this.hooks.getTts?.() ?? true,
+            wake_word: Boolean(this.hooks.getWakeWord?.()),
           }),
         );
 
