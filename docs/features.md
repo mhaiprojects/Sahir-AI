@@ -2,29 +2,31 @@
 
 ## Web UI
 
-- **HTTPS web control panel** on `WEB_HOST`:`WEB_PORT` (default `0.0.0.0:8765`)
-- **Left nav rail:** Home, Logs, Models, Config (`web/static/index.html`, `app.js`, `models.js`)
-- **Models view** — pick the active Ollama chat model, Load/Eject it, see size and GPU/RAM split, fallback toggles, run the model benchmark ([models.md](models.md))
+- **HTTPS web control panel** on `WEB_HOST`:`WEB_PORT` (default `0.0.0.0:8765`) — **one unified screen** at `/` (`web/static/index.html`, `app.js`, `rail.js`, `chatbar.js`, `agent.js`, `models.js`, `wip.js`)
+- **Projects rail** (left) — tree of projects and chats (supervisor ★), search, + New chat / + New project; mobile drawer via ☰
+- **Centre chat** — Project · Chat · Mode · Model · mic state; live captions; composer with Send, Hold to listen, Hands-free, Speak replies; Ctrl/Cmd+Enter sends to Cursor (no separate Send to Cursor button)
+- **Routine / WIP panel** (right / sticky bottom on mobile) — SSE activity log with project/chat/router/supervisor header ([ui-layout.md](ui-layout.md))
+- **Rail footer pages** — Memory, Documents, Tasks, Live voice, Models, Settings (voice commands + service/mic status), Logs
+- **Models page** — pick/load/eject chat models, fallback toggles, benchmark ([models.md](models.md))
 - **Model fallback** — escalates to `FALLBACK_MODEL` on invalid tool/action JSON or when you say "think harder" / "use the big model"; each reply is tagged with the model that answered
-- **Live transcription panel** — always visible at top of Home view; shows idle/recording/processing states
-- **Hold-to-talk** and **always-listening** with VAD and adaptive noise floor
+- **Live transcription** — visible on the chat view; idle / live draft / final correction
+- **Hold-to-talk** and **Hands-free** (always-listening) with VAD and adaptive noise floor
 - **Text chat** with markdown rendering (marked + DOMPurify in `web/static/vendor/`)
-- **Chat history** — last 20 turns sent with `/api/chat` and `/api/transcribe`
-- **Send to Cursor** button and auto-delegation when local model reply is incomplete or task-like
-- **Voice commands** — SQLite-backed keywords; CRUD in Config; watcher during busy state
-- **Service health** — `/api/health` (Ollama, Piper, Whisper, ffmpeg, Cursor CLI)
-- **Request log** — SQLite-backed sidebar / Logs view
-- **Mic permission prompt** — Permissions API check before `getUserMedia`; explains prompt/denied states
-- **Saved settings** — Route via Tools, Always listening, Route via Cursor, and mic on/off kept in `localStorage`; mic is restored on load when permission is already granted
-- **Auto UI refresh** — `/api/health` returns `build_id`; the UI reloads when it changes (deferred while busy) and announces lost/restored connection with 5 s retry
-- **Cursor completion message** — every Cursor task posts "Cursor task completed in Ns" (or the error/exit code) in chat
-- **WebM robustness** — truncated chunks are salvaged; header-only/headerless/tiny uploads raise `PartialAudioError` and log one WARNING
+- **Chat history** — server-side conversations in `data/agent.db`; streaming via `/api/agent/chat/stream`
+- **Voice commands** — SQLite-backed keywords; CRUD in Settings; watcher during busy state
+- **Service health** — `/api/health` (Ollama, Piper, Whisper, ffmpeg, Cursor CLI); badges on Settings
+- **Request log** — SQLite-backed Logs view
+- **Mic permission prompt** — Permissions API check before `getUserMedia`
+- **Saved settings** — per-chat mode (`sahir-chat-mode`), Hands-free (`voice-assistant-always-listen`), Speak replies (`voice-assistant-speak-replies`), mic on/off in `localStorage`
+- **Auto UI refresh** — `/api/health` `build_id`; reload when assets change (deferred while busy)
+- **Cursor completion message** — Cursor tasks report completion in chat
+- **WebM robustness** — truncated chunks salvaged; `PartialAudioError` on unusable uploads
 
-## Routing options (UI toggles)
+## Mode and voice (chat bar / composer)
 
-- Route via tools (Ollama router with PC control whitelists)
-- Always listening
-- Route all via advanced AI (Cursor)
+- **Mode** select per conversation: Agent, Tools, Chat, or Cursor (stored on the conversation row)
+- **Hands-free** — open mic for speech-triggered requests (browser has no wake word)
+- **Speak replies** — one toggle for chat TTS and Live voice sessions
 
 ## Desktop mode (`python bot.py`)
 
@@ -40,6 +42,7 @@
 | GET | `/api/health` | Component health + `build_id` for auto-refresh |
 | POST | `/api/chat` | Text chat + optional routing |
 | POST | `/api/cursor` | Explicit Cursor delegation |
+| GET/POST | `/api/projects` | List / create projects (with supervisor chat) |
 | POST | `/api/transcribe` | Final utterance (multipart audio) |
 | POST | `/api/transcribe/live` | Partial live captions |
 | POST | `/api/speak` | TTS WAV response |
@@ -52,7 +55,7 @@
 ## Cursor CLI integration
 
 - Triggered by router when reply looks incomplete or code/task-like
-- Manual via **Send to Cursor** or voice request
+- Manual via **Ctrl/Cmd+Enter** in the composer, Cursor mode, or voice routing
 - Config: `CURSOR_WORKSPACE`, `CURSOR_MODEL`, `CURSOR_AGENT_BIN`, `CURSOR_API_KEY`, `CURSOR_TIMEOUT_SECONDS`
 - In Docker: mount host binary via `docker-compose.cursor.yml` (not included in image)
 
@@ -76,6 +79,6 @@
 
 ## Session history (features added during initial build)
 
-Voice commands during transcribe/speak, markdown in chat, TTS markdown stripping, always-listening noise gate, chat history, Cursor auto-delegate, LAN service script, error log monitoring loop, Docker Compose packaging, GitHub publish, live transcript panel fix, UI nav layout (Home/Logs/Config).
+Voice commands during transcribe/speak, markdown in chat, TTS markdown stripping, Hands-free noise gate, chat history, Cursor auto-delegate, LAN service script, error log monitoring loop, Docker Compose packaging, GitHub publish, live transcript panel, unified UI shell (projects rail + chat + WIP, Nov 2026).
 
 Nov 2026 resume: mic permission prompt, localStorage settings, auto UI refresh via `build_id`, Cursor completion messages, WebM partial-chunk hardening, path-independent systemd units, stale `CURSOR_WORKSPACE` fallback, extended `test_web.py`.

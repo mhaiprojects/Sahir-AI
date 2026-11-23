@@ -240,8 +240,9 @@ button.wip-jump {
     position: sticky;
     bottom: 0;
     z-index: 5;
-    height: 30vh;
-    height: 30dvh;
+    height: 24vh;
+    height: 24dvh;
+    max-height: 11rem;
     border-left: none;
     border-top: 1px solid var(--border);
     box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.35);

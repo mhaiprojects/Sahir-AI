@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -208,6 +209,38 @@ class AgentStore:
         p = self.get_project_by_slug("general")
         return int(p["id"]) if p else None
 
+    def create_project(self, name: str, description: str = "") -> dict[str, Any]:
+        name = (name or "").strip()[:120]
+        if not name:
+            raise ValueError("Project name is required")
+        base_slug = _slugify(name)
+        slug = base_slug
+        n = 2
+        while self.get_project_by_slug(slug):
+            slug = f"{base_slug}-{n}"[:80]
+            n += 1
+        now = utcnow()
+        default_mode = os.getenv("DEFAULT_CHAT_MODE", "agent").strip() or "agent"
+        cur = self._exec(
+            """INSERT INTO conversations (
+                title, created_at, updated_at, source, kind, status, brief, aliases, mode
+            ) VALUES (?,?,?,?,?,?,?,?,?)""",
+            (f"{name} supervisor", now, now, "system", "supervisor", "active", "", "[]", "agent"),
+        )
+        sup_id = int(cur.lastrowid)
+        settings = json.dumps({"default_mode": default_mode})
+        cur = self._exec(
+            """INSERT INTO projects (name, slug, description, status, supervisor_conversation_id, settings, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (name, slug, (description or "")[:2000], "active", sup_id, settings, now, now),
+        )
+        project_id = int(cur.lastrowid)
+        self._exec("UPDATE conversations SET project_id=? WHERE id=?", (project_id, sup_id))
+        proj = self.get_project(project_id)
+        if proj is None:
+            raise RuntimeError("Project insert failed")
+        return proj
+
     # --------------------------------------------------------- conversations
     def create_conversation(
         self,
@@ -288,16 +321,29 @@ class AgentStore:
         rows = self._query("SELECT * FROM context_injections WHERE id=?", (int(cur.lastrowid),))
         return dict(rows[0]) if rows else {}
 
-    def list_conversations(self, q: str | None = None, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
+    def list_conversations(
+        self,
+        q: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        *,
+        project_id: int | None = None,
+    ) -> list[dict[str, Any]]:
         base = """SELECT c.*, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id=c.id) AS message_count,
                   (SELECT content FROM messages m WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) AS last_message
                   FROM conversations c"""
         params: list[Any] = []
+        conditions: list[str] = []
+        if project_id is not None:
+            conditions.append("c.project_id=?")
+            params.append(project_id)
         if q and q.strip():
-            base += """ WHERE c.title LIKE ? OR c.id IN (
+            conditions.append("""(c.title LIKE ? OR c.id IN (
                         SELECT m.conversation_id FROM messages m JOIN messages_fts f ON f.rowid=m.id
-                        WHERE messages_fts MATCH ?)"""
+                        WHERE messages_fts MATCH ?))""")
             params += [f"%{q.strip()}%", _fts_query(q)]
+        if conditions:
+            base += " WHERE " + " AND ".join(conditions)
         base += " ORDER BY c.updated_at DESC, c.id DESC LIMIT ? OFFSET ?"
         params += [limit, offset]
         out = []
@@ -316,6 +362,11 @@ class AgentStore:
         return self.get_conversation(conv_id) if cur.rowcount else None
 
     def delete_conversation(self, conv_id: int) -> bool:
+        conv = self.get_conversation(conv_id)
+        if not conv:
+            return False
+        if conv.get("kind") == "supervisor":
+            raise ValueError("Supervisor conversations cannot be deleted")
         return self._exec("DELETE FROM conversations WHERE id=?", (conv_id,)).rowcount > 0
 
     def touch(self, conv_id: int) -> None:
@@ -593,6 +644,11 @@ def _memory_dict(row: sqlite3.Row) -> dict[str, Any]:
     d.pop("score", None)
     d["has_embedding"] = row["embedding"] is not None
     return d
+
+
+def _slugify(name: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return (s[:60] if s else "project")
 
 
 def _fts_query(q: str) -> str:

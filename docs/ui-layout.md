@@ -1,67 +1,86 @@
 # Web UI layout
 
-## Target layout (product spec from sessions)
+## Unified screen (item 6, Nov 2026)
 
-Top-to-bottom on **Home** view:
+Single-page app in `web/static/index.html` with `style.css`, `panels.css`, `unified.css`, `app.js`, `rail.js`, `chatbar.js`, `agent.js`, `wip.js`, and `models.js`.
 
-1. **Header** — app title / branding
-2. **Live transcription box** — always visible; primary feedback while speaking
-3. **Primary buttons** — Toggle Mic, Hold to listen / Listening (state-aware)
-4. **Options row** — Route via Tools, Always Listening, Route all via advanced AI (Cursor)
-5. **User input** — text chat box with send and related actions (e.g. Send to Cursor)
+Desktop layout:
 
-**Left sidebar nav** (icon rail):
+```
+┌ Projects rail ──────┐┌ Centre (view-chat) ─────────────────────────────┐┌ Routine / WIP ─┐
+│ Search                ││ Chat bar: Project · Chat · Mode · Model · mic    ││ Context strip  │
+│ ▸ General             ││ Breadcrumb · Supervisor badge · chat actions     ││ Live log …     │
+│   ★ Supervisor        ││ Live captions                                  ││ Clear · fold   │
+│   • chats…            ││ Empty-state “Ready…” / conversation            │└────────────────┘
+│ + New chat            ││ Composer: Send · mic · Hold · Hands-free ·     │
+│ + New project         ││           Speak replies                        │
+│ [Memory][Docs][Tasks]  │└────────────────────────────────────────────────┘
+│ [Voice][Models][…]    │
+└───────────────────────┘
+```
 
-| View | Content |
-|------|---------|
-| **Home** | Layout above + chat transcript |
-| **Logs** | Request / activity log |
-| **Models** | Chat model selector (Select / Load / Eject), fallback toggles, benchmark |
-| **Config** | Settings, voice commands CRUD, tunables |
-| **Agent** | Chats, memory, RAG documents, live voice, delegation tasks (single SPA view) |
+Narrow screens (`max-width: 980px`): the **☰** bar opens the projects rail as a drawer; the main column stacks above the sticky WIP panel (`panels.css`).
 
-Secondary status panels and detailed logs should be collapsible or on Logs/Config views, not competing with live transcription on Home.
+## Left rail (`#project-rail`, `rail.js`)
 
-## Current implementation (as of repo publish)
+- Loads **`GET /api/projects`** (General first) and groups chats from **`GET /api/conversations`**.
+- Each project expands to show the **supervisor** (★) and sub-chats; click to open in the centre view.
+- **+ New chat** → `POST /api/conversations` (current project). **+ New project** → `POST /api/projects` (creates project + supervisor conversation).
+- **Footer buttons** switch secondary views (`data-view`); default view is **`chat`**.
 
-Implemented in `web/static/index.html` + `style.css` + `app.js`:
+| Footer link | View id | Content |
+|-------------|---------|---------|
+| Chat | `view-chat` | Main conversation + voice (default) |
+| Memory | `view-memory` | Long-term memory CRUD + review (`agent.js`) |
+| Documents | `view-docs` | RAG upload, retrieval test (`agent.js`) |
+| Tasks | `view-tasks` | Delegation log (`agent.js`) |
+| Live voice | `view-voice` | WebSocket streaming session (`agent.js`) |
+| Models | `view-models` | Model pick/load/benchmark (`models.js`) |
+| Settings | `view-settings` | Voice commands, service + mic status |
+| Logs | `view-logs` | Request log (`app.js`) |
 
-- `.nav-sidebar` with Home / Logs / Config tabs
-- `#live-transcript.live-transcript-top` — first content block on Home
-- Status badge: Mic off / Ready / Waiting / Recording / Processing
-- Live draft + final correction areas
-- `hideLiveTranscript()` resets to idle (panel stays visible; no `display: none`)
+## Centre chat (`view-chat`)
 
-## Live transcription behavior
+Top to bottom:
 
-- **Idle:** placeholder text when mic off or waiting
-- **Live:** updates from `/api/transcribe/live` during hold-to-talk and always-listening
-- **Final:** shows corrected text after silence timeout; persists through TTS then resets
+1. **Header** — branding, **Take tour**
+2. **Chat bar** (`#chat-bar`) — project, chat dropdown, single **Mode** select (`#chat-mode`), model, `#chat-mic-state`
+3. **Context** — `#supervisor-badge`, breadcrumb (`#breadcrumb-project` › `#breadcrumb-chat`), `#conv-actions` (rename, export, extract, delete)
+4. **Live transcription** (`#live-transcript`) — draft + corrected captions while speaking
+5. **Empty state** (`#chat-empty-state`) — “Ready…” when the conversation has no user/assistant messages (not wiped when restoring an empty chat)
+6. **Chat log** (`#chat-log`) — markdown messages
+7. **Composer** (`#chat-form`) — message box, Send, mic controls, Hands-free (`#hands-free-toggle`), Speak replies (`#speak-replies-toggle`)
 
-Cache-bust JS in `index.html`: `app.js?v=...` — bump when changing frontend logic.
+Voice behaviour matches the previous Home view: hold-to-talk, Hands-free (stored under `voice-assistant-always-listen` in `localStorage`), speak replies (`voice-assistant-speak-replies`), live `/api/transcribe/live` + final transcribe.
 
-## UX goals (done Nov 2026)
+## Routine / WIP panel (`#wip-panel`, `wip.js`)
 
-- [x] Mic permission prompt when enabling microphone — `promptForMicPermission()` queries the Permissions API before `getUserMedia` and explains prompt/denied states; `watchMicPermission()` reports revocation
-- [x] Remember UI toggles and mic preference in `localStorage` — keys `sahir-chat-mode` (shared Home/Agent mode; migrated from the old `voice-assistant-route-tools` / `voice-assistant-route-cursor`), `voice-assistant-always-listen`, `voice-assistant-speak-replies`, `voice-assistant-mic-enabled`; `restoreMicPreference()` re-enables the mic on load if permission is `granted`
-- [x] Auto-refresh UI after server deploy / error recovery — `refreshHealth()` compares `/api/health` `build_id`, reloads via `reloadForNewBuild()` (deferred while busy/recording/speaking), retries every 5 s when the server is down and announces recovery; `index.html` is served `Cache-Control: no-cache`
-- [x] Cursor task completion always surfaces a message in chat — `reportCursorCompletion()` after Send to Cursor, the Cursor toggle, and routed `run_cursor_agent` replies
-
-## Why Agent is one section (not separate apps)
-
-**Home** is the quick voice + chat control panel. **Agent** is the operator console for the same runtime:
-persistent chats in `data/agent.db`, long-term **Memory**, **Documents** (RAG), **Live voice** (WebSocket orchestrator), and **Tasks** (worker delegation log). Those surfaces all read/write the agent store and orchestrator, so they belong together rather than as unrelated top-level nav items.
+- Right column on desktop; sticky bottom bar on mobile.
+- **Context strip:** Project · Active chat · Router · Supervisor (from activity bus events).
+- **Log:** SSE `GET /api/activity/stream`; progress from orchestrator is mirrored server-side (no duplicate “Working…” boxes).
 
 ## SPA navigation
 
-The shell is a single page (`index.html`). Views switch via the left rail and `?view=` query (e.g. `/?view=agent`). `/agent` redirects to `/?view=agent` for old bookmarks.
+- Views: `?view=chat|memory|docs|tasks|voice|models|settings|logs` (stored in `localStorage`).
+- `/agent` → redirect to `/?view=chat` for old bookmarks.
+- `rail-footer-btn` and `window.sahirActivateView()` switch views; opening a chat from the rail calls `window.sahirOpenConversation()`.
 
-## Chat UX (Nov 2026)
+## UX notes (still accurate)
 
-- **Enter** sends; **Shift+Enter** inserts a newline; **Ctrl+Enter** (or **Cmd+Enter**) sends to Cursor (Home and Agent composer).
-- Chat textareas are focused on load and refocused after each send (Home and Agent when that view is active).
-- **Activity feed** on Home and Agent Chats shows streaming progress: context retrieval, model/fallback switches, tool calls, worker delegation, Cursor CLI handoff.
-- **Chat history** is stored server-side; Home and Agent open the latest conversation by default (with `localStorage` preference when still valid).
-- **New chat** button (top right of Agent) starts a fresh conversation.
+- **Enter** sends; **Shift+Enter** newline; **Ctrl/Cmd+Enter** → Cursor mode send.
+- **Mode** per chat via `PATCH /api/conversations/{id}`; UI key `sahir-chat-mode`.
+- Mic permission prompt, `localStorage` preferences, `build_id` auto-reload, Cursor completion messages — see checklist in git history / `app.js`.
+- Guided tour (`tour.js`) targets the unified layout (rail, chat bar, composer, WIP, Settings).
 
-Current cache-bust: `app.js?v=20261116c`, `agent.js?v=20261116c`, `models.js?v=20261116b`, `style.css?v=20261116b`, `agent.css?v=20261116b`.
+## Implementation files
+
+| Concern | Files |
+|---------|--------|
+| Layout / rail CSS | `unified.css`, `panels.css`, `style.css` |
+| Projects tree | `rail.js` |
+| Project/chat/mode bar | `chatbar.js` |
+| Voice + text chat | `app.js` |
+| Secondary pages | `agent.js` |
+| Activity panel | `activity.py`, `wip.js` |
+
+Bump `?v=` cache-bust query strings in `index.html` when changing static assets.

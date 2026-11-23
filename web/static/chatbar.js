@@ -1,21 +1,79 @@
-/* Home chat bar: Agent (mode), Chat (conversation) and Model pickers in the main area.
-   Loaded after app.js; uses its script-scope state (homeConversationId, busy, CONV_ID_KEY,
-   renderHomeMessagesFromHistory, addMessage, CHAT_HISTORY_LIMIT). */
+/* Chat bar: project, conversation, mode and model pickers (unified UI). */
 (() => {
   "use strict";
   const chatSelect = document.getElementById("home-chat-select");
-  const newBtn = document.getElementById("home-chat-new");
+  const projectSelect = document.getElementById("chat-project-select");
   const modelSelect = document.getElementById("home-model-select");
   if (!chatSelect || !modelSelect) return;
 
   const fmtGB = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.round(n / 1e6)} MB`);
   const trim = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
-  // ------------------------------------------------------------------ chats
+  let projects = [];
+  let generalProjectId = null;
   let convs = [];
-  async function refreshChats() {
+
+  function uiMode(convMode) {
+    if (convMode === "chat") return "stream";
+    if (convMode === "tools") return "route";
+    return convMode || "agent";
+  }
+
+  function applyProjectSelectValue(projectId) {
+    if (!projectSelect?.options.length) return;
+    const pid = projectId ?? generalProjectId;
+    if (pid == null) return;
+    const v = String(pid);
+    if ([...projectSelect.options].some((o) => o.value === v)) projectSelect.value = v;
+  }
+
+  function updateContextUi(conv) {
+    const proj = document.getElementById("breadcrumb-project");
+    const chat = document.getElementById("breadcrumb-chat");
+    const badge = document.getElementById("supervisor-badge");
+    const actions = document.getElementById("conv-actions");
+    if (proj) proj.textContent = conv.project_name || "General";
+    if (chat) chat.textContent = conv.title || `Chat #${conv.id}`;
+    const isSup = conv.kind === "supervisor";
+    badge?.classList.toggle("hidden", !isSup);
+    if (actions) {
+      actions.hidden = false;
+      const md = document.getElementById("conv-export-md");
+      const js = document.getElementById("conv-export-json");
+      if (md) md.href = `/api/conversations/${conv.id}/export?format=md`;
+      if (js) js.href = `/api/conversations/${conv.id}/export?format=json`;
+      const rename = document.getElementById("conv-rename");
+      const del = document.getElementById("conv-delete");
+      if (rename) rename.hidden = isSup;
+      if (del) del.hidden = isSup;
+    }
+    applyProjectSelectValue(conv.project_id);
+    window.sahirSetCurrentProject?.(conv.project_id);
+  }
+
+  async function refreshProjects() {
+    if (!projectSelect) return;
     try {
-      const res = await fetch("/api/conversations?limit=50");
+      const res = await fetch("/api/projects");
+      const data = await res.json();
+      projects = data.projects || [];
+      generalProjectId = data.general_project_id;
+      projects.sort((a, b) => {
+        if (a.id === generalProjectId) return -1;
+        if (b.id === generalProjectId) return 1;
+        return String(a.name).localeCompare(String(b.name));
+      });
+      projectSelect.replaceChildren(...projects.map((p) => new Option(p.name, String(p.id))));
+      applyProjectSelectValue();
+    } catch {
+      projectSelect.replaceChildren(new Option("Projects unavailable", ""));
+    }
+  }
+
+  async function refreshChats(projectId) {
+    try {
+      const q = projectId ? `?limit=80&project_id=${projectId}` : "?limit=50";
+      const res = await fetch(`/api/conversations${q}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       convs = (await res.json()).conversations || [];
     } catch (err) {
@@ -25,20 +83,13 @@
     const current = homeConversationId;
     chatSelect.innerHTML = "";
     if (!current || !convs.some((c) => c.id === current)) {
-      const opt = new Option(current ? `Chat #${current}` : "New chat (starts when you send)", current || "");
-      chatSelect.appendChild(opt);
+      chatSelect.appendChild(new Option(current ? `Chat #${current}` : "Select a chat", current || ""));
     }
     for (const c of convs) {
       const title = trim(String(c.title || `Chat #${c.id}`), 48);
       chatSelect.appendChild(new Option(`${title} · ${c.message_count} msgs`, String(c.id)));
     }
     chatSelect.value = current ? String(current) : "";
-  }
-
-  function uiMode(convMode) {
-    if (convMode === "chat") return "stream";
-    if (convMode === "tools") return "route";
-    return convMode || "agent";
   }
 
   async function openChat(id) {
@@ -51,9 +102,26 @@
     if (conv.mode) window.sahirSetChatMode?.(uiMode(conv.mode), { persistLocal: true, persistServer: false });
     const msgs = (conv.messages || []).filter((m) => m.role === "user" || m.role === "assistant");
     renderHomeMessagesFromHistory(msgs.slice(-CHAT_HISTORY_LIMIT));
-    if (!msgs.length) addMessage("system", `Chat “${conv.title}” is empty. Type or speak to start.`);
+    updateContextUi(conv);
+    window.sahirWip?.setHeaderContext?.({
+      project: conv.project_name || "General",
+      chat: conv.title || `Chat #${conv.id}`,
+    });
     window.sahirWip?.publishSwitchFromConversation(conv);
+    window.sahirRefreshRail?.();
+    applyProjectSelectValue(conv.project_id);
+    await refreshChats(conv.project_id);
   }
+
+  window.sahirOpenConversation = openChat;
+  window.sahirToast = (msg, bad) => {
+    const el = document.getElementById("toast");
+    if (!el) return;
+    el.textContent = msg;
+    el.className = "toast" + (bad ? " bad" : "");
+    el.classList.remove("hidden");
+    setTimeout(() => el.classList.add("hidden"), 3500);
+  };
 
   chatSelect.addEventListener("change", async () => {
     const id = Number(chatSelect.value);
@@ -65,42 +133,69 @@
     if (!id) return;
     try {
       await openChat(id);
+      window.sahirActivateView?.("chat", { replaceUrl: true });
     } catch (err) {
       addMessage("system", `Could not open chat: ${err.message}`);
     }
-    refreshChats();
   });
 
-  newBtn?.addEventListener("click", async () => {
-    if (busy) {
-      addMessage("system", "Wait for the current reply before starting a new chat.");
+  projectSelect?.addEventListener("change", () => {
+    refreshChats(Number(projectSelect.value) || undefined);
+  });
+
+  document.getElementById("conv-rename")?.addEventListener("click", async () => {
+    if (!homeConversationId) return;
+    const cur = document.getElementById("breadcrumb-chat")?.textContent || "";
+    const title = prompt("Rename conversation", cur);
+    if (!title || title === cur) return;
+    await fetch(`/api/conversations/${homeConversationId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }),
+    });
+    await openChat(homeConversationId);
+    window.sahirRefreshRail?.();
+  });
+
+  document.getElementById("conv-delete")?.addEventListener("click", async () => {
+    if (!homeConversationId || !confirm("Delete this conversation permanently?")) return;
+    const res = await fetch(`/api/conversations/${homeConversationId}`, { method: "DELETE" });
+    if (!res.ok) {
+      const detail = (await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`;
+      window.sahirToast?.(String(detail), true);
       return;
     }
+    homeConversationId = null;
+    chatLog.innerHTML = "";
+    chatHistory = [];
+    updateChatEmptyState?.();
+    document.getElementById("conv-actions").hidden = true;
+    await refreshChats();
+    window.sahirRefreshRail?.();
+  });
+
+  document.getElementById("conv-extract")?.addEventListener("click", async () => {
+    if (!homeConversationId) return;
+    addMessage("system", "Extracting memories…");
     try {
-      const res = await fetch("/api/conversations", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+      const res = await fetch("/api/memories/extract", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversation_id: homeConversationId }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const conv = await res.json();
-      await openChat(conv.id);
-      await refreshChats();
-      document.getElementById("message-input")?.focus();
+      const r = await res.json();
+      addMessage("system", r.count ? `${r.count} memory suggestion(s) added for review` : "No new memories found");
     } catch (err) {
-      addMessage("system", `Could not start a new chat: ${err.message}`);
+      addMessage("system", `Extract failed: ${err.message}`);
     }
   });
 
-  // Keep the list fresh: after replies land (titles and counts change) and when ids change.
   let seenConv = homeConversationId;
   let t = null;
-  const schedule = () => { clearTimeout(t); t = setTimeout(refreshChats, 800); };
+  const schedule = () => { clearTimeout(t); t = setTimeout(() => refreshChats(Number(projectSelect?.value) || undefined), 800); };
   const chatLog = document.getElementById("chat-log");
   if (chatLog) new MutationObserver(schedule).observe(chatLog, { childList: true });
   setInterval(() => {
-    if (homeConversationId !== seenConv) { seenConv = homeConversationId; refreshChats(); }
+    if (homeConversationId !== seenConv) { seenConv = homeConversationId; refreshChats(Number(projectSelect?.value) || undefined); }
   }, 1000);
 
-  // ----------------------------------------------------------------- models
   async function refreshModels() {
     let data;
     try {
@@ -121,9 +216,6 @@
       modelSelect.appendChild(new Option(label, m.name, false, !!m.active));
     }
     if (!modelSelect.options.length) modelSelect.appendChild(new Option("No chat models installed", ""));
-    modelSelect.title = data.active_source === "user"
-      ? `Active: ${data.active_model} (your pick)`
-      : `Active: ${data.active_model} (smallest installed model, chosen automatically)`;
   }
 
   modelSelect.addEventListener("change", async () => {
@@ -143,12 +235,19 @@
     await refreshModels();
   });
 
-  // Refresh when Home is shown again (the Agent or Models views may have changed things).
-  document.getElementById("nav-btn-home")?.addEventListener("click", () => { refreshChats(); refreshModels(); });
+  document.getElementById("nav-btn-chat")?.addEventListener("click", () => {
+    refreshChats(Number(projectSelect?.value) || undefined);
+    refreshModels();
+  });
   setInterval(refreshModels, 60000);
 
-  window.sahirRefreshChatBar = () => Promise.all([refreshChats(), refreshModels()]);
+  window.sahirRefreshChatBar = () => Promise.all([refreshProjects(), refreshChats(), refreshModels()]);
   refreshModels();
-  // app.js restores the last chat asynchronously; give it a moment before the first listing.
-  setTimeout(refreshChats, 600);
+  refreshProjects()
+    .then(() => {
+      applyProjectSelectValue();
+      return refreshChats(Number(projectSelect?.value) || generalProjectId || undefined);
+    })
+    .then(() => window.loadHomeConversation?.())
+  .catch(() => {});
 })();

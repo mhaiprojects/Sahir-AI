@@ -1002,7 +1002,7 @@ def create_app() -> FastAPI:
 
     @app.get("/agent")
     def agent_page() -> RedirectResponse:
-        return RedirectResponse(url="/?view=agent", status_code=302)
+        return RedirectResponse(url="/?view=chat", status_code=302)
 
     @app.get("/")
     def index() -> FileResponse:

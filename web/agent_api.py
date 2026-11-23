@@ -20,6 +20,12 @@ logger = logging.getLogger(__name__)
 
 class ConversationCreate(BaseModel):
     title: str | None = Field(default=None, max_length=200)
+    project_id: int | None = None
+
+
+class ProjectCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    description: str = Field(default="", max_length=2000)
 
 
 class ConversationRename(BaseModel):
@@ -90,13 +96,29 @@ def create_agent_router(get_agent: Callable[[], Agent], request_lock: threading.
         general = store.get_project_by_slug("general")
         return {"projects": projects, "general_project_id": general["id"] if general else None}
 
+    @api.post("/api/projects")
+    def create_project(body: ProjectCreate) -> dict[str, Any]:
+        try:
+            return get_agent().store.create_project(body.name, body.description)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
     @api.get("/api/conversations")
-    def list_conversations(q: str | None = None, limit: int = Query(100, ge=1, le=500), offset: int = 0) -> dict[str, Any]:
-        return {"conversations": get_agent().store.list_conversations(q=q, limit=limit, offset=offset)}
+    def list_conversations(
+        q: str | None = None,
+        project_id: int | None = None,
+        limit: int = Query(100, ge=1, le=500),
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        return {
+            "conversations": get_agent().store.list_conversations(
+                q=q, limit=limit, offset=offset, project_id=project_id
+            )
+        }
 
     @api.post("/api/conversations")
     def create_conversation(body: ConversationCreate) -> dict[str, Any]:
-        return get_agent().store.create_conversation(body.title)
+        return get_agent().store.create_conversation(body.title, project_id=body.project_id)
 
     @api.get("/api/conversations/search")
     def search_messages(q: str = Query(..., min_length=1), limit: int = Query(50, ge=1, le=200)) -> dict[str, Any]:
@@ -134,7 +156,11 @@ def create_agent_router(get_agent: Callable[[], Agent], request_lock: threading.
 
     @api.delete("/api/conversations/{conv_id}")
     def delete_conversation(conv_id: int) -> dict[str, bool]:
-        if not get_agent().store.delete_conversation(conv_id):
+        try:
+            ok = get_agent().store.delete_conversation(conv_id)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if not ok:
             raise HTTPException(404, "Conversation not found")
         return {"deleted": True}
 

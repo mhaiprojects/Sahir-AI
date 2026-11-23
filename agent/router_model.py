@@ -95,7 +95,7 @@ class RouterModelService:
         while not self._stop.wait(interval):
             try:
                 self.warm_ping()
-                publish("model", f"router keep-warm ping ({self.cfg.router_model})", source="router")
+                logger.debug("Router keep-warm ping ok (%s)", self.cfg.router_model)
             except Exception as exc:
                 logger.debug("Router keep-warm failed: %s", exc)
                 publish("error", f"router keep-warm failed: {exc}", source="router", level="warning")

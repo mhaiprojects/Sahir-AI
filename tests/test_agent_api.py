@@ -71,6 +71,17 @@ def test_conversation_endpoints(client):
     assert client.get(f"/api/conversations/{c['id']}").status_code == 404
 
 
+def test_supervisor_conversation_delete_rejected(client):
+    data = client.get("/api/projects").json()
+    sup_id = next(
+        p["supervisor_conversation_id"] for p in data["projects"] if p.get("supervisor_conversation_id")
+    )
+    r = client.delete(f"/api/conversations/{sup_id}")
+    assert r.status_code == 400
+    assert "supervisor" in r.json()["detail"].lower()
+    assert client.get(f"/api/conversations/{sup_id}").status_code == 200
+
+
 def test_memory_endpoints(client):
     m = client.post("/api/memories", json={"content": "User is vegetarian", "category": "preference"}).json()
     assert m["status"] == "active"
@@ -133,9 +144,10 @@ def test_legacy_chat_persists_with_context(client, monkeypatch):
 def test_agent_page_served(client):
     r = client.get("/agent", follow_redirects=False)
     assert r.status_code == 302
-    assert "view=agent" in r.headers.get("location", "")
+    assert "view=chat" in r.headers.get("location", "")
     html = client.get("/").text
-    assert "view-agent" in html and "agent.js" in html
+    assert "view-chat" in html and "agent.js" in html
+    assert "project-rail" in html
     assert 'id="conv-actions" hidden' in html
     css = client.get("/static/agent.css").text
     assert "[hidden]" in css and "display:none" in css

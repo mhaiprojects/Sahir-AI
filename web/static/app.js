@@ -2,8 +2,10 @@ const chatLog = document.getElementById("chat-log");
 const chatForm = document.getElementById("chat-form");
 const messageInput = document.getElementById("message-input");
 // One mode control shared by Home and Agent (#38): agent | route | stream | cursor.
-const homeModeSelect = document.getElementById("home-mode");
-const alwaysListenToggle = document.getElementById("always-listen-toggle");
+const homeModeSelect = document.getElementById("chat-mode");
+const alwaysListenToggle = document.getElementById("hands-free-toggle");
+const chatEmptyState = document.getElementById("chat-empty-state");
+const chatMicState = document.getElementById("chat-mic-state");
 const speakRepliesToggle = document.getElementById("speak-replies-toggle");
 const sendBtn = document.getElementById("send-btn");
 const cursorBtn = document.getElementById("cursor-btn");
@@ -145,6 +147,7 @@ function addMessage(role, text, { skipRemember = false } = {}) {
   }
   chatLog.appendChild(el);
   chatLog.scrollTop = chatLog.scrollHeight;
+  updateChatEmptyState();
 }
 
 function getChatHistoryForApi() {
@@ -173,8 +176,6 @@ window.sahirSetChatMode = function sahirSetChatMode(mode, { persistLocal = true,
   if (!CHAT_MODES.includes(mode)) return;
   if (persistLocal) localStorage.setItem(CHAT_MODE_KEY, mode);
   if (homeModeSelect && homeModeSelect.value !== mode) homeModeSelect.value = mode;
-  const agentSelect = document.getElementById("chat-mode");
-  if (agentSelect && agentSelect.value !== mode) agentSelect.value = mode;
   if (persistServer && homeConversationId) {
     fetch(`/api/conversations/${homeConversationId}`, {
       method: "PATCH",
@@ -237,9 +238,14 @@ async function consumeAgentSse(res, { onToken, onMeta } = {}) {
   return { reply };
 }
 
+function updateChatEmptyState() {
+  if (!chatEmptyState || !chatLog) return;
+  const hasMsgs = chatLog.querySelector(".msg.user, .msg.assistant");
+  chatEmptyState.classList.toggle("hidden", !!hasMsgs);
+}
+
 function renderHomeMessagesFromHistory(messages) {
   if (!chatLog) return;
-  // aria-busy stops screen readers announcing the whole restored history (#36).
   chatLog.setAttribute("aria-busy", "true");
   chatLog.innerHTML = "";
   chatHistory = [];
@@ -249,19 +255,36 @@ function renderHomeMessagesFromHistory(messages) {
     }
   }
   chatLog.removeAttribute("aria-busy");
+  updateChatEmptyState();
 }
 
 async function loadHomeConversation() {
-  const saved = Number(localStorage.getItem(CONV_ID_KEY));
   try {
-    const listRes = await fetch("/api/conversations?limit=50");
-    const listData = await listRes.json();
-    const convs = listData.conversations || [];
-    let id = saved || Number(localStorage.getItem("agentConv"));
-    if (!id || !convs.some((c) => c.id === id)) {
-      id = convs.length ? convs[0].id : null;
+    const projRes = await fetch("/api/projects");
+    const projData = await projRes.json();
+    const projects = projData.projects || [];
+    const general = projects.find((p) => p.id === projData.general_project_id) || projects[0];
+    const supId = general?.supervisor_conversation_id;
+
+    let id = Number(localStorage.getItem(CONV_ID_KEY)) || Number(localStorage.getItem("agentConv"));
+    if (id) {
+      const probe = await fetch(`/api/conversations/${id}`);
+      if (!probe.ok) id = 0;
     }
-    if (!id) return;
+    if (!id && supId) id = Number(supId);
+    if (!id) {
+      const listRes = await fetch("/api/conversations?limit=50");
+      const convs = (await listRes.json()).conversations || [];
+      id = convs[0]?.id;
+    }
+    if (!id) {
+      window.sahirWip?.setHeaderContext?.({ project: general?.name || "General", chat: "—" });
+      return;
+    }
+    if (window.sahirOpenConversation) {
+      await window.sahirOpenConversation(id);
+      return;
+    }
     const convRes = await fetch(`/api/conversations/${id}`);
     if (!convRes.ok) return;
     const conv = await convRes.json();
@@ -270,10 +293,16 @@ async function loadHomeConversation() {
     localStorage.setItem("agentConv", String(homeConversationId));
     const msgs = (conv.messages || []).filter((m) => m.role === "user" || m.role === "assistant");
     renderHomeMessagesFromHistory(msgs.slice(-CHAT_HISTORY_LIMIT));
+    window.sahirWip?.setHeaderContext?.({
+      project: conv.project_name || "General",
+      chat: conv.title || `Chat #${conv.id}`,
+    });
   } catch (err) {
     console.warn("Could not restore home chat", err);
   }
 }
+
+window.loadHomeConversation = loadHomeConversation;
 
 function addModelTag(data) {
   // Show which model answered (and whether the big fallback model was used).
@@ -942,14 +971,14 @@ function updateMicHint() {
 
   if (!micReady) {
     micHint.classList.remove("hidden");
-    micHint.textContent = "Click Enable microphone, then use hold-to-listen or turn on Always listening.";
+    micHint.textContent = "Click Enable microphone, then use hold-to-listen or turn on Hands-free.";
     return;
   }
 
   if (alwaysListenToggle.checked) {
     micHint.classList.remove("hidden");
     micHint.textContent =
-      `Always listening is on. Background noise is filtered — speak clearly to start. Say command keywords (e.g. "stop", "cancel") while the assistant is speaking. ${silenceSec}s silence ends a conversation.`;
+      `Hands-free is on. Background noise is filtered — speak clearly to start. Say command keywords (e.g. "stop", "cancel") while the assistant is speaking. ${silenceSec}s silence ends a conversation.`;
     return;
   }
 
@@ -968,6 +997,7 @@ function setMicBadge(state, text) {
     el.className = `badge ${state}`;
     el.textContent = text;
   }
+  if (chatMicState) chatMicState.textContent = text.replace(/^Mic:\s*/i, "Mic: ");
 }
 
 function updateToggleMicButton() {
@@ -1951,8 +1981,7 @@ window.sahirReleaseHomeMic = function sahirReleaseHomeMic() {
 };
 
 document.getElementById("open-live-voice-btn")?.addEventListener("click", () => {
-  document.getElementById("nav-btn-agent")?.click();
-  document.querySelector('.ag-tab[data-tab="voice"]')?.click();
+  window.sahirActivateView?.("voice");
   document.getElementById("voice-toggle")?.focus();
 });
 
@@ -1964,19 +1993,18 @@ function parseInitialView() {
   if (fromQuery) return fromQuery;
   const hash = window.location.hash.replace(/^#\/?/, "");
   if (hash) return hash.split("/")[0];
-  return localStorage.getItem(VIEW_KEY) || "home";
+  return localStorage.getItem(VIEW_KEY) || "chat";
 }
 
 function initViewNav() {
-  const navButtons = document.querySelectorAll(".nav-item[data-view]");
-  const views = document.querySelectorAll(".view");
+  const navButtons = document.querySelectorAll(".rail-footer-btn[data-view]");
+  const views = document.querySelectorAll(".main-shell > .view");
   if (!navButtons.length) return;
 
   function activateView(viewName, { updateUrl = true, replaceUrl = false } = {}) {
     navButtons.forEach((btn) => {
       const active = btn.dataset.view === viewName;
       btn.classList.toggle("active", active);
-      btn.setAttribute("aria-selected", active ? "true" : "false");
     });
     views.forEach((panel) => {
       const active = panel.id === `view-${viewName}`;
@@ -2001,15 +2029,13 @@ function initViewNav() {
     if (viewName === "models" && typeof refreshModels === "function") {
       refreshModels();
     }
-    if (viewName === "agent" && typeof window.refreshAgentView === "function") {
-      window.refreshAgentView();
-    }
-    if (viewName === "home") {
-      focusHomeChatInput();
-    }
-    if (viewName === "agent" && typeof window.focusAgentChatInput === "function") {
-      window.focusAgentChatInput();
-    }
+    if (viewName === "memory") window.sahirOnView?.("memory");
+    if (viewName === "docs") window.sahirOnView?.("docs");
+    if (viewName === "tasks") window.sahirOnView?.("tasks");
+    if (viewName === "voice") window.sahirOnView?.("voice");
+    if (viewName === "settings" && typeof refreshHealth === "function") refreshHealth();
+    if (viewName === "chat") focusHomeChatInput();
+    if (viewName !== "chat") document.querySelector(".unified-layout")?.classList.remove("rail-open");
   }
 
   navButtons.forEach((btn) => {
@@ -2020,8 +2046,11 @@ function initViewNav() {
     activateView(parseInitialView(), { updateUrl: false });
   });
 
-  const initial = parseInitialView();
-  activateView(initial, { replaceUrl: true });
+  let pick = parseInitialView();
+  if (pick === "home" || pick === "agent") pick = "chat";
+  if (pick === "config") pick = "settings";
+  activateView(pick, { replaceUrl: true });
+  window.sahirActivateView = activateView;
 }
 
 // Roving tabindex + arrow/Home/End keys for role="tablist" groups (#36).
@@ -2057,9 +2086,8 @@ function initTablistKeys(tablist) {
 window.initTablistKeys = initTablistKeys;
 
 initViewNav();
-const syncNavTabs = initTablistKeys(document.querySelector(".nav-rail"));
-window.addEventListener("popstate", () => syncNavTabs?.());
-loadHomeConversation();
+window.sahirActiveConversationId = () => homeConversationId;
+window.updateChatEmptyState = updateChatEmptyState;
 
 const commandForm = document.getElementById("command-form");
 const commandKeywordInput = document.getElementById("command-keyword");
@@ -2200,7 +2228,7 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") refreshHealth();
 });
 watchMicPermission();
-addMessage("system", "Ready. Enable the microphone or type a message.");
+updateChatEmptyState();
 setMicBadge("warn", "Mic: not enabled");
 updateToggleMicButton();
 updateMicHint();

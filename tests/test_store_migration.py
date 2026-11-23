@@ -43,6 +43,16 @@ def test_fresh_db_migration_and_general_project(tmp_path) -> None:
     assert sup and sup["kind"] == "supervisor" and sup["project_id"] == general["id"]
 
 
+def test_supervisor_conversation_cannot_be_deleted(tmp_path) -> None:
+    store = AgentStore(tmp_path / "sup.db")
+    general = store.get_project_by_slug("general")
+    assert general
+    sup_id = int(general["supervisor_conversation_id"])
+    with pytest.raises(ValueError, match="Supervisor"):
+        store.delete_conversation(sup_id)
+    assert store.get_conversation(sup_id) is not None
+
+
 def test_legacy_db_migrates_idempotently(tmp_path) -> None:
     db = tmp_path / "legacy.db"
     _legacy_db(db)

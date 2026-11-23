@@ -227,7 +227,17 @@
 
   const convKey = "voice-assistant-conversation-id";
   const storedConv = Number(localStorage.getItem(convKey) || localStorage.getItem("agentConv") || 0);
-  if (storedConv) refreshWipContext(storedConv);
+  if (storedConv) {
+    refreshWipContext(storedConv);
+  } else {
+    fetch("/api/projects")
+      .then((r) => r.json())
+      .then((body) => {
+        const general = (body.projects || []).find((p) => p.id === body.general_project_id);
+        setHeaderContext({ project: general?.name || "General", chat: "—" });
+      })
+      .catch(() => {});
+  }
 
   window.sahirWip = {
     append,

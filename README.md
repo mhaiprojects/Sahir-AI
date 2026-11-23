@@ -23,36 +23,27 @@ Custom local voice assistant using trusted open-source components:
   (research summarizer, Cursor code agent, ClickUp), realtime voice over WebSocket with Silero VAD
   and barge-in, optional Kokoro-82M TTS
 
-## Local-first agent (new)
+## Local-first agent (web UI)
 
-Open **`https://<host>:<port>/agent`** (or the ✦ Agent item in the nav rail):
+Open **`https://<host>:<port>/`** — one unified screen (old `/agent` bookmarks redirect to `/?view=chat`).
 
-| Tab | What you can do |
-|-----|-----------------|
-| Chats | List/search (full-text) conversations, view, rename, delete, export Markdown/JSON, chat with streaming or the orchestrator |
-| Memory | Add/edit/delete long-term facts; approve/reject memories auto-extracted from chats; recall test |
-| Documents | Drag-and-drop `.txt/.md/.pdf` (and other text) files → chunked, embedded with `nomic-embed-text`, stored in SQLite; view chunks; retrieval test |
-| Live voice | Streaming mic → Silero VAD → Whisper → orchestrator → sentence-streamed TTS; talk over it to barge in |
-| Tasks | Delegated task log (type, status, retries, duration, output, ClickUp actions) |
+| Area | What you can do |
+|------|-----------------|
+| **Projects rail** (left) | Browse projects (General first), open the supervisor ★ or any chat, search, **+ New chat** / **+ New project** |
+| **Chat** (centre) | Voice + text conversation with live captions, per-chat mode, memory/RAG context, streaming replies |
+| **Rail footer** | **Memory**, **Documents**, **Tasks**, **Live voice**, **Models**, **Settings**, **Logs** |
+| **Routine / WIP** (right) | Live activity stream + header (project, active chat, router, supervisor) |
 
-The original voice UI (`/`) now also uses memory + document context and saves its turns into the
-same chat history (`AGENT_PERSIST_WEB=true`). Its always-listening and live-caption endpoints skip
-Whisper when Silero VAD hears no speech (`VAD_GATE_ENABLED`).
+The centre chat uses the same store and orchestrator as the secondary pages (`AGENT_PERSIST_WEB=true`).
+Hands-free and live-caption paths skip Whisper when Silero VAD hears no speech (`VAD_GATE_ENABLED`).
 
-### Chat bar, default model and the Routine / WIP panel
+### Chat bar, composer, and the Routine / WIP panel
 
-- **Chat bar** (top of Home): **Agent** (mode: Agent / Tools / Chat / Cursor, shared with the Agent
-  tab), **Chat** (switch to any saved conversation or start a new one) and **Model**. The Agent tab
-  shows the same Agent picker above its conversation.
-- **Default model:** the smallest downloaded Ollama chat model (by `/api/tags` size, embedding
-  models excluded) is made active at startup and whenever the model list is read, unless you picked
-  a model (Home chat bar, Models page or `POST /api/models/select`) that is still installed. The
-  choice and its source (`user` / `auto`) are kept in `data/model_state.json`.
-- **Routine / WIP panel** (right side; a bottom bar on narrow screens): a terminal-style live feed of
-  commands run, Cursor CLI tool calls/shell commands/output, agent tool calls, worker hand-offs,
-  model loads, benchmark output and key log lines, streamed from `GET /api/activity/stream`
-  (Server-Sent Events; `GET /api/activity` returns the recent history). Timestamps, auto-scroll
-  that pauses when you scroll up, Clear and Collapse.
+- **Chat bar:** **Project** · **Chat** (quick switcher) · **Mode** (Agent / Tools / Chat / Cursor, saved per chat) · **Model** · mic state.
+- **Composer:** **Send**; **Enable microphone** / **Hold to listen**; one **Hands-free** toggle; one **Speak replies** toggle (shared with Live voice). **Ctrl+Enter** (Cmd+Enter on Mac) sends to Cursor — there is no separate Send to Cursor button.
+- **Default model:** smallest installed Ollama chat model (by size) unless you pick one in the chat bar, Models page, or `POST /api/models/select` (`data/model_state.json`).
+- **Routine / WIP panel** (right on desktop; sticky bottom bar below 980px): terminal-style feed from `GET /api/activity/stream`, context strip on top, Clear and Collapse.
+- **Mobile:** **☰** opens the projects rail as a drawer; the activity panel stays the sticky bottom bar.
 
 ClickUp: put `CLICKUP_API_TOKEN=...` in `.env` and `CLICKUP_LIST_ID=your-clickup-list-id`. Without a token the
 ClickUp worker/hook report "token needed" and nothing is sent.
@@ -120,13 +111,13 @@ Open from any device on your LAN:
 http://<this-pc-ip>:8765
 ```
 
-Features: text chat with full tool routing, hold-to-talk, always-listening mode, two-phase web transcription, service health badges, optional TTS playback, and a sidebar request log stored in SQLite.
+Features: unified chat screen with projects rail, text chat with full tool routing, hold-to-talk, Hands-free mode, two-phase web transcription, Routine/WIP activity panel, optional TTS, and a request log in SQLite.
 
 Configure `WEB_HOST`, `WEB_PORT`, and `WEB_DB_PATH` in `.env`. **No authentication** — see the warning at the top; use only on trusted networks or behind an authenticating reverse proxy.
 
 ### Two-phase web transcription
 
-While **Always listening** is enabled:
+While **Hands-free** listening is enabled:
 
 1. **Live phase** — audio streams to `/api/transcribe/live` every few seconds using the fast `WHISPER_LIVE_MODEL` (default `tiny`). Captions update in the UI while you speak.
 2. **Final phase** — after **End of Conversation Silence** (default `3` seconds, `WEB_CONVERSATION_SILENCE_SECONDS`), the full recording is sent to `/api/transcribe?phase=final` using `WHISPER_FINAL_MODEL` for higher accuracy before routing to tools.

@@ -103,6 +103,28 @@ def test_router_keep_warm_scheduler(fake_http: FakeOllamaHttp, router_cfg: GpuRu
     assert len(fake_http.calls) >= before + 1  # pin + at least one warm ping
 
 
+def test_router_keep_warm_success_not_published(
+    monkeypatch: pytest.MonkeyPatch, fake_http: FakeOllamaHttp, router_cfg: GpuRuntimeConfig,
+) -> None:
+    published: list[tuple[Any, ...]] = []
+
+    def _pub(*args: Any, **kwargs: Any) -> None:
+        published.append((args, kwargs))
+
+    monkeypatch.setattr("agent.router_model.publish", _pub)
+    settings = Settings(ollama_host="http://127.0.0.1:11434")
+    svc = RouterModelService(settings, router_cfg, http=fake_http)
+    svc.start()
+    deadline = time.monotonic() + 0.5
+    while time.monotonic() < deadline and len(fake_http.calls) < 2:
+        time.sleep(0.02)
+    svc.stop()
+    warm_msgs = [
+        args for args, _ in published if len(args) > 1 and "keep-warm ping" in str(args[1])
+    ]
+    assert not warm_msgs
+
+
 def test_start_router_service_singleton(fake_http: FakeOllamaHttp, router_cfg: GpuRuntimeConfig) -> None:
     stop_router_service()
     settings = Settings(ollama_host="http://127.0.0.1:11434")

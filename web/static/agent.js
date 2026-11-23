@@ -7,32 +7,6 @@
   const when = (iso) => { try { return new Date(iso).toLocaleString(); } catch { return iso; } };
   const state = { convId: null, convs: [], busy: false };
 
-  async function consumeSseResponse(res, { pending, box, accRef }) {
-    const reader = res.body.getReader();
-    const dec = new TextDecoder();
-    let buf = "";
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      let i;
-      while ((i = buf.indexOf("\n\n")) >= 0) {
-        const line = buf.slice(0, i);
-        buf = buf.slice(i + 2);
-        if (!line.startsWith("data: ")) continue;
-        let ev;
-        try { ev = JSON.parse(line.slice(6)); } catch { continue; }
-        if (ev.type === "meta") state.convId = ev.conversation_id;
-        if (ev.type === "token") {
-          accRef.v += ev.text;
-          pending.querySelector(".body").innerHTML = md(accRef.v);
-          box.scrollTop = 1e9;
-        }
-        if (ev.type === "error") toast(ev.error, true);
-      }
-    }
-  }
-
   function toast(msg, bad = false) {
     const el = $("#toast");
     el.textContent = msg;
@@ -58,19 +32,12 @@
     return data;
   }
 
-  // ---------------------------------------------------------------- tabs
-  document.querySelectorAll(".ag-tab").forEach((b) => b.addEventListener("click", () => {
-    document.querySelectorAll(".ag-tab").forEach((x) => {
-      x.classList.toggle("active", x === b);
-      x.setAttribute("aria-selected", x === b ? "true" : "false");
-    });
-    document.querySelectorAll(".ag-panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + b.dataset.tab));
-    localStorage.setItem("agentTab", b.dataset.tab);
-    if (b.dataset.tab === "memory") loadMemories();
-    if (b.dataset.tab === "docs") loadDocs();
-    if (b.dataset.tab === "tasks") loadTasks();
-  }));
-  window.initTablistKeys?.(document.querySelector(".ag-tabs"));
+  window.sahirOnView = function (view) {
+    if (view === "memory") loadMemories();
+    if (view === "docs") loadDocs();
+    if (view === "tasks") loadTasks();
+    if (view === "voice") loadStatus();
+  };
 
   async function loadStatus() {
     try {
@@ -82,153 +49,15 @@
     } catch (e) { $("#ag-status").textContent = "status error: " + e.message; }
   }
 
-  // --------------------------------------------------------------- chats
-  async function loadConversations() {
-    const q = $("#conv-search").value.trim();
-    const data = await api("/api/conversations" + (q ? "?q=" + encodeURIComponent(q) : ""));
-    state.convs = data.conversations;
-    $("#conv-list").innerHTML = state.convs.map((c) => `
-      <li class="${c.id === state.convId ? "active" : ""}" data-id="${c.id}">
-        <div class="t">${esc(c.title)}</div>
-        <div class="s">${esc(c.source)} · ${c.message_count} msgs · ${when(c.updated_at)}</div>
-        <div class="p">${esc(c.last_message || "")}</div>
-      </li>`).join("") || `<li class="empty">No chats yet</li>`;
-  }
-
-  function renderMessage(m) {
-    const meta = m.meta || {};
-    const chips = [];
-    if (meta.action && m.role === "assistant") chips.push(`<span class="chip">${esc(meta.action)}</span>`);
-    (meta.sources?.memories || []).forEach((s) => chips.push(`<span class="chip mem" title="${esc(s.content)}">memory #${s.id}</span>`));
-    (meta.sources?.chunks || []).forEach((s) => chips.push(`<span class="chip doc">${esc(s.filename)} #${s.idx}</span>`));
-    (meta.tasks || []).forEach((t) => chips.push(`<span class="chip task">${esc(t.task.type)} → ${esc(t.result.status)}</span>`));
-    return `<div class="msg ${m.role}" data-id="${m.id || ""}">
-      <div class="body">${m.role === "assistant" ? md(m.content) : esc(m.content)}</div>
-      <div class="meta">${when(m.created_at || new Date().toISOString())} ${chips.join(" ")}</div></div>`;
-  }
-
-  async function openConversation(id) {
-    state.convId = id;
-    const c = await api(`/api/conversations/${id}`);
-    $("#conv-title").textContent = c.title;
-    $("#conv-actions").hidden = false;
-    $("#conv-export-md").href = `/api/conversations/${id}/export?format=md`;
-    $("#conv-export-json").href = `/api/conversations/${id}/export?format=json`;
-    // aria-busy: don't announce the whole history when a chat is opened (#36).
-    $("#messages").setAttribute("aria-busy", "true");
-    $("#messages").innerHTML = c.messages.map(renderMessage).join("");
-    $("#messages").removeAttribute("aria-busy");
-    $("#messages").scrollTop = 1e9;
-    localStorage.setItem("agentConv", id);
-    localStorage.setItem("voice-assistant-conversation-id", id);
-    window.sahirWip?.publishSwitchFromConversation(c);
-    loadConversations();
-  }
-
-  $("#conv-list").addEventListener("click", (e) => {
-    const li = e.target.closest("li[data-id]");
-    if (li) openConversation(Number(li.dataset.id));
-  });
-  let searchT;
-  $("#conv-search").addEventListener("input", () => { clearTimeout(searchT); searchT = setTimeout(loadConversations, 250); });
-  async function startNewChat() {
-    const c = await api("/api/conversations", { method: "POST", json: {} });
-    await openConversation(c.id);
-    $("#chat-input")?.focus();
-  }
-
-  $("#conv-new")?.addEventListener("click", () => { startNewChat().catch((e) => toast(e.message, true)); });
-  $("#conv-new-top")?.addEventListener("click", () => { startNewChat().catch((e) => toast(e.message, true)); });
-  $("#conv-rename").addEventListener("click", async () => {
-    const cur = $("#conv-title").textContent;
-    const title = prompt("Rename conversation", cur);
-    if (!title || title === cur) return;
-    await api(`/api/conversations/${state.convId}`, { method: "PATCH", json: { title } });
-    openConversation(state.convId);
-  });
-  $("#conv-delete").addEventListener("click", async () => {
-    if (!confirm("Delete this conversation permanently?")) return;
-    await api(`/api/conversations/${state.convId}`, { method: "DELETE" });
-    state.convId = null;
-    $("#messages").innerHTML = "";
-    $("#conv-title").textContent = "Select or start a chat";
-    $("#conv-actions").hidden = true;
-    loadConversations(); loadStatus();
-  });
-  $("#conv-extract").addEventListener("click", async () => {
-    toast("Extracting memories with the local model…");
-    try {
-      const r = await api("/api/memories/extract", { method: "POST", json: { conversation_id: state.convId } });
-      toast(r.count ? `${r.count} memory suggestion(s) added for review` : "No new memories found");
-      loadStatus();
-    } catch (e) { toast(e.message, true); }
-  });
-
-  function focusAgentChatInput() {
-    const el = $("#chat-input");
-    if (el && !el.disabled && !state.busy) el.focus();
-  }
-  window.focusAgentChatInput = focusAgentChatInput;
-
-  let agentSubmitModeOverride = null;
-
-  const agentChatForm = $("#agent-chat-form");
-  const chatInput = $("#chat-input");
-  if (chatInput) {
-    chatInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault();
-        if (!chatInput.value.trim() || state.busy) return;
-        agentSubmitModeOverride = "cursor";
-        agentChatForm?.requestSubmit();
-        return;
-      }
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        agentChatForm?.requestSubmit();
-      }
-    });
-  }
-
-  // Mode is shared with Home (#38).
   const savedMode = localStorage.getItem("sahir-chat-mode");
-  if (savedMode && $("#chat-mode")) $("#chat-mode").value = savedMode;
-  $("#chat-mode")?.addEventListener("change", (e) => window.sahirSetChatMode?.(e.target.value));
+  if (savedMode && document.getElementById("chat-mode")) document.getElementById("chat-mode").value = savedMode;
+  document.getElementById("chat-mode")?.addEventListener("change", (e) => window.sahirSetChatMode?.(e.target.value));
 
-  agentChatForm?.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const text = $("#chat-input").value.trim();
-    if (!text || state.busy) return;
-    const mode = agentSubmitModeOverride || $("#chat-mode").value;
-    agentSubmitModeOverride = null;
-    $("#chat-input").value = "";
-    state.busy = true; $("#chat-send").disabled = true;
-    const box = $("#messages");
-    box.insertAdjacentHTML("beforeend", renderMessage({ role: "user", content: text }));
-    box.insertAdjacentHTML("beforeend", `<div class="msg assistant pending"><div class="body">…</div><div class="meta"></div></div>`);
-    const pending = box.lastElementChild;
-    box.scrollTop = 1e9;
-    try {
-      const res = await fetch("/api/agent/chat/stream", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, conversation_id: state.convId, mode }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || res.statusText);
-      }
-      const accRef = { v: "" };
-      await consumeSseResponse(res, { pending, box, accRef });
-      await openConversation(state.convId);
-    } catch (err) {
-      pending.querySelector(".body").textContent = "Error: " + err.message;
-      toast(err.message, true);
-    } finally {
-      state.busy = false; $("#chat-send").disabled = false; loadStatus();
-      focusAgentChatInput();
-    }
-  });
+  function activeConvId() {
+    return window.sahirActiveConversationId?.() ?? state.convId;
+  }
+
+  let searchT;
 
   // -------------------------------------------------------------- memory
   async function loadMemories() {
@@ -272,7 +101,11 @@
         const content = prompt("Edit memory", cur);
         if (content && content !== cur) await api(`/api/memories/${id}`, { method: "PATCH", json: { content } });
       }
-      if (act === "open") { document.querySelector('.ag-tab[data-tab="chats"]').click(); openConversation(Number(btn.dataset.conv)); return; }
+      if (act === "open") {
+        window.sahirOpenConversation?.(Number(btn.dataset.conv));
+        window.sahirActivateView?.("chat");
+        return;
+      }
       loadMemories();
     } catch (err) { toast(err.message, true); }
   });
@@ -380,7 +213,12 @@
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     voice.ws = new WebSocket(`${proto}//${location.host}/ws/voice`);
     voice.ws.binaryType = "arraybuffer";
-    voice.ws.onopen = () => voice.ws.send(JSON.stringify({ type: "hello", conversation_id: state.convId, mode: "agent", tts: $("#voice-tts").checked }));
+    voice.ws.onopen = () => voice.ws.send(JSON.stringify({
+      type: "hello",
+      conversation_id: activeConvId(),
+      mode: "agent",
+      tts: window.sahirSpeakRepliesEnabled?.() ?? true,
+    }));
     voice.ws.onclose = () => { setVState("disconnected"); stopVoice(true); };
     voice.ws.onmessage = async (ev) => {
       if (typeof ev.data !== "string") { await playWav(ev.data); return; }
@@ -430,7 +268,7 @@
     Object.assign(voice, { ws: null, ctx: null, stream: null, node: null, mute: null });
     $("#voice-toggle").textContent = "Start live voice"; $("#voice-interrupt").disabled = true;
     if (!fromClose) setVState("idle");
-    loadConversations();
+    window.sahirRefreshRail?.();
   }
 
   $("#voice-toggle").addEventListener("click", () => {
@@ -439,23 +277,10 @@
   });
   $("#voice-interrupt").addEventListener("click", () => { stopPlayback(); voice.ws && voice.ws.send(JSON.stringify({ type: "interrupt" })); });
 
-  // ---------------------------------------------------------------- init
-  window.refreshAgentView = async function refreshAgentView() {
-    await loadStatus();
-    await loadConversations();
-  };
+  window.sahirSpeakRepliesEnabled = () => document.getElementById("speak-replies-toggle")?.checked ?? true;
 
   (async () => {
-    await refreshAgentView();
-    const saved = Number(localStorage.getItem("agentConv") || localStorage.getItem("voice-assistant-conversation-id"));
-    if (saved && state.convs.some((c) => c.id === saved)) {
-      await openConversation(saved);
-    } else if (state.convs.length) {
-      await openConversation(state.convs[0].id);
-    }
-    const tab = localStorage.getItem("agentTab");
-    if (tab) document.querySelector(`.ag-tab[data-tab="${tab}"]`)?.click();
-    focusAgentChatInput();
+    await loadStatus();
     setInterval(loadStatus, 15000);
   })();
 })();
