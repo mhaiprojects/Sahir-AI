@@ -8,6 +8,7 @@ as float32 BLOBs. When the sqlite-vec extension loads, similarity search runs in
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from typing import Any, Iterable
 
 import numpy as np
 
+from agent.migrations import STORE_SCHEMA_VERSION, migrate_store, schema_version
 from agent.vectors import cosine, pack, try_load_sqlite_vec, unpack
 
 SCHEMA = """
@@ -121,14 +123,23 @@ class AgentStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self.vector_backend = "numpy"
+        default_mode = os.getenv("DEFAULT_CHAT_MODE", "agent").strip() or "agent"
         with self._connect() as conn:
             conn.executescript(SCHEMA)
+            migrate_store(conn, default_chat_mode=default_mode)
+            conn.commit()
             conn.execute("PRAGMA journal_mode=WAL")
+            conn.commit()
         with self._connect() as conn:
             if try_load_sqlite_vec(conn):
                 self.vector_backend = "sqlite-vec"
+        self._schema_version = STORE_SCHEMA_VERSION
 
     # ------------------------------------------------------------------ infra
+    def _has_table(self, name: str) -> bool:
+        rows = self._query("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,))
+        return bool(rows)
+
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=15)
         conn.row_factory = sqlite3.Row
@@ -158,9 +169,15 @@ class AgentStore:
         def count(sql: str) -> int:
             return int(self._query(sql)[0][0])
 
+        proj = count("SELECT COUNT(*) FROM projects") if self._has_table("projects") else 0
+        ver_rows = self._query("SELECT COALESCE(MAX(version), 0) AS v FROM schema_migrations") if self._has_table(
+            "schema_migrations"
+        ) else [{"v": 0}]
         return {
             "db_path": str(self.db_path),
             "vector_backend": self.vector_backend,
+            "schema_version": int(ver_rows[0]["v"]) if ver_rows else 0,
+            "projects": proj,
             "conversations": count("SELECT COUNT(*) FROM conversations"),
             "messages": count("SELECT COUNT(*) FROM messages"),
             "memories_active": count("SELECT COUNT(*) FROM memories WHERE status='active'"),
@@ -169,22 +186,107 @@ class AgentStore:
             "chunks": count("SELECT COUNT(*) FROM chunks"),
         }
 
+    # --------------------------------------------------------- projects
+    def list_projects(self, *, status: str | None = None) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM projects WHERE 1=1"
+        params: list[Any] = []
+        if status:
+            sql += " AND status=?"
+            params.append(status)
+        sql += " ORDER BY id ASC"
+        return [_project_dict(r) for r in self._query(sql, params)]
+
+    def get_project(self, project_id: int) -> dict[str, Any] | None:
+        rows = self._query("SELECT * FROM projects WHERE id=?", (project_id,))
+        return _project_dict(rows[0]) if rows else None
+
+    def get_project_by_slug(self, slug: str) -> dict[str, Any] | None:
+        rows = self._query("SELECT * FROM projects WHERE slug=?", (slug,))
+        return _project_dict(rows[0]) if rows else None
+
+    def general_project_id(self) -> int | None:
+        p = self.get_project_by_slug("general")
+        return int(p["id"]) if p else None
+
     # --------------------------------------------------------- conversations
-    def create_conversation(self, title: str | None = None, source: str = "web") -> dict[str, Any]:
+    def create_conversation(
+        self,
+        title: str | None = None,
+        source: str = "web",
+        *,
+        project_id: int | None = None,
+        kind: str = "chat",
+        parent_id: int | None = None,
+        mode: str | None = None,
+        brief: str = "",
+        aliases: list[str] | None = None,
+    ) -> dict[str, Any]:
         now = utcnow()
+        project_id = project_id or self.general_project_id()
+        if mode is None:
+            mode = os.getenv("DEFAULT_CHAT_MODE", "agent").strip() or "agent"
         cur = self._exec(
-            "INSERT INTO conversations (title, created_at, updated_at, source) VALUES (?,?,?,?)",
-            ((title or "New conversation").strip()[:200] or "New conversation", now, now, source),
+            """INSERT INTO conversations (
+                title, created_at, updated_at, source, project_id, kind, parent_id, status,
+                mode, brief, aliases
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                (title or "New conversation").strip()[:200] or "New conversation",
+                now,
+                now,
+                source,
+                project_id,
+                kind,
+                parent_id,
+                "active",
+                mode,
+                (brief or "")[:4000],
+                json.dumps(aliases or [], ensure_ascii=False),
+            ),
         )
         return self.get_conversation(int(cur.lastrowid))  # type: ignore[return-value]
 
     def get_conversation(self, conv_id: int) -> dict[str, Any] | None:
         rows = self._query(
-            """SELECT c.*, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id=c.id) AS message_count
-               FROM conversations c WHERE c.id=?""",
+            """SELECT c.*, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id=c.id) AS message_count,
+                      p.name AS project_name, p.slug AS project_slug
+               FROM conversations c
+               LEFT JOIN projects p ON p.id = c.project_id
+               WHERE c.id=?""",
             (conv_id,),
         )
-        return dict(rows[0]) if rows else None
+        return _conversation_dict(rows[0]) if rows else None
+
+    def get_conversation_mode(self, conv_id: int) -> str | None:
+        rows = self._query("SELECT mode FROM conversations WHERE id=?", (conv_id,))
+        if not rows:
+            return None
+        mode = rows[0]["mode"]
+        return str(mode) if mode else None
+
+    def set_conversation_mode(self, conv_id: int, mode: str) -> dict[str, Any] | None:
+        mode = _normalize_stored_mode(mode)
+        cur = self._exec(
+            "UPDATE conversations SET mode=?, updated_at=? WHERE id=?",
+            (mode, utcnow(), conv_id),
+        )
+        return self.get_conversation(conv_id) if cur.rowcount else None
+
+    def add_context_injection(
+        self,
+        *,
+        from_conversation_id: int | None,
+        to_conversation_id: int,
+        content: str,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        cur = self._exec(
+            """INSERT INTO context_injections (from_conversation_id, to_conversation_id, content, reason, created_at)
+               VALUES (?,?,?,?,?)""",
+            (from_conversation_id, to_conversation_id, content[:8000], reason, utcnow()),
+        )
+        rows = self._query("SELECT * FROM context_injections WHERE id=?", (int(cur.lastrowid),))
+        return dict(rows[0]) if rows else {}
 
     def list_conversations(self, q: str | None = None, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
         base = """SELECT c.*, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id=c.id) AS message_count,
@@ -200,7 +302,7 @@ class AgentStore:
         params += [limit, offset]
         out = []
         for r in self._query(base, params):
-            d = dict(r)
+            d = _conversation_dict(r, include_project=False)
             if d.get("last_message"):
                 d["last_message"] = d["last_message"][:160]
             out.append(d)
@@ -387,9 +489,10 @@ class AgentStore:
             conn = self._connect()
             try:
                 cur = conn.execute(
-                    """INSERT INTO documents (filename, mime, size_bytes, sha256, chunk_count, embed_model, created_at)
-                       VALUES (?,?,?,?,?,?,?)""",
-                    (filename, mime, size_bytes, sha256, len(chunks), embed_model, utcnow()),
+                    """INSERT INTO documents (filename, mime, size_bytes, sha256, chunk_count, embed_model,
+                       project_id, created_at)
+                       VALUES (?,?,?,?,?,?,?,?)""",
+                    (filename, mime, size_bytes, sha256, len(chunks), embed_model, None, utcnow()),
                 )
                 doc_id = int(cur.lastrowid)
                 conn.executemany(
@@ -446,6 +549,42 @@ class AgentStore:
         ]
         scored.sort(key=lambda c: c.score, reverse=True)
         return scored[:k]
+
+
+VALID_CHAT_MODES = frozenset({"agent", "route", "chat", "cursor", "tools", "stream"})
+
+
+def _normalize_stored_mode(mode: str) -> str:
+    m = (mode or "agent").strip().lower()
+    if m == "stream":
+        return "chat"
+    if m == "tools":
+        return "route"
+    if m not in {"agent", "route", "chat", "cursor"}:
+        raise ValueError(f"Invalid mode {mode!r}")
+    return m
+
+
+def _conversation_dict(row: sqlite3.Row, *, include_project: bool = True) -> dict[str, Any]:
+    d = dict(row)
+    try:
+        aliases = json.loads(d.get("aliases") or "[]")
+        d["aliases"] = aliases if isinstance(aliases, list) else []
+    except json.JSONDecodeError:
+        d["aliases"] = []
+    if not include_project:
+        d.pop("project_name", None)
+        d.pop("project_slug", None)
+    return d
+
+
+def _project_dict(row: sqlite3.Row) -> dict[str, Any]:
+    d = dict(row)
+    try:
+        d["settings"] = json.loads(d.get("settings") or "{}")
+    except json.JSONDecodeError:
+        d["settings"] = {}
+    return d
 
 
 def _memory_dict(row: sqlite3.Row) -> dict[str, Any]:

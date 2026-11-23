@@ -193,12 +193,19 @@ function initialChatMode() {
   return "agent";
 }
 
-window.sahirSetChatMode = function sahirSetChatMode(mode) {
+window.sahirSetChatMode = function sahirSetChatMode(mode, { persistLocal = true, persistServer = true } = {}) {
   if (!CHAT_MODES.includes(mode)) return;
-  localStorage.setItem(CHAT_MODE_KEY, mode);
+  if (persistLocal) localStorage.setItem(CHAT_MODE_KEY, mode);
   if (homeModeSelect && homeModeSelect.value !== mode) homeModeSelect.value = mode;
   const agentSelect = document.getElementById("chat-mode");
   if (agentSelect && agentSelect.value !== mode) agentSelect.value = mode;
+  if (persistServer && homeConversationId) {
+    fetch(`/api/conversations/${homeConversationId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    }).catch(() => {});
+  }
 };
 
 function focusHomeChatInput() {
@@ -1573,6 +1580,7 @@ async function sendAudioBlob(blob, mode = "ptt", livePreview = "") {
       mode,
       phase: "final",
     });
+    if (homeConversationId) params.set("conversation_id", String(homeConversationId));
     if (livePreview) params.set("live_transcript", livePreview);
     const historyJson = JSON.stringify(getChatHistoryForApi());
     if (historyJson !== "[]") params.set("history", historyJson);

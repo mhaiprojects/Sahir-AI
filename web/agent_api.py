@@ -26,6 +26,11 @@ class ConversationRename(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
 
 
+class ConversationPatch(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    mode: str | None = Field(default=None, pattern="^(agent|route|chat|cursor|stream|tools)$")
+
+
 class MemoryCreate(BaseModel):
     content: str = Field(..., min_length=1, max_length=2000)
     category: str = "fact"
@@ -78,6 +83,13 @@ def create_agent_router(get_agent: Callable[[], Agent], request_lock: threading.
         }
 
     # ---------------------------------------------------------- conversations
+    @api.get("/api/projects")
+    def list_projects() -> dict[str, Any]:
+        store = get_agent().store
+        projects = store.list_projects()
+        general = store.get_project_by_slug("general")
+        return {"projects": projects, "general_project_id": general["id"] if general else None}
+
     @api.get("/api/conversations")
     def list_conversations(q: str | None = None, limit: int = Query(100, ge=1, le=500), offset: int = 0) -> dict[str, Any]:
         return {"conversations": get_agent().store.list_conversations(q=q, limit=limit, offset=offset)}
@@ -99,14 +111,26 @@ def create_agent_router(get_agent: Callable[[], Agent], request_lock: threading.
         return {**conv, "messages": store.get_messages(conv_id)}
 
     @api.patch("/api/conversations/{conv_id}")
-    def rename_conversation(conv_id: int, body: ConversationRename) -> dict[str, Any]:
-        try:
-            conv = get_agent().store.rename_conversation(conv_id, body.title)
-        except ValueError as exc:
-            raise HTTPException(400, str(exc)) from exc
+    def patch_conversation(conv_id: int, body: ConversationPatch) -> dict[str, Any]:
+        store = get_agent().store
+        conv = store.get_conversation(conv_id)
         if not conv:
             raise HTTPException(404, "Conversation not found")
-        return conv
+        if body.title is not None:
+            try:
+                conv = store.rename_conversation(conv_id, body.title)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
+            if not conv:
+                raise HTTPException(404, "Conversation not found")
+        if body.mode is not None:
+            try:
+                conv = store.set_conversation_mode(conv_id, body.mode)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
+            if not conv:
+                raise HTTPException(404, "Conversation not found")
+        return conv or store.get_conversation(conv_id)
 
     @api.delete("/api/conversations/{conv_id}")
     def delete_conversation(conv_id: int) -> dict[str, bool]:

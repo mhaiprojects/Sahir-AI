@@ -155,6 +155,13 @@ class Agent:
         if mode not in MODES:
             raise ValueError(f"mode must be one of {MODES}")
         conv = self.resolve_conversation(conversation_id, source=source, auto_session=auto_session)
+        if not conv.get("mode") and mode in MODES:
+            stored = "chat" if mode == "chat" else mode
+            try:
+                self.store.set_conversation_mode(conv["id"], stored)
+                conv = self.store.get_conversation(conv["id"]) or conv
+            except ValueError:
+                pass
         started = time.monotonic()
         publish("step", f"▶ {mode} request in chat #{conv['id']} ({source}/{input_type}): "
                 f"{' '.join(text.split())[:160]}", source=mode)

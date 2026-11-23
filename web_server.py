@@ -34,7 +34,9 @@ from tools.router import (
     route_utterance_detailed,
     run_cursor_task_detailed,
 )
+from agent.dispatcher import agent_reply_as_route, dispatch_voice_or_text
 from agent.factory import AgentStack, build_agent_stack
+from agent.loop import AgentReply
 from agent.vad import speech_seconds
 from web.agent_api import create_agent_router
 from web.models_api import create_models_router
@@ -865,21 +867,27 @@ def create_app() -> FastAPI:
                     "log_id": log_id,
                 }
 
-            context = None if force_cursor else _agent_context(transcript)
+            hist = _parse_history_json(history)
             if route:
-                result = route_utterance_detailed(
+                raw, _loop_mode = dispatch_voice_or_text(
+                    _get_agent_stack().agent,
                     transcript,
-                    settings,
-                    history=_parse_history_json(history),
+                    conversation_id=conversation_id,
                     force_cursor=force_cursor,
-                    context=context,
+                    history=hist,
+                    extra_meta={"input_type": "voice", "listening_mode": mode},
                 )
+                if isinstance(raw, AgentReply):
+                    conversation_id = raw.conversation_id
+                    result = agent_reply_as_route(raw)
+                else:
+                    result = raw
             else:
                 result = chat_text_only_detailed(
                     transcript,
                     settings,
-                    history=_parse_history_json(history),
-                    context=context,
+                    history=hist,
+                    context=_agent_context(transcript),
                 )
             conv_id = _persist_turn(
                 conversation_id, transcript, result, input_type="voice", source="voice-ui"

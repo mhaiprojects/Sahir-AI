@@ -35,6 +35,12 @@
     chatSelect.value = current ? String(current) : "";
   }
 
+  function uiMode(convMode) {
+    if (convMode === "chat") return "stream";
+    if (convMode === "tools") return "route";
+    return convMode || "agent";
+  }
+
   async function openChat(id) {
     const res = await fetch(`/api/conversations/${id}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -42,6 +48,7 @@
     homeConversationId = conv.id;
     localStorage.setItem(CONV_ID_KEY, String(conv.id));
     localStorage.setItem("agentConv", String(conv.id));
+    if (conv.mode) window.sahirSetChatMode?.(uiMode(conv.mode), { persistLocal: true, persistServer: false });
     const msgs = (conv.messages || []).filter((m) => m.role === "user" || m.role === "assistant");
     renderHomeMessagesFromHistory(msgs.slice(-CHAT_HISTORY_LIMIT));
     if (!msgs.length) addMessage("system", `Chat “${conv.title}” is empty. Type or speak to start.`);

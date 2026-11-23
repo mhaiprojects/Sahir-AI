@@ -31,6 +31,7 @@ class AgentConfig:
     auto_memory: bool = True
     memory_dedup_threshold: float = 0.92
     session_idle_minutes: int = 30
+    default_chat_mode: str = "agent"
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
@@ -48,4 +49,5 @@ class AgentConfig:
             auto_memory=_bool("AGENT_AUTO_MEMORY", True),
             memory_dedup_threshold=float(os.getenv("MEMORY_DEDUP_THRESHOLD", "0.92")),
             session_idle_minutes=int(os.getenv("AGENT_SESSION_IDLE_MINUTES", "30")),
+            default_chat_mode=(os.getenv("DEFAULT_CHAT_MODE", "agent").strip() or "agent"),
         )

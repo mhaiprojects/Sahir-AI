@@ -8,7 +8,7 @@ def test_conversation_crud_and_search(store: AgentStore):
     c2 = store.create_conversation()
     store.add_message(c2["id"], "user", "What's the weather like?")
 
-    convs = store.list_conversations()
+    convs = [x for x in store.list_conversations() if x.get("kind") != "supervisor"]
     assert {x["id"] for x in convs} == {c["id"], c2["id"]}
     assert store.get_conversation(c["id"])["message_count"] == 2
 
