@@ -632,6 +632,73 @@ body.tour-active {
   overflow-wrap: anywhere;
 }
 
+.numbered-reply-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.numbered-reply-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 0.45rem;
+  row-gap: 0.35rem;
+  align-items: start;
+  width: 100%;
+}
+
+.numbered-reply-marker {
+  font-weight: 600;
+  line-height: 1.45;
+  grid-column: 1;
+  grid-row: 1;
+  white-space: nowrap;
+}
+
+.numbered-reply-text {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.numbered-action-chip {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  justify-self: start;
+  max-width: 100%;
+  font-size: 0.78rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--accent, #5b8def);
+  background: rgba(91, 141, 239, 0.12);
+  color: inherit;
+  cursor: pointer;
+}
+
+.numbered-action-chip:hover {
+  background: rgba(91, 141, 239, 0.22);
+}
+
+.msg.assistant .msg-content.markdown-body:has(.numbered-reply-list) {
+  overflow: visible;
+  max-width: 100%;
+}
+
+@media (max-width: 979px) {
+  .numbered-reply-item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .numbered-action-chip {
+    margin-left: 0;
+    margin-top: 0.15rem;
+  }
+}
+
 .msg-content.markdown-body > :first-child { margin-top: 0; }
 .msg-content.markdown-body > :last-child { margin-bottom: 0; }
 

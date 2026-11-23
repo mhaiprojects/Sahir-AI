@@ -22,7 +22,38 @@ from agent.supervisor import SupervisorService
 from config import Settings
 from tools import router
 
+from agent.numbered_replies import build_numbered_reply, tts_text_for_reply
+
 logger = logging.getLogger(__name__)
+
+
+def _save_assistant_reply(
+    store: AgentStore,
+    conv_id: int,
+    reply: str,
+    *,
+    action: str,
+    action_details: dict[str, Any],
+    sources: dict[str, Any],
+    tasks: list[dict[str, Any]] | None = None,
+) -> tuple[str, list[dict[str, Any]], int, str | None, bool]:
+    raw = (reply or "").strip()
+    display, items, numbered_ui = build_numbered_reply(
+        reply, action=action, action_details=action_details, tasks=tasks or None,
+    )
+    tts = tts_text_for_reply(raw_reply=raw, items=items)
+    meta: dict[str, Any] = {
+        "action": action,
+        "action_details": action_details,
+        "sources": sources,
+        "numbered_items": items,
+        "tts_text": tts,
+        "show_numbered_list": numbered_ui,
+    }
+    if tasks:
+        meta["tasks"] = tasks
+    assistant_id = store.add_message(conv_id, "assistant", display, meta)
+    return display, items, assistant_id, tts, numbered_ui
 
 MODES = ("agent", "route", "chat", "cursor")
 
@@ -70,6 +101,9 @@ class AgentReply:
     user_message_id: int
     assistant_message_id: int
     sources: dict[str, Any]
+    numbered_items: list[dict[str, Any]] = field(default_factory=list)
+    tts_text: str | None = None
+    show_numbered_list: bool = False
 
 
 class Agent:
@@ -207,9 +241,9 @@ class Agent:
                 on_progress=on_progress,
             )
             sources = ctx.sources()
-            assistant_id = self.store.add_message(
-                conv["id"], "assistant", sup_result.reply or "(no reply)",
-                {"action": sup_result.action, "action_details": sup_result.action_details, "sources": sources},
+            display, items, assistant_id, tts, numbered_ui = _save_assistant_reply(
+                self.store, conv["id"], sup_result.reply or "(no reply)",
+                action=sup_result.action, action_details=sup_result.action_details, sources=sources,
             )
             publish(
                 "step",
@@ -222,9 +256,10 @@ class Agent:
                 if details.get("conversation_id"):
                     out_cid = int(details["conversation_id"])
             return AgentReply(
-                reply=sup_result.reply, action=sup_result.action, action_details=sup_result.action_details,
+                reply=display, action=sup_result.action, action_details=sup_result.action_details,
                 routed=sup_result.routed, conversation_id=out_cid, user_message_id=user_id,
-                assistant_message_id=assistant_id, sources=sources,
+                assistant_message_id=assistant_id, sources=sources, numbered_items=items,
+                tts_text=tts, show_numbered_list=numbered_ui,
             )
 
         if mode == "agent" and self.orchestrator is None:
@@ -256,10 +291,10 @@ class Agent:
             result = router.chat_text_only_detailed(text, self.settings, history=history, context=block)
 
         sources = ctx.sources()
-        assistant_id = self.store.add_message(
-            conv["id"], "assistant", result.reply or "(no reply)",
-            {"action": result.action, "action_details": result.action_details, "sources": sources,
-             "tasks": getattr(result, "tasks", [])},
+        tasks = getattr(result, "tasks", [])
+        display, items, assistant_id, tts, numbered_ui = _save_assistant_reply(
+            self.store, conv["id"], result.reply or "(no reply)",
+            action=result.action, action_details=result.action_details, sources=sources, tasks=tasks,
         )
         publish("error" if result.action == "error" else "step",
                 f"■ {mode} done in {time.monotonic() - started:.1f}s → action {result.action}", source=mode,
@@ -267,9 +302,10 @@ class Agent:
         if result.action != "error" and mode != "cursor":
             self._schedule_memory_extraction(conv["id"])
         return AgentReply(
-            reply=result.reply, action=result.action, action_details=result.action_details,
+            reply=display, action=result.action, action_details=result.action_details,
             routed=result.routed, conversation_id=conv["id"], user_message_id=user_id,
-            assistant_message_id=assistant_id, sources=sources,
+            assistant_message_id=assistant_id, sources=sources, numbered_items=items,
+            tts_text=tts, show_numbered_list=numbered_ui,
         )
 
     def stream(self, text: str, *, conversation_id: int | None = None, source: str = "web") -> Iterator[dict[str, Any]]:
@@ -311,13 +347,17 @@ class Agent:
         publish("error" if error else "step",
                 f"■ chat done in {time.monotonic() - started:.1f}s ({len(tokens)} tokens)"
                 + (f": {error}" if error else ""), source="chat", level="error" if error else "info")
-        assistant_id = self.store.add_message(
-            conv["id"], "assistant", reply,
-            {"action": "error" if error else "stream_chat", "sources": ctx.sources()},
+        action = "error" if error else "stream_chat"
+        display, items, assistant_id, tts, numbered_ui = _save_assistant_reply(
+            self.store, conv["id"], reply, action=action, action_details={}, sources=ctx.sources(),
         )
         if not error:
             self._schedule_memory_extraction(conv["id"])
-        yield {"type": "done", "reply": reply, "conversation_id": conv["id"], "assistant_message_id": assistant_id}
+        yield {
+            "type": "done", "reply": display, "conversation_id": conv["id"],
+            "assistant_message_id": assistant_id, "numbered_items": items,
+            "tts_text": tts, "show_numbered_list": numbered_ui,
+        }
 
     def respond_events(self, text: str, *, conversation_id: int | None = None, mode: str = "chat",
                        source: str = "web", input_type: str = "text", auto_session: bool = False,
@@ -360,4 +400,7 @@ class Agent:
             "type": "done", "reply": r.reply, "conversation_id": r.conversation_id,
             "action": r.action, "action_details": r.action_details, "routed": r.routed,
             "sources": r.sources, "assistant_message_id": r.assistant_message_id,
+            "numbered_items": r.numbered_items,
+            "tts_text": r.tts_text,
+            "show_numbered_list": r.show_numbered_list,
         }

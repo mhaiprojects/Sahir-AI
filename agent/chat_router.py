@@ -196,6 +196,38 @@ def route(
 
     tier0 = ctx.tier0_enabled
 
+    if tier0 and store and ctx.active_chat_id:
+        from agent.numbered_actions import get_pending_confirm
+        from agent.numbered_replies import parse_confirm_answer, parse_do_action_index
+
+        pending = get_pending_confirm(int(ctx.active_chat_id))
+        confirm = parse_confirm_answer(text)
+        if confirm and pending:
+            d = RouteDecision(
+                label="S",
+                tier=0,
+                confidence=0.99,
+                command="numbered_confirm",
+                utterance=text,
+                payload={"answer": confirm},
+            )
+            d.ms = (time.perf_counter() - t0) * 1000
+            _publish_route(d)
+            return d
+        idx = parse_do_action_index(text)
+        if idx is not None:
+            d = RouteDecision(
+                label="S",
+                tier=0,
+                confidence=0.97,
+                command="do_numbered_action",
+                utterance=text,
+                payload={"index": idx},
+            )
+            d.ms = (time.perf_counter() - t0) * 1000
+            _publish_route(d)
+            return d
+
     if tier0:
         voice_ctl = try_tier0_voice_control(text)
         if voice_ctl is not None:

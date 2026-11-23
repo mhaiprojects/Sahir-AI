@@ -241,8 +241,14 @@ class VoiceSession:
                 agent = self.get_agent()
                 cmd_store = self.get_command_store() if self.get_command_store else None
                 from agent.chat_router import try_tier0_voice_control
+                from agent.numbered_actions import get_pending_confirm
+                from agent.numbered_replies import parse_confirm_answer
 
-                voice_ctl = try_tier0_voice_control(text)
+                voice_ctl = None
+                cid = int(self.conversation_id or 0)
+                confirm_ans = parse_confirm_answer(text) if cid else None
+                if not (confirm_ans and get_pending_confirm(cid)):
+                    voice_ctl = try_tier0_voice_control(text)
 
                 def _finish(decision, ctx, *, draft_ok: bool) -> tuple:
                     self.route_state.route_final_mono = time.monotonic()
@@ -366,7 +372,11 @@ class VoiceSession:
                 return
             await self.send({"type": "status", "state": "speaking"})
             interrupted = False
-            for seq, sentence in enumerate(split_sentences(strip_markdown_for_speech(r.reply))):
+            if getattr(r, "tts_text", None):
+                spoken_sentences = split_sentences(r.tts_text)
+            else:
+                spoken_sentences = split_sentences(strip_markdown_for_speech(r.reply))
+            for seq, sentence in enumerate(spoken_sentences):
                 if not self._alive(gen):
                     interrupted = True
                     break

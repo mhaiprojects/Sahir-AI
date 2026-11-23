@@ -50,7 +50,7 @@ _ORCH_PC_TOOLS: list[dict[str, Any]] = [
 
 FINAL_SYSTEM = """You are Sahir, a local voice assistant. Using the worker results below, answer the user's
 request directly in 1-3 short spoken sentences, stating the key facts from the results (not just that
-work was done). Mention failures honestly. No markdown."""
+work was done). Mention failures honestly. No markdown. Use a short numbered list (1. 2.) when there are multiple points."""
 
 _RESEARCH_RE = re.compile(r"\b(summari[sz]e|research|my (notes|docs|documents|files)|according to)\b", re.I)
 _CLICKUP_RE = re.compile(r"\bclick ?up\b", re.I)

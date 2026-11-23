@@ -65,6 +65,13 @@ class AgentChatRequest(BaseModel):
     mode: str = Field(default="agent", pattern="^(agent|route|chat|cursor|stream)$")
 
 
+class NumberedExecuteRequest(BaseModel):
+    conversation_id: int
+    message_id: int
+    index: int = Field(..., ge=1, le=50)
+    confirmed: bool = False
+
+
 class ProjectSettingsPatch(BaseModel):
     cursor_workdir: str | None = Field(default=None, max_length=500)
 
@@ -420,6 +427,41 @@ def create_agent_router(
             raise HTTPException(502, f"Embedding failed: {exc}") from exc
         return {"results": [h.to_dict() for h in hits]}
 
+    @api.post("/api/agent/numbered/execute")
+    def numbered_execute(body: NumberedExecuteRequest) -> dict[str, Any]:
+        from agent.numbered_actions import execute_numbered_action, pick_item
+        from agent.numbered_replies import action_requires_confirm, confirm_prompt_for_action
+
+        agent = get_agent()
+        msgs = agent.store.get_messages(body.conversation_id, limit=80)
+        target = next((m for m in msgs if int(m["id"]) == body.message_id), None)
+        if not target or target.get("role") != "assistant":
+            raise HTTPException(404, "Message not found")
+        items = (target.get("meta") or {}).get("numbered_items") or []
+        item = pick_item(items, body.index)
+        if not item or not item.get("action"):
+            raise HTTPException(400, "No actionable item at that index")
+        act = item["action"]
+        if action_requires_confirm(act) and not body.confirmed:
+            return {
+                "needs_confirm": True,
+                "prompt": confirm_prompt_for_action(act),
+                "index": body.index,
+                "chip": act.get("kind"),
+            }
+        if not lock.acquire(blocking=False):
+            raise HTTPException(429, "Assistant is busy")
+        try:
+            result = execute_numbered_action(agent, act)
+            return {
+                "reply": result.reply,
+                "action": result.action,
+                "action_details": result.action_details,
+                "routed": result.routed,
+            }
+        finally:
+            lock.release()
+
     # ------------------------------------------------------------- agent chat
     @api.post("/api/agent/chat")
     def agent_chat(body: AgentChatRequest) -> dict[str, Any]:
@@ -455,10 +497,14 @@ def create_agent_router(
             raise HTTPException(400, str(exc)) from exc
         finally:
             lock.release()
+        items = getattr(r, "numbered_items", None) or []
         return {
             "reply": r.reply, "action": r.action, "action_details": r.action_details, "routed": r.routed,
             "conversation_id": r.conversation_id, "user_message_id": r.user_message_id,
             "assistant_message_id": r.assistant_message_id, "sources": r.sources,
+            "numbered_items": items,
+            "tts_text": getattr(r, "tts_text", None),
+            "show_numbered_list": bool(getattr(r, "show_numbered_list", False)),
             **route_fields(decision),
         }
 

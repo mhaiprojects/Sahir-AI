@@ -181,6 +181,51 @@ def execute_s_command(
             sources={},
         )
 
+    if cmd == "do_numbered_action":
+        from agent.numbered_actions import begin_do_action
+
+        cid = int(ctx.active_chat_id or 0)
+        index = int((decision.payload or {}).get("index") or 0)
+        raw = begin_do_action(agent, cid, index)
+        return AgentReply(
+            reply=raw.reply,
+            action=raw.action,
+            action_details=raw.action_details,
+            routed=raw.routed,
+            conversation_id=cid,
+            user_message_id=0,
+            assistant_message_id=0,
+            sources={},
+        )
+
+    if cmd == "numbered_confirm":
+        from agent.numbered_actions import resolve_pending_confirm
+
+        cid = int(ctx.active_chat_id or 0)
+        ans = str((decision.payload or {}).get("answer") or "")
+        raw = resolve_pending_confirm(agent, cid, ans)
+        if raw is None:
+            return AgentReply(
+                reply="Please say yes or no.",
+                action="confirm_pending",
+                action_details={},
+                routed=True,
+                conversation_id=cid,
+                user_message_id=0,
+                assistant_message_id=0,
+                sources={},
+            )
+        return AgentReply(
+            reply=raw.reply,
+            action=raw.action,
+            action_details=raw.action_details,
+            routed=raw.routed,
+            conversation_id=cid,
+            user_message_id=0,
+            assistant_message_id=0,
+            sources={},
+        )
+
     return AgentReply(
         reply=f"Unknown command {cmd!r}.",
         action="unknown_command",

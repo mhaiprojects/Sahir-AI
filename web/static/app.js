@@ -137,7 +137,97 @@ function rememberChatTurn(role, text) {
   }
 }
 
-function addMessage(role, text, { skipRemember = false, meta = null } = {}) {
+function actionChipLabel(action) {
+  if (!action) return "";
+  const kind = action.kind || "action";
+  if (kind === "run_command") {
+    const args = (action.args || []).join(" ");
+    return `Run ${action.command || "command"}${args ? ` ${args}` : ""}`;
+  }
+  if (kind === "open_app") return `Open ${action.app_name || "app"}`;
+  if (kind === "delegate") return `Delegate: ${action.type || "worker"}`;
+  if (kind === "cursor") return "Cursor task";
+  if (kind === "supervisor") return `Supervisor: ${action.tool || "action"}`;
+  return String(kind).replace(/_/g, " ");
+}
+
+async function runNumberedAction(conversationId, messageId, index, { confirmed = false } = {}) {
+  const res = await fetch("/api/agent/numbered/execute", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({
+      conversation_id: conversationId,
+      message_id: messageId,
+      index,
+      confirmed,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || res.statusText);
+  if (data.needs_confirm) {
+    const ok = window.confirm(data.prompt || "Run this action?");
+    if (!ok) return { cancelled: true };
+    return runNumberedAction(conversationId, messageId, index, { confirmed: true });
+  }
+  return data;
+}
+
+function shouldRenderNumberedList(items, text, meta) {
+  if (meta?.show_numbered_list === true) return !!items?.length;
+  if (meta?.show_numbered_list === false) return false;
+  if (!items?.length || items.length < 2) return false;
+  return /^\s*\d+[.)]\s/m.test(String(text || ""));
+}
+
+function scrollChatToLatest() {
+  if (!chatLog) return;
+  chatLog.scrollTop = chatLog.scrollHeight;
+  const last = chatLog.querySelector(".msg.assistant:last-of-type, .msg.user:last-of-type");
+  last?.scrollIntoView({ block: "nearest", behavior: "instant" });
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function appendNumberedItems(container, items, { conversationId = 0, messageId = 0 } = {}) {
+  if (!items?.length) return;
+  const list = document.createElement("ol");
+  list.className = "numbered-reply-list";
+  list.setAttribute("role", "list");
+  items.forEach((it) => {
+    const li = document.createElement("li");
+    li.className = "numbered-reply-item";
+    const marker = document.createElement("span");
+    marker.className = "numbered-reply-marker";
+    marker.setAttribute("aria-hidden", "true");
+    marker.textContent = `${it.n}.`;
+    const text = document.createElement("span");
+    text.className = "numbered-reply-text";
+    if (typeof renderMarkdown === "function") text.innerHTML = renderMarkdown(it.text || "");
+    else text.textContent = it.text || "";
+    li.append(marker, text);
+    if (it.action) {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "numbered-action-chip";
+      const n = it.n != null ? it.n : "";
+      chip.textContent = n ? `${n} · ${actionChipLabel(it.action)}` : actionChipLabel(it.action);
+      chip.addEventListener("click", async () => {
+        try {
+          const r = await runNumberedAction(conversationId || homeConversationId, messageId, it.n);
+          if (r?.cancelled) return;
+          if (r?.reply) addMessage("assistant", r.reply);
+        } catch (err) {
+          addMessage("system", `Action failed: ${err.message}`);
+        }
+      });
+      li.appendChild(chip);
+    }
+    list.appendChild(li);
+  });
+  container.appendChild(list);
+}
+
+function addMessage(role, text, { skipRemember = false, meta = null, numberedItems = null, messageId = 0 } = {}) {
   const el = document.createElement("div");
   if (meta?.injection) {
     el.className = "msg injection";
@@ -157,7 +247,14 @@ function addMessage(role, text, { skipRemember = false, meta = null } = {}) {
     return;
   }
   el.className = `msg ${role}`;
-  if ((role === "user" || role === "assistant") && typeof renderMarkdown === "function") {
+  const items = numberedItems || meta?.numbered_items;
+  if ((role === "user" || role === "assistant") && shouldRenderNumberedList(items, text, meta)) {
+    const content = document.createElement("div");
+    content.className = "msg-content markdown-body";
+    appendNumberedItems(content, items, { conversationId: homeConversationId, messageId: messageId || meta?.id || 0 });
+    if (!skipRemember) rememberChatTurn(role, text);
+    el.appendChild(content);
+  } else if ((role === "user" || role === "assistant") && typeof renderMarkdown === "function") {
     const content = document.createElement("div");
     content.className = "msg-content markdown-body";
     content.innerHTML = renderMarkdown(text);
@@ -167,7 +264,7 @@ function addMessage(role, text, { skipRemember = false, meta = null } = {}) {
     el.textContent = text;
   }
   chatLog.appendChild(el);
-  chatLog.scrollTop = chatLog.scrollHeight;
+  scrollChatToLatest();
   updateChatEmptyState();
 }
 
@@ -428,6 +525,10 @@ function updateChatEmptyState() {
   chatEmptyState.classList.toggle("hidden", !!hasMsgs);
 }
 
+function markChatReady() {
+  if (document.body) document.body.dataset.sahirChatReady = "1";
+}
+
 function renderHomeMessagesFromHistory(messages) {
   if (!chatLog) return;
   chatLog.setAttribute("aria-busy", "true");
@@ -438,15 +539,29 @@ function renderHomeMessagesFromHistory(messages) {
     if (m.role === "system" && meta.injection) {
       addMessage("system", m.content, { skipRemember: true, meta });
     } else if (m.role === "user" || m.role === "assistant") {
-      addMessage(m.role, m.content, { skipRemember: false });
+      addMessage(m.role, m.content, {
+        skipRemember: false,
+        meta: m.meta,
+        messageId: m.id,
+        numberedItems: m.meta?.numbered_items,
+      });
     }
   }
   chatLog.removeAttribute("aria-busy");
   updateChatEmptyState();
+  scrollChatToLatest();
+  if (messages?.length) markChatReady();
 }
 
 async function loadHomeConversation() {
   try {
+    const qpConv = Number(new URLSearchParams(window.location.search).get("conv"));
+    if (qpConv && window.sahirOpenConversation) {
+      await window.sahirOpenConversation(qpConv);
+      scrollChatToLatest();
+      markChatReady();
+      return;
+    }
     const projRes = await fetch("/api/projects");
     const projData = await projRes.json();
     const projects = projData.projects || [];
@@ -1702,7 +1817,13 @@ async function sendChat(message, { forceCursor = false } = {}) {
       },
     });
     const reply = data.reply || "(no reply text)";
-    if (typeof renderMarkdown === "function") {
+    pendingBody.innerHTML = "";
+    if (shouldRenderNumberedList(data.numbered_items, reply, data)) {
+      appendNumberedItems(pendingBody, data.numbered_items, {
+        conversationId: data.conversation_id || homeConversationId,
+        messageId: data.assistant_message_id,
+      });
+    } else if (typeof renderMarkdown === "function") {
       pendingBody.innerHTML = renderMarkdown(reply);
     } else {
       pendingBody.textContent = reply;
@@ -1732,7 +1853,11 @@ async function sendChat(message, { forceCursor = false } = {}) {
       error_message: null,
     });
 
-    await maybePlayTts(reply);
+    if (data.tts_text) {
+      await maybePlayTts(data.tts_text);
+    } else {
+      await maybePlayTts(reply);
+    }
   } catch (err) {
     pending.remove();
     if (err.name === "AbortError") {
