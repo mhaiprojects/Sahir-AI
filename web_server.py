@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import shutil
@@ -15,11 +16,12 @@ import numpy as np
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
+import activity
 from audio_decode import PartialAudioError, decode_audio_bytes
 from audio_pipeline import SpeechPipeline
 from config import Settings
@@ -40,6 +42,7 @@ from web.voice_ws import register_voice_ws
 from web.commands import VALID_ACTIONS, VoiceCommandStore
 from web.db import RequestLogStore
 
+ACTIVITY_STREAM_MAX_S = 120
 logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).resolve().parent / "web" / "static"
@@ -130,7 +133,9 @@ def _get_settings() -> Settings:
 def _get_model_manager() -> ModelManager:
     mgr = get_manager()
     if mgr is None:
-        mgr = ModelManager(_get_settings())  # applies the persisted active model to Settings
+        # Applies the persisted active model to Settings, then (auto_default) makes the smallest
+        # installed chat model active unless the user picked one that is still installed.
+        mgr = ModelManager(_get_settings(), auto_default=True)
         set_manager(mgr)
     return mgr
 
@@ -403,6 +408,48 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Live routine / WIP panel: every command, CLI line, tool call and background step (activity.py).
+    activity.install_log_bridge()
+
+    @app.get("/api/activity")
+    def api_activity(since: int = 0, limit: int = 300) -> dict[str, Any]:
+        return {"events": activity.bus.history(since=since, limit=max(1, min(limit, 600)))}
+
+    @app.get("/api/activity/stream")
+    async def api_activity_stream(request: Request, since: int = 0) -> StreamingResponse:
+        last = request.headers.get("last-event-id", "")
+        if last.isdigit():
+            since = int(last)
+        q = activity.bus.subscribe()
+
+        async def events():
+            # Each connection lives at most ACTIVITY_STREAM_MAX_S; EventSource reconnects with
+            # Last-Event-ID so nothing is lost, and a server restart never waits on an open stream.
+            last_id = since
+            ends_at = time.monotonic() + ACTIVITY_STREAM_MAX_S
+            try:
+                yield "retry: 2000\n\n"
+                for ev in activity.bus.history(since=since, limit=300):
+                    last_id = ev["id"]
+                    yield f"id: {ev['id']}\ndata: {json.dumps(ev, ensure_ascii=False)}\n\n"
+                while time.monotonic() < ends_at:
+                    if await request.is_disconnected():
+                        break
+                    try:
+                        ev = await asyncio.wait_for(q.get(), timeout=min(10.0, max(0.05, ends_at - time.monotonic())))
+                    except asyncio.TimeoutError:
+                        yield ": keep-alive\n\n"
+                        continue
+                    if ev["id"] <= last_id:
+                        continue
+                    last_id = ev["id"]
+                    yield f"id: {ev['id']}\ndata: {json.dumps(ev, ensure_ascii=False)}\n\n"
+            finally:
+                activity.bus.unsubscribe(q)
+
+        return StreamingResponse(events(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     @app.get("/api/health")
     def api_health() -> dict[str, Any]:
@@ -893,6 +940,7 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail="Message is empty")
 
         pipeline = _get_pipeline()
+        activity.publish("step", f"text-to-speech: {len(text)} characters", source="tts")
         wav, _sample_rate = pipeline.synthesize_wav(text)
         if not wav:
             raise HTTPException(status_code=400, detail="Could not synthesize speech")
@@ -975,6 +1023,8 @@ def run_web_server(settings: Settings | None = None) -> None:
         host=settings.web_host,
         port=settings.web_port,
         log_level="info",
+        # Don't let open streams (activity panel, live voice) hold a restart for long.
+        timeout_graceful_shutdown=5,
         **ssl_kwargs,
     )
 

@@ -7,6 +7,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 
+from activity import publish
 from config import Settings
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ def open_app(app_name: str, settings: Settings) -> ActionResult:
     binary = shutil.which(name) or shutil.which(app_name)
     if not binary:
         return ActionResult(message=f"Could not find application {app_name!r}.", success=False)
+    publish("cmd", f"$ {binary} &", source="pc", tool="open_app")
     try:
         subprocess.Popen([binary], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except OSError as exc:
@@ -46,6 +48,7 @@ def run_command(command: str, args: list[str], settings: Settings) -> ActionResu
     binary = shutil.which(command)
     if not binary:
         return ActionResult(message=f"Command {command!r} was not found.", success=False)
+    publish("cmd", "$ " + " ".join([command, *map(str, args)]), source="pc", tool="run_command")
     try:
         completed = subprocess.run(
             [binary, *args],
@@ -55,8 +58,11 @@ def run_command(command: str, args: list[str], settings: Settings) -> ActionResu
             check=False,
         )
     except subprocess.TimeoutExpired:
+        publish("error", f"{command} timed out after 15s", source="pc", level="error")
         return ActionResult(message=f"Command {command} timed out.", success=False)
     output = (completed.stdout or completed.stderr or "").strip()
+    publish("out" if completed.returncode == 0 else "error",
+            f"[exit {completed.returncode}]" + (f"\n{output[:2000]}" if output else ""), source="pc")
     if not output:
         output = f"{command} exited with code {completed.returncode}."
     logger.info("Ran command: %s %s", command, args)
@@ -68,6 +74,7 @@ def set_volume(percent: int) -> ActionResult:
     binary = shutil.which("pactl")
     if not binary:
         return ActionResult(message="pactl is not available for volume control.", success=False)
+    publish("cmd", f"$ pactl set-sink-volume @DEFAULT_SINK@ {percent}%", source="pc", tool="set_volume")
     try:
         subprocess.run(
             [binary, "set-sink-volume", "@DEFAULT_SINK@", f"{percent}%"],

@@ -5,12 +5,14 @@ from __future__ import annotations
 import logging
 import queue
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Iterator
 
 ProgressFn = Callable[[dict[str, Any]], None]
 
+from activity import publish, tee_progress
 from agent.config import AgentConfig
 from agent.llm import ChatLLM, Embedder
 from agent.memory import MemoryService
@@ -128,6 +130,7 @@ class Agent:
             return
 
         def work() -> None:
+            publish("step", f"background: extracting memories from chat #{conversation_id}", source="memory")
             try:
                 recent = self.store.get_messages(conversation_id, limit=4)
                 self.memory.extract_from_messages(recent, conversation_id=conversation_id)
@@ -152,8 +155,12 @@ class Agent:
         if mode not in MODES:
             raise ValueError(f"mode must be one of {MODES}")
         conv = self.resolve_conversation(conversation_id, source=source, auto_session=auto_session)
-        if on_progress:
-            on_progress({"type": "meta", "conversation_id": conv["id"], "mode": mode})
+        started = time.monotonic()
+        publish("step", f"▶ {mode} request in chat #{conv['id']} ({source}/{input_type}): "
+                f"{' '.join(text.split())[:160]}", source=mode)
+        # Mirror every progress event (stages, tool calls, workers, model switches) to the live panel.
+        on_progress = tee_progress(on_progress, source=mode)
+        on_progress({"type": "meta", "conversation_id": conv["id"], "mode": mode})
         history = self.history(conv["id"])
         if mode != "cursor" and on_progress:
             on_progress({"type": "progress", "stage": "context", "message": "Retrieving memories and documents…"})
@@ -199,6 +206,9 @@ class Agent:
             {"action": result.action, "action_details": result.action_details, "sources": sources,
              "tasks": getattr(result, "tasks", [])},
         )
+        publish("error" if result.action == "error" else "step",
+                f"■ {mode} done in {time.monotonic() - started:.1f}s → action {result.action}", source=mode,
+                level="error" if result.action == "error" else "info")
         if result.action != "error" and mode != "cursor":
             self._schedule_memory_extraction(conv["id"])
         return AgentReply(
@@ -218,6 +228,13 @@ class Agent:
         user_id = self.store.add_message(conv["id"], "user", text, {"input_type": "text", "stream": True})
         self._auto_title(conv, text)
         yield {"type": "meta", "conversation_id": conv["id"], "user_message_id": user_id, "sources": ctx.sources()}
+        started = time.monotonic()
+        publish("step", f"▶ chat request in chat #{conv['id']} ({source}): {' '.join(text.split())[:160]}",
+                source="chat")
+        if ctx.memories or ctx.chunks:
+            publish("step", f"[context] {len(ctx.memories)} memories, {len(ctx.chunks)} document excerpts",
+                    source="chat")
+        publish("model", f"streaming reply with {self.llm.model}", source="chat")
 
         system = STREAM_SYSTEM
         block = ctx.to_block()
@@ -235,6 +252,9 @@ class Agent:
             error = str(exc)
             yield {"type": "error", "error": error}
         reply = "".join(tokens).strip() or (f"Error: {error}" if error else "(no reply)")
+        publish("error" if error else "step",
+                f"■ chat done in {time.monotonic() - started:.1f}s ({len(tokens)} tokens)"
+                + (f": {error}" if error else ""), source="chat", level="error" if error else "info")
         assistant_id = self.store.add_message(
             conv["id"], "assistant", reply,
             {"action": "error" if error else "stream_chat", "sources": ctx.sources()},

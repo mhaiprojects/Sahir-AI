@@ -14,6 +14,7 @@ from typing import Any, Callable
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from activity import publish
 from agent.models import ModelManager
 
 logger = logging.getLogger(__name__)
@@ -91,10 +92,37 @@ class BenchRunner:
                 cmd += ["--models", ",".join(models)]
             if quick:
                 cmd.append("--quick")
-            log = open(self.bench_dir / "last_run.log", "w")
+            log_path = self.bench_dir / "last_run.log"
+            log = open(log_path, "w")
             self._proc = subprocess.Popen(cmd, cwd=str(PROJECT_ROOT), stdout=log, stderr=subprocess.STDOUT)
             self._started_at = time.time()
+            shown = " ".join(Path(c).name if i < 2 else c for i, c in enumerate(cmd))
+            publish("cmd", f"$ {shown}", source="bench", pid=self._proc.pid)
+            threading.Thread(target=self._tail, args=(self._proc, log_path), name="bench-tail",
+                             daemon=True).start()
             return {"started": True, "pid": self._proc.pid}
+
+    @staticmethod
+    def _tail(proc: subprocess.Popen, log_path: Path) -> None:
+        """Stream the benchmark's output to the live activity panel while it runs."""
+        try:
+            with open(log_path, "r", errors="replace") as fh:
+                while True:
+                    line = fh.readline()
+                    if line:
+                        publish("out", line.rstrip(), source="bench")
+                        continue
+                    if proc.poll() is not None:
+                        rest = fh.read()
+                        for extra in rest.splitlines():
+                            publish("out", extra, source="bench")
+                        break
+                    time.sleep(0.5)
+            code = proc.returncode
+            publish("step" if code == 0 else "error", f"benchmark exited with code {code}", source="bench",
+                    level="info" if code == 0 else "error")
+        except Exception as exc:
+            publish("error", f"benchmark log tail stopped: {exc}", source="bench", level="warning")
 
     def status(self) -> dict[str, Any]:
         latest = self.bench_dir / "latest.json"

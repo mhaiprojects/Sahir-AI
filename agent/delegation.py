@@ -21,6 +21,8 @@ from typing import Any, Callable, Protocol
 
 from agent.store import AgentStore, utcnow
 
+from activity import publish
+
 logger = logging.getLogger(__name__)
 
 PRIORITIES = {"urgent": 1, "high": 2, "normal": 3, "low": 4}
@@ -183,6 +185,8 @@ class Dispatcher:
                              duration=0.0, worker="none", attempts=0)
             self._finish(task, res)
             return res
+        publish("worker", f"task {task.id} → {task.type} worker: {' '.join(task.description.split())[:160]}",
+                source="dispatcher")
         errors: list[str] = []
         attempts = 0
         status = "error"
@@ -205,6 +209,8 @@ class Dispatcher:
                 status = "error"
                 errors.append(f"attempt {attempts}: {type(exc).__name__}: {exc}")
             if attempt < worker.max_retries:
+                publish("error", f"task {task.id} attempt {attempts} failed ({errors[-1]}); retrying",
+                        source="dispatcher", level="warning")
                 time.sleep(self.retry_backoff_s * (2**attempt))
         res = TaskResult(task.id, status, output=output, errors=errors,
                          duration=round(time.monotonic() - started, 3), worker=worker.type, attempts=attempts)
