@@ -10,8 +10,56 @@ import pytest
 from fastapi.testclient import TestClient
 
 import activity
-from activity import ActivityBus, ActivityLogHandler, describe_progress, tee_progress
+from activity import (
+    ActivityBus,
+    ActivityLogHandler,
+    CLIENT_PUBLISH_KINDS,
+    STRUCTURED_KINDS,
+    describe_progress,
+    tee_progress,
+)
 from tools.cursor_cli import _StreamEvents
+
+
+def test_structured_event_kinds() -> None:
+    assert STRUCTURED_KINDS == frozenset({"route", "switch", "supervisor", "inject", "spawn"})
+    assert CLIENT_PUBLISH_KINDS == frozenset({"switch"})
+    bus = ActivityBus()
+    route = bus.publish("route", "", source="router", label="C", tier=0, confidence=0.92, ms=3)
+    assert route is not None and route["kind"] == "route"
+    assert route["data"]["label"] == "C"
+    assert "T0" in route["text"] and "0.92" in route["text"]
+    switch = bus.publish("switch", "", source="ui", conversation_id=9, project_name="General", chat_title="Notes")
+    assert switch and switch["text"] == "General · Notes"
+    sup = bus.publish("supervisor", "", source="supervisor", state="briefing sub-chats")
+    assert sup and "briefing" in sup["text"]
+    assert bus.publish("inject", "", source="sup", target="API refactor", count=3)
+    assert bus.publish("spawn", "", source="sup", chat_title="Flight", project_name="Travel")
+    assert bus.publish("route", "", source="x") is None  # no data → dropped
+
+
+def test_index_html_removed_legacy_activity_boxes() -> None:
+    html = (Path(__file__).resolve().parents[1] / "web" / "static" / "index.html").read_text(encoding="utf-8")
+    assert 'id="activity-feed"' not in html
+    assert 'id="activity-list"' not in html
+    assert 'id="agent-activity"' not in html
+    assert 'id="wip-context"' in html
+
+
+def test_activity_publish_switch_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    import web_server
+
+    bus = ActivityBus()
+    monkeypatch.setattr(activity, "bus", bus)
+    client = TestClient(web_server.create_app())
+    bad = client.post("/api/activity/publish", json={"kind": "route", "data": {"label": "C"}})
+    assert bad.status_code == 400
+    ok = client.post("/api/activity/publish", json={
+        "kind": "switch",
+        "data": {"conversation_id": 2, "project_name": "General", "chat_title": "Hello"},
+    })
+    assert ok.status_code == 200 and ok.json()["ok"] is True
+    assert bus.history()[-1]["kind"] == "switch"
 
 
 def test_bus_history_ids_and_truncation() -> None:

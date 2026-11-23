@@ -7,35 +7,6 @@
   const when = (iso) => { try { return new Date(iso).toLocaleString(); } catch { return iso; } };
   const state = { convId: null, convs: [], busy: false };
 
-  function activityEl() {
-    return $("#agent-activity");
-  }
-
-  function clearActivity() {
-    const el = activityEl();
-    if (!el) return;
-    el.innerHTML = "";
-    el.classList.add("hidden");
-  }
-
-  function pushActivity(message, stage = "") {
-    const el = activityEl();
-    if (!el || !message) return;
-    el.classList.remove("hidden");
-    const line = document.createElement("div");
-    line.className = "line" + (stage ? ` stage-${stage}` : "");
-    line.textContent = message;
-    el.appendChild(line);
-    el.scrollTop = el.scrollHeight;
-  }
-
-  function describeToolCalls(ev) {
-    (ev.calls || []).forEach((c) => {
-      const name = c.name || "tool";
-      pushActivity(`Tool call: ${name}`, "tool");
-    });
-  }
-
   async function consumeSseResponse(res, { pending, box, accRef }) {
     const reader = res.body.getReader();
     const dec = new TextDecoder();
@@ -52,13 +23,6 @@
         let ev;
         try { ev = JSON.parse(line.slice(6)); } catch { continue; }
         if (ev.type === "meta") state.convId = ev.conversation_id;
-        if (ev.type === "progress") pushActivity(ev.message, ev.stage || "progress");
-        if (ev.type === "model") pushActivity(ev.message || `Model: ${ev.model}`, "model");
-        if (ev.type === "tool_calls") describeToolCalls(ev);
-        if (ev.type === "delegate") pushActivity(ev.message || `Workers: ${(ev.workers || []).join(", ")}`, "delegate");
-        if (ev.type === "worker_result") {
-          pushActivity(`Worker ${ev.worker}: ${ev.status}`, "delegate");
-        }
         if (ev.type === "token") {
           accRef.v += ev.text;
           pending.querySelector(".body").innerHTML = md(accRef.v);
@@ -157,6 +121,7 @@
     $("#messages").scrollTop = 1e9;
     localStorage.setItem("agentConv", id);
     localStorage.setItem("voice-assistant-conversation-id", id);
+    window.sahirWip?.publishSwitchFromConversation(c);
     loadConversations();
   }
 
@@ -237,14 +202,12 @@
     const mode = agentSubmitModeOverride || $("#chat-mode").value;
     agentSubmitModeOverride = null;
     $("#chat-input").value = "";
-    clearActivity();
     state.busy = true; $("#chat-send").disabled = true;
     const box = $("#messages");
     box.insertAdjacentHTML("beforeend", renderMessage({ role: "user", content: text }));
     box.insertAdjacentHTML("beforeend", `<div class="msg assistant pending"><div class="body">…</div><div class="meta"></div></div>`);
     const pending = box.lastElementChild;
     box.scrollTop = 1e9;
-    pushActivity(`Mode: ${mode}`, "progress");
     try {
       const res = await fetch("/api/agent/chat/stream", {
         method: "POST",

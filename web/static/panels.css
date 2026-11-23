@@ -55,10 +55,6 @@ body.wip-collapsed { --wip-width: 2.75rem; }
   background: var(--surface2, #141c28);
 }
 
-/* The WIP panel replaces the per-request activity boxes while it is live and open. */
-body.wip-live:not(.wip-collapsed) #activity-feed,
-body.wip-live:not(.wip-collapsed) #agent-activity { display: none !important; }
-
 /* ---------------------------------------------------------------- layout */
 .main-shell {
   display: grid;
@@ -128,7 +124,49 @@ button.wip-toggle:hover:not(:disabled) { background: var(--surface); }
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
+  flex-direction: column;
 }
+.wip-context {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.35rem;
+  padding: 0.45rem 0.65rem;
+  border-bottom: 1px solid var(--border);
+  background: #0f151c;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+.wip-ctx-field {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  min-width: 0;
+  max-width: 100%;
+}
+.wip-ctx-k {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.62rem;
+  color: #64748b;
+  flex: none;
+}
+.wip-ctx-v {
+  color: #e2e8f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: min(14rem, 38vw);
+}
+.wip-ctx-sep {
+  color: #475569;
+  user-select: none;
+  flex: none;
+}
+.wip-panel.collapsed .wip-context { display: none; }
 .wip-output {
   flex: 1 1 auto;
   min-height: 0;
@@ -160,6 +198,11 @@ button.wip-toggle:hover:not(:disabled) { background: var(--surface); }
 .wip-line.k-log .wip-text { color: #94a3b8; }
 .wip-line.k-error .wip-text,
 .wip-line.is-bad .wip-text { color: var(--bad); }
+.wip-line.k-route .wip-text { color: #7dd3fc; }
+.wip-line.k-switch .wip-text { color: #fcd34d; }
+.wip-line.k-supervisor .wip-text { color: #c4b5fd; }
+.wip-line.k-inject .wip-text { color: #a7f3d0; }
+.wip-line.k-spawn .wip-text { color: #fda4af; }
 button.wip-jump {
   position: absolute;
   right: 0.8rem;
@@ -205,6 +248,12 @@ button.wip-jump {
   }
   .wip-panel.collapsed { height: auto; }
   .wip-panel.collapsed .wip-last { visibility: visible; }
+}
+@media (max-width: 980px) {
+  .wip-context { gap: 0.35rem 0.5rem; padding: 0.4rem 0.55rem; }
+  .wip-ctx-sep { display: none; }
+  .wip-ctx-field { flex: 1 1 calc(50% - 0.25rem); max-width: none; }
+  .wip-ctx-v { max-width: 100%; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 }
 @media (max-width: 600px) {
   .chat-bar { gap: 0.45rem; padding: 0.5rem 0.6rem; }

@@ -10,9 +10,15 @@
   const jumpBtn = document.getElementById("wip-jump");
   const statusEl = document.getElementById("wip-status");
   const lastEl = document.getElementById("wip-last");
+  const ctxProject = document.getElementById("wip-ctx-project");
+  const ctxChat = document.getElementById("wip-ctx-chat");
+  const ctxRouter = document.getElementById("wip-ctx-router");
+  const ctxSupervisor = document.getElementById("wip-ctx-supervisor");
   const COLLAPSE_KEY = "sahir-wip-collapsed";
   const CLEARED_KEY = "sahir-wip-cleared-id";
   const MAX_LINES = 1500;
+  const HEADER_KINDS = new Set(["route", "switch", "supervisor", "inject", "spawn"]);
+  const EM_DASH = "—";
 
   let follow = true;
   let unseen = 0;
@@ -20,6 +26,100 @@
 
   const pad = (n) => String(n).padStart(2, "0");
   const clock = (ts) => { const d = new Date(ts * 1000); return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
+
+  function formatRouter(d) {
+    if (!d || (d.label == null && !d.tier && d.confidence == null && d.ms == null)) return EM_DASH;
+    const parts = [];
+    if (d.label != null) parts.push(String(d.label));
+    if (d.tier != null) parts.push(`T${d.tier}`);
+    if (d.confidence != null) parts.push(String(d.confidence));
+    if (d.ms != null) parts.push(`${d.ms} ms`);
+    return parts.length ? parts.join(" · ") : EM_DASH;
+  }
+
+  function formatSupervisor(d) {
+    if (!d) return EM_DASH;
+    const s = d.state ?? d.message;
+    return s != null && String(s).trim() ? String(s) : EM_DASH;
+  }
+
+  function applyHeaderEvent(ev) {
+    const d = ev.data || {};
+    if (ev.kind === "switch") {
+      const proj = d.project_name || d.project || "General";
+      const chat = d.chat_title || d.title || (d.conversation_id ? `Chat #${d.conversation_id}` : EM_DASH);
+      if (ctxProject) { ctxProject.textContent = proj; ctxProject.title = proj; }
+      if (ctxChat) { ctxChat.textContent = chat; ctxChat.title = chat; }
+    }
+    if (ev.kind === "route" && ctxRouter) {
+      const t = formatRouter(d);
+      ctxRouter.textContent = t;
+      ctxRouter.title = t;
+    }
+    if (ev.kind === "supervisor" && ctxSupervisor) {
+      const t = formatSupervisor(d);
+      ctxSupervisor.textContent = t;
+      ctxSupervisor.title = t;
+    }
+  }
+
+  function applyHeaderFromBacklog(events) {
+    for (const ev of events || []) {
+      if (HEADER_KINDS.has(ev.kind)) applyHeaderEvent(ev);
+    }
+  }
+
+  function setHeaderContext({ project, chat } = {}) {
+    if (project != null && ctxProject) {
+      ctxProject.textContent = project || EM_DASH;
+      ctxProject.title = project || "";
+    }
+    if (chat != null && ctxChat) {
+      ctxChat.textContent = chat || EM_DASH;
+      ctxChat.title = chat || "";
+    }
+  }
+
+  async function refreshWipContext(convId) {
+    if (!convId) {
+      setHeaderContext({ project: "General", chat: EM_DASH });
+      return;
+    }
+    try {
+      const res = await fetch(`/api/conversations/${convId}`);
+      if (!res.ok) return;
+      const conv = await res.json();
+      setHeaderContext({
+        project: conv.project_name || "General",
+        chat: conv.title || `Chat #${conv.id}`,
+      });
+    } catch { /* ignore */ }
+  }
+
+  async function publishSwitchFromConversation(conv) {
+    if (!conv?.id) return;
+    setHeaderContext({
+      project: conv.project_name || "General",
+      chat: conv.title || `Chat #${conv.id}`,
+    });
+    try {
+      await fetch("/api/activity/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "switch",
+          source: "ui",
+          data: {
+            conversation_id: conv.id,
+            project_id: conv.project_id,
+            project_name: conv.project_name || "General",
+            chat_title: conv.title || `Chat #${conv.id}`,
+            kind: conv.kind,
+          },
+        }),
+      });
+    } catch { /* ignore */ }
+  }
 
   function setCollapsed(collapsed) {
     panel.classList.toggle("collapsed", collapsed);
@@ -58,6 +158,7 @@
 
   function append(ev) {
     if (!ev || ev.id <= clearedId) return;
+    if (HEADER_KINDS.has(ev.kind)) applyHeaderEvent(ev);
     out.querySelector(".wip-empty")?.remove();
     const line = document.createElement("div");
     line.className = `wip-line k-${ev.kind || "log"}${ev.level === "error" || ev.level === "warning" ? " is-bad" : ""}`;
@@ -106,11 +207,16 @@
     }
     es = new EventSource("/api/activity/stream");
     setStatus("connecting", "Connecting to the activity stream…");
-    es.onopen = () => setStatus("live", "Live: streaming from the server");
+    es.onopen = () => {
+      setStatus("live", "Live: streaming from the server");
+      fetch("/api/activity?limit=120")
+        .then((r) => r.json())
+        .then((body) => applyHeaderFromBacklog(body.events))
+        .catch(() => {});
+    };
     es.onmessage = (msg) => {
       try { append(JSON.parse(msg.data)); } catch { /* ignore malformed */ }
     };
-    // EventSource reconnects on its own (resuming with Last-Event-ID); just show the state.
     es.onerror = () => setStatus(es.readyState === EventSource.CLOSED ? "off" : "connecting",
       "Reconnecting to the activity stream…");
   }
@@ -118,5 +224,16 @@
   setCollapsed(localStorage.getItem(COLLAPSE_KEY) === "1");
   updateJump();
   connect();
-  window.sahirWip = { append, connect };
+
+  const convKey = "voice-assistant-conversation-id";
+  const storedConv = Number(localStorage.getItem(convKey) || localStorage.getItem("agentConv") || 0);
+  if (storedConv) refreshWipContext(storedConv);
+
+  window.sahirWip = {
+    append,
+    connect,
+    refreshWipContext,
+    publishSwitchFromConversation,
+    setHeaderContext,
+  };
 })();

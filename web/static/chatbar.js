@@ -52,6 +52,7 @@
     const msgs = (conv.messages || []).filter((m) => m.role === "user" || m.role === "assistant");
     renderHomeMessagesFromHistory(msgs.slice(-CHAT_HISTORY_LIMIT));
     if (!msgs.length) addMessage("system", `Chat “${conv.title}” is empty. Type or speak to start.`);
+    window.sahirWip?.publishSwitchFromConversation(conv);
   }
 
   chatSelect.addEventListener("change", async () => {

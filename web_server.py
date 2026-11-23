@@ -49,6 +49,13 @@ from web.db import RequestLogStore
 ACTIVITY_STREAM_MAX_S = 120
 logger = logging.getLogger(__name__)
 
+
+class ActivityPublishBody(BaseModel):
+    kind: str
+    text: str = ""
+    source: str = "ui"
+    data: dict[str, Any] = Field(default_factory=dict)
+
 STATIC_DIR = Path(__file__).resolve().parent / "web" / "static"
 
 _request_lock = threading.Lock()
@@ -422,6 +429,15 @@ def create_app() -> FastAPI:
 
     # Live routine / WIP panel: every command, CLI line, tool call and background step (activity.py).
     activity.install_log_bridge()
+
+    @app.post("/api/activity/publish")
+    def api_activity_publish(payload: ActivityPublishBody) -> dict[str, Any]:
+        if payload.kind not in activity.CLIENT_PUBLISH_KINDS:
+            raise HTTPException(400, f"kind must be one of: {', '.join(sorted(activity.CLIENT_PUBLISH_KINDS))}")
+        ev = activity.publish(payload.kind, payload.text, source=payload.source, **payload.data)
+        if ev is None:
+            raise HTTPException(400, "event text or structured data required")
+        return {"ok": True, "id": ev["id"]}
 
     @app.get("/api/activity")
     def api_activity(since: int = 0, limit: int = 300) -> dict[str, Any]:

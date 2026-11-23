@@ -117,13 +117,6 @@
         <p id="mic-hint" class="mic-hint hidden"></p>
 
         <main class="main-content">
-          <section id="activity-feed" class="activity-feed hidden" aria-live="polite" aria-label="Behind the scenes">
-            <div class="activity-feed-head">
-              <span class="activity-feed-title">Working…</span>
-              <button type="button" id="activity-clear-btn" class="secondary small" title="Clear activity log" data-help="Empties the Working… list of behind-the-scenes steps. It doesn&#x27;t cancel the request that&#x27;s running." data-help-label="Clear activity" data-help-place="wrap">Clear</button>
-            </div>
-            <ol id="activity-list" class="activity-list"></ol>
-          </section>
           <section id="chat-log" class="chat-log" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation"></section>
 
           <form id="chat-form" class="chat-form">
@@ -276,7 +269,6 @@
                     <button type="button" id="conv-delete" class="danger">Delete</button>
                   </div>
                 </div>
-                <div id="agent-activity" class="ag-activity hidden" aria-live="polite" aria-label="Agent activity"></div>
                 <div id="messages" class="ag-messages" role="log" aria-live="polite" aria-relevant="additions" aria-label="Agent conversation"></div>
                 <form id="agent-chat-form" class="ag-composer">
                   <textarea id="chat-input" rows="2" autocomplete="off" placeholder="Message the agent… (Enter send, Ctrl+Enter → Cursor, Shift+Enter newline)" aria-label="Message"></textarea>
@@ -361,6 +353,15 @@
           <button type="button" id="wip-clear" class="secondary small wip-clear" data-help="A live terminal of what Sahir is doing behind the scenes: commands it runs, Cursor CLI work, tool calls, background steps and their output, streamed from the server. Scroll up to pause auto-scroll; Clear only empties this view." data-help-label="Routine / WIP panel" data-help-place="after">Clear</button>
         </div>
         <div id="wip-body" class="wip-body">
+          <div id="wip-context" class="wip-context" aria-label="Active project and routing">
+            <div class="wip-ctx-field"><span class="wip-ctx-k">Project</span><span id="wip-ctx-project" class="wip-ctx-v" title="Current project">—</span></div>
+            <span class="wip-ctx-sep" aria-hidden="true">·</span>
+            <div class="wip-ctx-field"><span class="wip-ctx-k">Active chat</span><span id="wip-ctx-chat" class="wip-ctx-v" title="Active conversation">—</span></div>
+            <span class="wip-ctx-sep" aria-hidden="true">·</span>
+            <div class="wip-ctx-field"><span class="wip-ctx-k">Router</span><span id="wip-ctx-router" class="wip-ctx-v" title="Last router decision">—</span></div>
+            <span class="wip-ctx-sep" aria-hidden="true">·</span>
+            <div class="wip-ctx-field"><span class="wip-ctx-k">Supervisor</span><span id="wip-ctx-supervisor" class="wip-ctx-v" title="Supervisor state">—</span></div>
+          </div>
           <div id="wip-output" class="wip-output" role="log" aria-live="off" aria-label="Activity log" tabindex="0"><div class="wip-empty">Waiting for activity… Commands, tool calls and background steps appear here as they happen.</div></div>
           <button type="button" id="wip-jump" class="wip-jump" hidden>Paused ↓</button>
         </div>

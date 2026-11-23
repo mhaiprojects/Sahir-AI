@@ -151,30 +151,6 @@ function getChatHistoryForApi() {
   return chatHistory.map(({ role, content }) => ({ role, content }));
 }
 
-const activityFeed = document.getElementById("activity-feed");
-const activityList = document.getElementById("activity-list");
-const activityClearBtn = document.getElementById("activity-clear-btn");
-
-function clearActivityFeed() {
-  if (!activityList) return;
-  activityList.innerHTML = "";
-  activityFeed?.classList.add("hidden");
-}
-
-function pushActivityFeed(text, kind = "") {
-  if (!activityList || !text) return;
-  activityFeed?.classList.remove("hidden");
-  const li = document.createElement("li");
-  if (kind) li.className = `ev-${kind}`;
-  li.textContent = text;
-  activityList.appendChild(li);
-  activityList.scrollTop = activityList.scrollHeight;
-}
-
-if (activityClearBtn) {
-  activityClearBtn.addEventListener("click", clearActivityFeed);
-}
-
 function currentChatMode() {
   const v = homeModeSelect?.value;
   return CHAT_MODES.includes(v) ? v : "agent";
@@ -242,17 +218,6 @@ async function consumeAgentSse(res, { onToken, onMeta } = {}) {
         homeConversationId = ev.conversation_id;
         localStorage.setItem(CONV_ID_KEY, String(homeConversationId));
         onMeta?.(ev);
-      }
-      if (ev.type === "progress") pushActivityFeed(ev.message, ev.stage === "cursor" ? "cursor" : "progress");
-      if (ev.type === "model") pushActivityFeed(ev.message || `Model: ${ev.model}`, "model");
-      if (ev.type === "tool_calls") {
-        (ev.calls || []).forEach((c) => pushActivityFeed(`Tool call: ${c.name || "tool"}`, "tool"));
-      }
-      if (ev.type === "delegate") {
-        pushActivityFeed(ev.message || `Workers: ${(ev.workers || []).join(", ")}`, "tool");
-      }
-      if (ev.type === "worker_result") {
-        pushActivityFeed(`Worker ${ev.worker}: ${ev.status}`, "tool");
       }
       if (ev.type === "token") {
         reply += ev.text;
@@ -1739,8 +1704,6 @@ async function sendChat(message, { forceCursor = false } = {}) {
   const mode = homeChatMode({ forceCursor: useCursor });
   const startedAt = Date.now();
   setBusy(true);
-  clearActivityFeed();
-  pushActivityFeed(`Mode: ${mode}`, "progress");
   addMessage("user", message);
   if (useCursor) addMessage("system", "Sending task to Cursor CLI…");
   activeRequestController = new AbortController();

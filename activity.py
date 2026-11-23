@@ -7,6 +7,7 @@ log lines. Events go into a bounded in-memory history and out to every subscribe
 and never logs (so the logging bridge can't recurse).
 
 Kinds used by the UI for colouring: cmd, out, cli, tool, step, model, worker, log, error.
+Header / context kinds (structured ``data`` on the event): route, switch, supervisor, inject, spawn.
 """
 
 from __future__ import annotations
@@ -23,6 +24,41 @@ from typing import Any, Callable
 MAX_HISTORY = 600
 MAX_TEXT = 4000
 QUEUE_SIZE = 2000
+
+STRUCTURED_KINDS = frozenset({"route", "switch", "supervisor", "inject", "spawn"})
+CLIENT_PUBLISH_KINDS = frozenset({"switch"})
+
+
+def structured_summary(kind: str, data: dict[str, Any]) -> str:
+    """One-line panel text when publish() is called with empty text and structured data."""
+    if kind == "route":
+        label = data.get("label") or "route"
+        parts = [str(label)]
+        if data.get("tier") is not None:
+            parts.append(f"T{data['tier']}")
+        if data.get("confidence") is not None:
+            parts.append(str(data["confidence"]))
+        if data.get("ms") is not None:
+            parts.append(f"{data['ms']} ms")
+        return " · ".join(parts)
+    if kind == "switch":
+        chat = data.get("chat_title") or data.get("title") or (
+            f"chat #{data['conversation_id']}" if data.get("conversation_id") else "chat"
+        )
+        proj = data.get("project_name") or data.get("project") or "General"
+        return f"{proj} · {chat}"
+    if kind == "supervisor":
+        return str(data.get("state") or data.get("message") or "supervisor")
+    if kind == "inject":
+        target = data.get("chat_title") or data.get("target") or "chat"
+        n = data.get("count")
+        extra = f" ({n} items)" if n is not None else ""
+        return f"inject → {target}{extra}"
+    if kind == "spawn":
+        title = data.get("chat_title") or data.get("title") or "sub-chat"
+        proj = data.get("project_name") or ""
+        return f"spawn: {title}" + (f" in {proj}" if proj else "")
+    return kind
 
 
 def _jsonable(data: dict[str, Any]) -> dict[str, Any]:
@@ -52,7 +88,10 @@ class ActivityBus:
                 **data: Any) -> dict[str, Any] | None:
         text = str(text or "").rstrip()
         if not text:
-            return None
+            if kind in STRUCTURED_KINDS and data:
+                text = structured_summary(kind, data)
+            else:
+                return None
         if len(text) > MAX_TEXT:
             text = text[:MAX_TEXT] + " …[truncated]"
         with self._lock:
