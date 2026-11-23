@@ -9,6 +9,17 @@ Quick orientation when continuing work on this project.
 - **Remote:** `git@github.com:mhaiprojects/Sahir-AI.git`
 - **Primary mode for LAN/Docker:** `python bot.py --web` (FastAPI + static SPA)
 
+## Persistent Cursor CLI chat
+
+Coding on this repo should continue in the existing Cursor CLI session (JW-12, 2026-11-23), not a fresh chat:
+
+| Field | Value |
+|-------|--------|
+| Chat ID | `1374f8df-2e7e-48a1-a739-6820ebe9d905` |
+| Resume | `cursor-agent --resume 1374f8df-2e7e-48a1-a739-6820ebe9d905 -p --trust --workspace <repo-root>` |
+
+Do not start a second parallel coding chat for this repository.
+
 ## Before changing code
 
 1. Read [architecture.md](./architecture.md) and [troubleshooting.md](./troubleshooting.md)

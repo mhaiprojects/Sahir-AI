@@ -170,6 +170,20 @@ Coding and workspace tasks are routed to:
 cursor-agent -p --trust --workspace "$CURSOR_WORKSPACE" --model composer-2.5 "<prompt>"
 ```
 
+### Persistent Cursor CLI chat
+
+This repository uses one long-running Cursor CLI session for coding work (JW-12, created 2026-11-23):
+
+- **Chat ID:** `1374f8df-2e7e-48a1-a739-6820ebe9d905`
+
+Resume that chat instead of starting a new one:
+
+```bash
+cursor-agent --resume 1374f8df-2e7e-48a1-a739-6820ebe9d905 -p --trust --workspace "$(pwd)"
+```
+
+Use the repository root as `--workspace` (or your configured `CURSOR_WORKSPACE`). Do **not** open a second parallel coding chat for this repo—keep context in this session so prior work stays connected.
+
 ## Systemd user service
 
 ```bash
