@@ -202,6 +202,13 @@ class _Client:
         return {"message": self.replies[model]}
 
 
+def test_fallback_escalation_publishes_vram_warning(manager: ModelManager, monkeypatch: pytest.MonkeyPatch) -> None:
+    published: list[str] = []
+    monkeypatch.setattr("agent.models.publish", lambda *a, **k: published.append(str(a[1])))
+    manager.notify_fallback_escalation("test")
+    assert published and "router" in published[0].lower()
+
+
 def test_orchestrator_escalates_on_invalid_json(manager: ModelManager) -> None:
     manager.settings.ollama_model = "qwen3:0.6b"
     models_mod.set_manager(manager)
@@ -249,7 +256,9 @@ def test_auto_default_picks_smallest_on_start(tmp_path: Path, fake: FakeOllama, 
     state = json.loads((tmp_path / "model_state.json").read_text())
     assert state["active_model"] == "qwen3:0.6b" and state["active_source"] == "auto"
     status = mgr.status()
-    assert status["smallest_model"] == "qwen3:0.6b" and status["active_source"] == "auto"
+    assert status["auto_default_model"] == "qwen3:0.6b" and status["active_source"] == "auto"
+    ds = status["default_selection"]
+    assert ds["fits_vram"] is True and ds["active_source"] == "auto"
 
 
 def test_auto_default_keeps_user_pick_and_follows_new_smaller_model(tmp_path: Path, fake: FakeOllama) -> None:

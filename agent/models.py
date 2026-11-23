@@ -7,9 +7,10 @@ caller (router, orchestrator, OllamaChat) picks it up without extra plumbing. Th
 ``data/model_state.json`` (gitignored with the rest of ``data/``).
 
 Default model (``auto_default=True``, used by the web server): when the app starts and
-whenever the model list is read, the smallest installed (downloaded) chat model becomes
-active unless the user picked one (``active_source == "user"``) that is still installed.
-A user pick that has been removed from Ollama falls back to the smallest model.
+whenever the model list is read, the best auto pick becomes active (VRAM-fitting 1–4B
+candidates, ranked by benchmark ``effective_correct_pct`` when ``data/bench/latest.json``
+exists, else size). The quality ``FALLBACK_MODEL`` (e.g. llama3.1:8b) is never auto-selected.
+User picks (``active_source == "user"``) are kept while still installed.
 Legacy state files without ``active_source`` count as a user pick when their model
 differs from the ``OLLAMA_MODEL`` default.
 """
@@ -29,7 +30,8 @@ from typing import Any, Callable
 
 from activity import publish
 from agent.gpu_config import get_gpu_config
-from agent.vram_budget import budget_summary, vram_warning_for_model
+from agent.model_selection import choose_auto_default, load_bench_scores
+from agent.vram_budget import budget_summary, model_fits_vram, vram_warning_for_model
 from agent.ollama_runtime import chat_options
 from config import Settings
 
@@ -91,8 +93,9 @@ class ModelManager:
         self.auto_fallback = True
         self.force_fallback = False
         self.auto_default = auto_default
-        # "user" = picked in the UI/API, "auto" = chosen as the smallest model, "env" = OLLAMA_MODEL.
+        # "user" = picked in the UI/API, "auto" = VRAM/bench auto pick, "env" = OLLAMA_MODEL only.
         self.active_source = "env"
+        self.auto_default_meta: dict[str, Any] = {}
         self._load_state()
         if self.auto_default:
             try:
@@ -124,6 +127,8 @@ class ModelManager:
         self.force_fallback = bool(state.get("force_fallback", False))
         if state.get("fallback_model") and not os.getenv("FALLBACK_MODEL"):
             self.fallback_model = str(state["fallback_model"])
+        if isinstance(state.get("auto_default_meta"), dict):
+            self.auto_default_meta = dict(state["auto_default_meta"])
 
     def _save_state(self) -> None:
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -132,6 +137,7 @@ class ModelManager:
             "active_model": self.active_model, "active_source": self.active_source,
             "fallback_model": self.fallback_model,
             "auto_fallback": self.auto_fallback, "force_fallback": self.force_fallback,
+            "auto_default_meta": self.auto_default_meta,
             "updated_at": int(time.time()),
         }, indent=2))
         tmp.replace(self.state_path)
@@ -149,38 +155,63 @@ class ModelManager:
     def chat_model_names(self) -> list[str]:
         return [m.get("name", "") for m in self.installed() if not _EMBED_RE.search(m.get("name", ""))]
 
-    @staticmethod
-    def _smallest(installed: list[dict[str, Any]]) -> str | None:
-        chat = [m for m in installed if m.get("name") and not _EMBED_RE.search(m["name"])]
-        if not chat:
-            return None
-        return min(chat, key=lambda m: (int(m.get("size") or 0) or 1 << 62, m["name"]))["name"]
+    def recommend_auto_default(self, installed: list[dict[str, Any]]) -> tuple[str | None, dict[str, Any]]:
+        return choose_auto_default(
+            installed,
+            fallback_model=self.fallback_model,
+            router_model=get_gpu_config().router_model,
+        )
 
     def ensure_default(self, installed: list[dict[str, Any]] | None = None) -> str | None:
-        """Make the smallest installed chat model active unless the user's pick is still installed.
-
-        Returns the newly selected model name when it changed, else None.
-        """
+        """Apply the VRAM/bench auto default unless the user's pick is still installed."""
         if not self.auto_default:
             return None
         installed = self.installed() if installed is None else installed
-        smallest = self._smallest(installed)
-        if not smallest:
+        chosen, meta = self.recommend_auto_default(installed)
+        if not chosen:
             return None
         names = {m.get("name") for m in installed}
         current = self.active_model
         if self.active_source == "user" and current in names:
             return None
-        if current == smallest and self.active_source == "auto":
+        self.auto_default_meta = meta
+        if current == chosen and self.active_source == "auto":
+            self._save_state()
             return None
-        reason = ("saved model %r is no longer installed" % current) if current not in names else "no model picked yet"
+        reason = ("saved model %r is no longer installed" % current) if current not in names else "auto_default"
         with self._lock:
-            self.settings.ollama_model = smallest
+            self.settings.ollama_model = chosen
             self.active_source = "auto"
             self._save_state()
-        if current != smallest:
-            logger.info("Default chat model -> %s (smallest installed; %s)", smallest, reason)
-        return smallest if current != smallest else None
+        if current != chosen:
+            logger.info("Default chat model -> %s (%s; %s)", chosen, meta.get("reason"), reason)
+        return chosen if current != chosen else None
+
+    def _default_selection_status(self, installed: list[dict[str, Any]],
+                                  active_row: dict[str, Any] | None) -> dict[str, Any]:
+        auto_name, auto_meta = self.recommend_auto_default(installed)
+        scores = load_bench_scores()
+        if self.active_source == "user":
+            size = int(active_row["size"]) if active_row else 0
+            active = self.active_model
+            sc = scores.get(active) or scores.get(active.split(":", 1)[0])
+            return {
+                "active_source": "user",
+                "active_model": active,
+                "fits_vram": model_fits_vram(size),
+                "bench_effective_correct_pct": sc.get("effective_correct_pct") if sc else None,
+                "auto_default_model": auto_name,
+                "auto_default_meta": auto_meta,
+            }
+        meta = dict(self.auto_default_meta or auto_meta)
+        meta["active_source"] = self.active_source
+        meta["active_model"] = self.active_model
+        meta["auto_default_model"] = auto_name
+        if meta.get("bench_effective_correct_pct") is None and self.active_model:
+            sc = scores.get(self.active_model) or scores.get(self.active_model.split(":", 1)[0])
+            if sc:
+                meta["bench_effective_correct_pct"] = sc.get("effective_correct_pct")
+        return meta
 
     def status(self) -> dict[str, Any]:
         installed = self.installed()
@@ -221,8 +252,11 @@ class ModelManager:
         ]
         cfg = get_gpu_config()
         active_row = next((m for m in models if m["active"]), None)
+        auto_name, _ = self.recommend_auto_default(installed)
         return {"active_model": self.active_model, "active_source": self.active_source,
-                "smallest_model": self._smallest(installed),
+                "smallest_model": auto_name,  # legacy key: recommended auto default
+                "auto_default_model": auto_name,
+                "default_selection": self._default_selection_status(installed, active_row),
                 "fallback_model": self.fallback_model,
                 "default_model": self.default_model, "auto_fallback": self.auto_fallback,
                 "force_fallback": self.force_fallback, "keep_alive": self.keep_alive,
@@ -282,11 +316,23 @@ class ModelManager:
     def settings_for(self, model: str) -> Settings:
         return replace(self.settings, ollama_model=model)
 
+    def notify_fallback_escalation(self, reason: str) -> None:
+        """Activity warning: quality fallback may evict the pinned router from GPU."""
+        publish(
+            "model",
+            f"Using quality fallback {self.fallback_model!r} ({reason}). "
+            "Loading it may push the pinned router model mostly to CPU and slow routing.",
+            source="models",
+            level="warning",
+        )
+
     def initial_model(self, text: str) -> tuple[str, str | None]:
         """Model for this turn and the reason when the fallback is used up front."""
         if self.force_fallback:
+            self.notify_fallback_escalation("forced")
             return self.fallback_model, "forced"
         if wants_escalation(text):
+            self.notify_fallback_escalation("user_request")
             return self.fallback_model, "user_request"
         return self.active_model, None
 

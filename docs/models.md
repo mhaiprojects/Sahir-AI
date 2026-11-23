@@ -3,6 +3,22 @@
 The assistant can switch its Ollama chat model at runtime. Small models (0.6B–2B) answer
 much faster on a modest GPU; a larger model stays available as a fallback for hard questions.
 
+## Two-tier routing (small default + quality fallback)
+
+On a **4 GB** GPU class machine (see `VRAM_*_GB` in `.env.example`):
+
+| Tier | Model | Role |
+|------|-------|------|
+| **Default chat** | Auto-picked **1–4B** model that fits the chat VRAM budget | Every turn unless you pick another model in the UI; ranked by `data/bench/latest.json` **`effective_correct_pct`** when a benchmark exists, else by fit/size. **`FALLBACK_MODEL` is never auto-selected.** |
+| **Quality fallback** | `FALLBACK_MODEL` (default `llama3.1:8b`) | One turn when you say “think harder”, when **Always use the big model** is on, when the small model returns invalid tool JSON (if auto-fallback is on), or when you force escalation. Activity panel warns that loading the 8B model may push the pinned **router** (`ROUTER_MODEL`) to CPU. |
+
+The pinned router model (`qwen3:0.6b` by default) may also be the active chat model when it wins the
+auto ranking — that keeps one small model in VRAM for both roles. If a better-fitting chat model
+scores higher in the benchmark, auto-default prefers that instead.
+
+`GET /api/models` returns `default_selection` (`active_source`, `fits_vram`, `bench_effective_correct_pct`,
+`auto_default_model`, …) alongside per-model **VRAM tight** warnings.
+
 ## Suggested models
 
 ```bash
@@ -10,7 +26,7 @@ ollama pull qwen3:0.6b
 ollama pull qwen3:1.7b
 ollama pull llama3.2:1b
 ollama pull qwen3.5:2b
-ollama pull llama3.1:8b        # default + fallback
+ollama pull llama3.1:8b        # quality fallback (FALLBACK_MODEL), not the auto default
 ```
 
 Qwen3-family models have a "thinking" mode; the assistant always sends `think: false` for
@@ -20,8 +36,9 @@ them (`agent.models.think_kwargs`) so voice replies are not delayed by hidden re
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `OLLAMA_MODEL` | `llama3.1:8b` | Default chat model (used until you pick another one) |
-| `FALLBACK_MODEL` | `llama3.1:8b` | Big model used for escalation |
+| `OLLAMA_MODEL` | `llama3.1:8b` | Env default before first auto pick; overridden by auto-default when `auto_default` is on |
+| `FALLBACK_MODEL` | `llama3.1:8b` | Quality fallback for escalation (never chosen as auto default) |
+| `MODEL_BENCH_PATH` | `data/bench/latest.json` | Benchmark file used to rank auto-default candidates |
 | `MODEL_KEEP_ALIVE` | `30m` | How long **Load** keeps a model in memory |
 | `MODEL_STATE_PATH` | `data/model_state.json` | Persisted runtime choice (gitignored) |
 | `OLLAMA_NUM_CTX` | `4096` | `num_ctx` sent on every Sahir chat/generate call ([#5](https://github.com/mhaiprojects/Sahir-AI/issues/5)) |
@@ -73,7 +90,7 @@ Open the ◈ **Models** item in the left nav rail:
 
 | Method | Path | Body | Purpose |
 |--------|------|------|---------|
-| GET | `/api/models` | – | Installed chat models, loaded state (`size`, `size_vram`, `size_ram`, `gpu_percent`), active/fallback/default |
+| GET | `/api/models` | – | Installed chat models, loaded state, `default_selection`, `vram_budget`, VRAM warnings |
 | POST | `/api/models/select` | `{"model": "qwen3:1.7b"}` | Set the active chat model |
 | POST | `/api/models/load` | `{"model": "...", "keep_alive": "30m"}` | Preload into memory |
 | POST | `/api/models/eject` | `{"model": "..."}` | Unload from memory |

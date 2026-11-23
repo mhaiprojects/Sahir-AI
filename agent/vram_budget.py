@@ -7,6 +7,12 @@ from typing import Any
 from agent.gpu_config import GpuRuntimeConfig, get_gpu_config
 
 
+def model_fits_vram(size_bytes: int, cfg: GpuRuntimeConfig | None = None) -> bool:
+    if size_bytes <= 0:
+        return False
+    return size_bytes <= chat_vram_budget_bytes(cfg)
+
+
 def chat_vram_budget_bytes(cfg: GpuRuntimeConfig | None = None) -> int:
     cfg = cfg or get_gpu_config()
     avail_gb = cfg.vram_total_gb - cfg.vram_router_gb - cfg.vram_embed_gb - cfg.vram_desktop_gb

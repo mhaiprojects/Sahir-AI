@@ -164,6 +164,7 @@ class Orchestrator:
                 bad = tool_calls_invalid(msg0, tools)
                 if bad and mgr is not None and mgr.can_escalate(self.model):
                     logger.info("Escalating %s -> %s (%s)", self.model, mgr.fallback_model, bad)
+                    mgr.notify_fallback_escalation(f"invalid_output:{bad}")
                     meta.update({"escalated": f"invalid_output:{bad}", "small_model": self.model,
                                  "model": mgr.fallback_model})
                     self._model = mgr.fallback_model

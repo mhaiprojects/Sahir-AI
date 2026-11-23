@@ -117,6 +117,7 @@ def _maybe_escalate(client: Any, model: str, messages: list[dict[str, Any]], res
     if not bad:
         return model, response
     logger.info("Router escalating %s -> %s (%s)", model, mgr.fallback_model, bad)
+    mgr.notify_fallback_escalation(f"invalid_output:{bad}")
     meta.update({"escalated": f"invalid_output:{bad}", "small_model": model, "model": mgr.fallback_model})
     return mgr.fallback_model, _chat(client, mgr.fallback_model, messages, tools=tools, **kwargs)
 
