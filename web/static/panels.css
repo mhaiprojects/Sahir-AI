@@ -1,0 +1,218 @@
+/* Chat bar (Agent / Chat / Model pickers in the main area) and the Routine / WIP panel. */
+:root { --wip-width: clamp(18rem, 30vw, 27rem); }
+body.wip-collapsed { --wip-width: 2.75rem; }
+
+/* ---------------------------------------------------------------- chat bar */
+.chat-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.55rem 0.75rem;
+}
+.chat-bar-field {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+.chat-bar-label {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.chat-bar select {
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.4rem 0.5rem;
+  min-width: 0;
+  max-width: 22rem;
+}
+.chat-bar select:focus-visible { border-color: var(--accent); }
+.chat-bar-chat { flex: 1 1 18rem; }
+.chat-bar-chat > .help-wrap { flex: 1 1 auto; }
+.chat-bar-chat > .help-wrap > select { width: 100%; max-width: none; }
+.chat-bar-chat > button { flex: none; }
+
+.ag-chat-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2, #141c28);
+}
+
+/* The WIP panel replaces the per-request activity boxes while it is live and open. */
+body.wip-live:not(.wip-collapsed) #activity-feed,
+body.wip-live:not(.wip-collapsed) #agent-activity { display: none !important; }
+
+/* ---------------------------------------------------------------- layout */
+.main-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--wip-width);
+  grid-template-rows: minmax(0, 1fr);
+}
+.main-shell > .view { grid-column: 1; grid-row: 1; }
+
+/* ---------------------------------------------------------------- WIP panel */
+.wip-panel {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: #0b1016;
+  border-left: 1px solid var(--border);
+}
+.wip-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  background: #121820;
+  min-width: 0;
+}
+button.wip-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.35rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+button.wip-toggle:hover:not(:disabled) { background: var(--surface); }
+.wip-toggle-icon { color: var(--muted); width: 0.8rem; }
+.wip-status {
+  flex: none;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: var(--warn);
+}
+.wip-status[data-state="live"] { background: var(--ok); box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18); }
+.wip-status[data-state="off"] { background: var(--bad); }
+.wip-last {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font: 0.72rem/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  visibility: hidden;
+}
+.wip-panel .wip-clear { margin-left: auto; flex: none; }
+.wip-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+.wip-output {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0.5rem 0.65rem 1.6rem;
+  color: #cbd5e1;
+  font: 0.74rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+.wip-output:focus-visible { outline-offset: -2px; }
+.wip-empty { color: var(--muted); font-style: italic; }
+.wip-line {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 0.45rem;
+  padding: 0.05rem 0;
+}
+.wip-time { color: #64748b; }
+.wip-src { color: #7b8ba3; }
+.wip-src::before { content: "["; }
+.wip-src::after { content: "]"; }
+.wip-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.wip-line.k-cmd .wip-text { color: #86efac; font-weight: 600; }
+.wip-line.k-cli .wip-text { color: #93c5fd; }
+.wip-line.k-tool .wip-text { color: #a5f3fc; }
+.wip-line.k-model .wip-text { color: #fde68a; }
+.wip-line.k-worker .wip-text { color: #c4b5fd; }
+.wip-line.k-step .wip-text { color: #e7ecf3; }
+.wip-line.k-log .wip-text { color: #94a3b8; }
+.wip-line.k-error .wip-text,
+.wip-line.is-bad .wip-text { color: var(--bad); }
+button.wip-jump {
+  position: absolute;
+  right: 0.8rem;
+  bottom: 0.6rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+
+/* Collapsed on desktop: a slim strip with a vertical title. */
+.wip-panel.collapsed .wip-body,
+.wip-panel.collapsed .wip-clear,
+.wip-panel.collapsed .wip-clear + .help-tip { display: none; }
+@media (min-width: 981px) {
+  .wip-panel.collapsed .wip-head {
+    flex-direction: column;
+    height: 100%;
+    padding: 0.6rem 0.2rem;
+    border-bottom: none;
+  }
+  .wip-panel.collapsed .wip-toggle { flex-direction: column; writing-mode: vertical-rl; }
+  .wip-panel.collapsed .wip-last { display: none; }
+}
+
+/* ---------------------------------------------------------------- narrow screens */
+@media (max-width: 980px) {
+  .main-shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+  }
+  .wip-panel {
+    grid-column: 1;
+    grid-row: 2;
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    height: 30vh;
+    height: 30dvh;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.35);
+  }
+  .wip-panel.collapsed { height: auto; }
+  .wip-panel.collapsed .wip-last { visibility: visible; }
+}
+@media (max-width: 600px) {
+  .chat-bar { gap: 0.45rem; padding: 0.5rem 0.6rem; }
+  .chat-bar > .help-wrap,
+  .chat-bar > .chat-bar-field { flex: 1 1 100%; }
+  .chat-bar > .help-wrap > .chat-bar-field { flex: 1 1 auto; }
+  .chat-bar-field > select,
+  .chat-bar-field > .help-wrap > select { flex: 1 1 auto; max-width: none; }
+  .chat-bar-label { min-width: 3.6rem; }
+  .wip-output { font-size: 0.7rem; }
+}

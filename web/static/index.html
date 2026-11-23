@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/static/style.css?v=20261116ui">
   <link rel="stylesheet" href="/static/agent.css?v=20261116ui">
   <link rel="stylesheet" href="/static/help.css?v=20261123help">
+  <link rel="stylesheet" href="/static/panels.css?v=20261123wip">
 </head>
 <body>
   <div class="layout">
@@ -49,6 +50,27 @@
           </div>
         </header>
 
+        <section class="chat-bar" id="chat-bar" aria-label="Agent, chat and model">
+          <label class="chat-bar-field" for="home-mode" data-help="Chooses who answers: Agent uses the orchestrator with tools and memory, Tools uses the quick command router, Chat talks to the plain model, and Cursor hands the request to the Cursor coding agent. It&#x27;s shared with the Agent tab&#x27;s picker and remembered in this browser." data-help-label="Agent" data-help-place="wrap">
+            <span class="chat-bar-label">Agent</span>
+            <select id="home-mode" title="One mode for Home and Agent chats (voice and text)">
+          <option value="agent">Agent (orchestrator + tools)</option>
+          <option value="route">Tools (quick router)</option>
+          <option value="stream">Chat (plain model)</option>
+          <option value="cursor">Cursor (coding agent)</option>
+          </select>
+          </label>
+          <div class="chat-bar-field chat-bar-chat">
+            <label class="chat-bar-label" for="home-chat-select">Chat</label>
+            <select id="home-chat-select" data-help="Switches this screen to another saved conversation; the newest are listed first. New starts an empty chat, and the Agent tab shows the same chats." data-help-label="Chat" data-help-place="wrap"><option value="">Loading chats…</option></select>
+            <button type="button" id="home-chat-new" class="secondary small" title="Start a new, empty chat">New</button>
+          </div>
+          <label class="chat-bar-field" for="home-model-select" data-help="The local model that writes replies, smallest first. Sahir picks the smallest downloaded model automatically until you choose one here or on the Models page." data-help-label="Model" data-help-place="wrap">
+            <span class="chat-bar-label">Model</span>
+            <select id="home-model-select"><option value="">Loading models…</option></select>
+          </label>
+        </section>
+
         <section id="live-transcript" class="live-transcript live-transcript-top" aria-live="polite" aria-label="Live transcription">
           <div class="live-header">
             <span id="live-transcript-label" class="live-label">Live transcription</span>
@@ -71,15 +93,6 @@
         </section>
 
         <section class="options-row" aria-label="Routing and listening options">
-          <label class="mode-select" for="home-mode" data-help="Chooses who answers: Agent uses the orchestrator with tools and memory, Tools uses the quick command router, Chat talks to the plain model, and Cursor hands the request to the Cursor coding agent. It&#x27;s the same setting as the Agent tab&#x27;s mode and is remembered in this browser." data-help-label="Mode" data-help-place="wrap">
-            Mode
-            <select id="home-mode" title="One mode for Home and Agent chats (voice and text)">
-            <option value="agent">Agent (orchestrator + tools)</option>
-            <option value="route">Tools (quick router)</option>
-            <option value="stream">Chat (plain model)</option>
-            <option value="cursor">Cursor (coding agent)</option>
-            </select>
-          </label>
           <label class="checkbox" title="No wake word in the browser: any speech starts a request" data-help="Keeps the microphone open so any speech starts a request, with no button to hold (there is no wake word in the browser). It turns itself off when Agent → Live voice takes the microphone." data-help-label="Always listening" data-help-place="wrap">
             <input type="checkbox" id="always-listen-toggle" aria-describedby="wake-word-note">
             Always listening
@@ -244,6 +257,15 @@
                 <ul id="conv-list" class="ag-list" aria-label="Conversations"></ul>
               </aside>
               <div class="ag-main">
+                <div class="ag-chat-bar">
+                  <label class="chat-bar-label" for="chat-mode">Agent</label>
+                  <select id="chat-mode" aria-label="Mode" title="Shared with the Home mode selector" data-help="Same setting as the Agent picker on Home: Agent (orchestrator + tools), Tools (quick router), Chat (plain model) or Cursor (coding agent). Changing it here changes it there too." data-help-label="Mode">
+                    <option value="agent" selected>Agent (orchestrator + tools)</option>
+            <option value="route">Tools (quick router)</option>
+            <option value="stream">Chat (plain model)</option>
+            <option value="cursor">Cursor (coding agent)</option>
+                  </select>
+                </div>
                 <div class="ag-conv-head">
                   <h2 id="conv-title">Select or start a chat</h2>
                   <div class="row" id="conv-actions" hidden data-help="Rename changes the title, and the Export links download the chat as Markdown or JSON. Extract memories asks the model to pull long-term facts from this chat into Memory for your review; Delete removes the chat for good after asking." data-help-label="Chat actions" data-help-place="inside">
@@ -257,12 +279,6 @@
                 <div id="agent-activity" class="ag-activity hidden" aria-live="polite" aria-label="Agent activity"></div>
                 <div id="messages" class="ag-messages" role="log" aria-live="polite" aria-relevant="additions" aria-label="Agent conversation"></div>
                 <form id="agent-chat-form" class="ag-composer">
-                  <select id="chat-mode" aria-label="Mode" title="Shared with the Home mode selector" data-help="Same setting as Home&#x27;s Mode: Agent (orchestrator + tools), Tools (quick router), Chat (plain model) or Cursor (coding agent). Changing it here changes it there too." data-help-label="Mode">
-                    <option value="agent" selected>Agent (orchestrator + tools)</option>
-            <option value="route">Tools (quick router)</option>
-            <option value="stream">Chat (plain model)</option>
-            <option value="cursor">Cursor (coding agent)</option>
-                  </select>
                   <textarea id="chat-input" rows="2" autocomplete="off" placeholder="Message the agent… (Enter send, Ctrl+Enter → Cursor, Shift+Enter newline)" aria-label="Message"></textarea>
                   <button type="submit" id="chat-send" data-help="Enter sends with the chosen mode and Shift+Enter adds a new line. Ctrl+Enter (Cmd+Enter on Mac) sends this message to Cursor instead." data-help-label="Sending messages">Send</button>
                 </form>
@@ -334,6 +350,21 @@
           </div>
         </div>
       </div>
+      <aside id="wip-panel" class="wip-panel" aria-label="Routine and work in progress">
+        <div class="wip-head">
+          <button type="button" id="wip-toggle" class="wip-toggle" aria-expanded="true" aria-controls="wip-body">
+            <span class="wip-toggle-icon" aria-hidden="true">▾</span>
+            <span class="wip-title">Routine / WIP</span>
+          </button>
+          <span id="wip-status" class="wip-status" data-state="connecting" role="img" aria-label="Connecting"></span>
+          <span id="wip-last" class="wip-last" aria-hidden="true"></span>
+          <button type="button" id="wip-clear" class="secondary small wip-clear" data-help="A live terminal of what Sahir is doing behind the scenes: commands it runs, Cursor CLI work, tool calls, background steps and their output, streamed from the server. Scroll up to pause auto-scroll; Clear only empties this view." data-help-label="Routine / WIP panel" data-help-place="after">Clear</button>
+        </div>
+        <div id="wip-body" class="wip-body">
+          <div id="wip-output" class="wip-output" role="log" aria-live="off" aria-label="Activity log" tabindex="0"><div class="wip-empty">Waiting for activity… Commands, tool calls and background steps appear here as they happen.</div></div>
+          <button type="button" id="wip-jump" class="wip-jump" hidden>Paused ↓</button>
+        </div>
+      </aside>
       <div id="toast" class="toast hidden" role="status"></div>
     </div>
   </div>
@@ -345,6 +376,8 @@
   <script src="/static/agent.js?v=20261116ui"></script>
   <script src="/static/models.js?v=20261116ui"></script>
   <script src="/static/tour.js?v=20261116ui"></script>
+  <script src="/static/chatbar.js?v=20261123wip"></script>
+  <script src="/static/wip.js?v=20261123wip"></script>
   <script src="/static/help.js?v=20261123help"></script>
 </body>
 </html>

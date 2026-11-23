@@ -39,6 +39,21 @@ The original voice UI (`/`) now also uses memory + document context and saves it
 same chat history (`AGENT_PERSIST_WEB=true`). Its always-listening and live-caption endpoints skip
 Whisper when Silero VAD hears no speech (`VAD_GATE_ENABLED`).
 
+### Chat bar, default model and the Routine / WIP panel
+
+- **Chat bar** (top of Home): **Agent** (mode: Agent / Tools / Chat / Cursor, shared with the Agent
+  tab), **Chat** (switch to any saved conversation or start a new one) and **Model**. The Agent tab
+  shows the same Agent picker above its conversation.
+- **Default model:** the smallest downloaded Ollama chat model (by `/api/tags` size, embedding
+  models excluded) is made active at startup and whenever the model list is read, unless you picked
+  a model (Home chat bar, Models page or `POST /api/models/select`) that is still installed. The
+  choice and its source (`user` / `auto`) are kept in `data/model_state.json`.
+- **Routine / WIP panel** (right side; a bottom bar on narrow screens): a terminal-style live feed of
+  commands run, Cursor CLI tool calls/shell commands/output, agent tool calls, worker hand-offs,
+  model loads, benchmark output and key log lines, streamed from `GET /api/activity/stream`
+  (Server-Sent Events; `GET /api/activity` returns the recent history). Timestamps, auto-scroll
+  that pauses when you scroll up, Clear and Collapse.
+
 ClickUp: put `CLICKUP_API_TOKEN=...` in `.env` and `CLICKUP_LIST_ID=your-clickup-list-id`. Without a token the
 ClickUp worker/hook report "token needed" and nothing is sent.
 
