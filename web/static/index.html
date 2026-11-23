@@ -6,6 +6,7 @@
   <title>Sahir</title>
   <link rel="stylesheet" href="/static/style.css?v=20261116ui">
   <link rel="stylesheet" href="/static/agent.css?v=20261116ui">
+  <link rel="stylesheet" href="/static/help.css?v=20261123help">
 </head>
 <body>
   <div class="layout">
@@ -44,7 +45,7 @@
               <h1>Sahir</h1>
               <p class="subtitle">Local network control panel</p>
             </div>
-            <button type="button" id="start-tour-btn" class="secondary small">Take tour</button>
+            <button type="button" id="start-tour-btn" class="secondary small" data-help="Steps through the main parts of the screen with highlights. It&#x27;s only a guide and doesn&#x27;t change any settings." data-help-label="Take tour" data-help-place="wrap">Take tour</button>
           </div>
         </header>
 
@@ -60,7 +61,7 @@
           </div>
         </section>
 
-        <section class="voice-buttons-row" aria-label="Quick voice controls">
+        <section class="voice-buttons-row" aria-label="Quick voice controls" data-help="Enable microphone asks the browser for mic access (it needs HTTPS or localhost); press it again to turn the mic off, which also stops Always listening. Hold to listen is push-to-talk: hold it (mouse, touch, or Space/Enter) while you speak and let go to send." data-help-label="Microphone buttons" data-help-place="inside">
           <button type="button" id="toggle-mic-btn" class="secondary btn-voice" title="Enable or disable microphone access">
             Enable microphone
           </button>
@@ -70,7 +71,7 @@
         </section>
 
         <section class="options-row" aria-label="Routing and listening options">
-          <label class="mode-select" for="home-mode">
+          <label class="mode-select" for="home-mode" data-help="Chooses who answers: Agent uses the orchestrator with tools and memory, Tools uses the quick command router, Chat talks to the plain model, and Cursor hands the request to the Cursor coding agent. It&#x27;s the same setting as the Agent tab&#x27;s mode and is remembered in this browser." data-help-label="Mode" data-help-place="wrap">
             Mode
             <select id="home-mode" title="One mode for Home and Agent chats (voice and text)">
             <option value="agent">Agent (orchestrator + tools)</option>
@@ -79,11 +80,11 @@
             <option value="cursor">Cursor (coding agent)</option>
             </select>
           </label>
-          <label class="checkbox" title="No wake word in the browser: any speech starts a request">
+          <label class="checkbox" title="No wake word in the browser: any speech starts a request" data-help="Keeps the microphone open so any speech starts a request, with no button to hold (there is no wake word in the browser). It turns itself off when Agent → Live voice takes the microphone." data-help-label="Always listening" data-help-place="wrap">
             <input type="checkbox" id="always-listen-toggle" aria-describedby="wake-word-note">
             Always listening
           </label>
-          <label class="checkbox">
+          <label class="checkbox" data-help="Reads the assistant&#x27;s replies aloud. Turning it off also stops a reply that is playing; the choice is remembered in this browser." data-help-label="Speak replies" data-help-place="wrap">
             <input type="checkbox" id="speak-replies-toggle" checked>
             Speak replies
           </label>
@@ -106,7 +107,7 @@
           <section id="activity-feed" class="activity-feed hidden" aria-live="polite" aria-label="Behind the scenes">
             <div class="activity-feed-head">
               <span class="activity-feed-title">Working…</span>
-              <button type="button" id="activity-clear-btn" class="secondary small" title="Clear activity log">Clear</button>
+              <button type="button" id="activity-clear-btn" class="secondary small" title="Clear activity log" data-help="Empties the Working… list of behind-the-scenes steps. It doesn&#x27;t cancel the request that&#x27;s running." data-help-label="Clear activity" data-help-place="wrap">Clear</button>
             </div>
             <ol id="activity-list" class="activity-list"></ol>
           </section>
@@ -120,7 +121,7 @@
               placeholder="Ask a question, control the PC, or request a coding task… (Ctrl+Enter → Cursor)"
               required
             ></textarea>
-            <div class="chat-actions">
+            <div class="chat-actions" data-help="Send (or Enter) uses the Mode chosen above; Shift+Enter adds a new line. Send to Cursor (or Ctrl+Enter / Cmd+Enter) always hands the message to the Cursor coding agent, whatever the mode." data-help-label="Sending messages" data-help-place="inside">
               <button type="submit" id="send-btn" class="btn-voice">Send</button>
               <button type="button" id="cursor-btn" class="secondary btn-voice" title="Force Cursor CLI to handle this task">
                 Send to Cursor
@@ -130,7 +131,7 @@
         </main>
 
         <details class="status-panel" id="status-panel">
-          <summary class="status-panel-summary">Service status</summary>
+          <summary class="status-panel-summary" data-help="Badges for the services Sahir depends on: Ollama, Cursor CLI, text-to-speech, Whisper speech-to-text and HTTPS. Green means reachable or on, red means it needs attention; the mic badge shows the microphone state." data-help-label="Service status" data-help-place="inside">Service status</summary>
           <div id="status-bar" class="status-bar">Checking services…</div>
           <div id="mic-status" class="mic-status">
             <span id="mic-badge" class="badge">Mic: checking…</span>
@@ -147,7 +148,7 @@
       <div id="view-logs" class="view view-logs" role="tabpanel" aria-labelledby="nav-btn-logs" hidden>
         <header class="view-header">
           <h1>Request log</h1>
-          <button type="button" id="refresh-logs-btn" class="secondary small">Refresh</button>
+          <button type="button" id="refresh-logs-btn" class="secondary small" data-help="Reloads the latest 100 requests from the server&#x27;s request log. The list also refreshes whenever you open this tab." data-help-label="Refresh logs" data-help-place="wrap">Refresh</button>
         </header>
         <div id="request-log" class="request-log" aria-live="polite">
           <p class="empty">No requests yet.</p>
@@ -158,26 +159,26 @@
       <div id="view-models" class="view view-models" role="tabpanel" aria-labelledby="nav-btn-models" hidden>
         <header class="view-header">
           <h1>Models</h1>
-          <button type="button" id="refresh-models-btn" class="secondary small">Refresh</button>
+          <button type="button" id="refresh-models-btn" class="secondary small" data-help="Re-reads the installed chat models from Ollama and which of them are currently loaded in memory." data-help-label="Refresh models" data-help-place="wrap">Refresh</button>
         </header>
-        <p class="config-note">Select the chat model the assistant uses. Load keeps a model in memory
+        <p class="config-note" data-help="Pick a model&#x27;s round button to make it the active chat model. Load keeps it in memory so replies start faster, Reload loads it again, and Eject frees that memory." data-help-label="Model list" data-help-place="inside">Select the chat model the assistant uses. Load keeps a model in memory
           (GPU first, overflow in RAM); Eject frees it. The fallback model answers when a small model
           returns an invalid action, or when you say "think harder" / "use the big model".</p>
         <div id="models-status" class="models-status" aria-live="polite">Loading models…</div>
         <div id="models-list" class="models-list" role="radiogroup" aria-label="Chat models"></div>
         <section class="config-section models-options">
           <div class="config-body">
-            <label class="checkbox"><input type="checkbox" id="auto-fallback-toggle"> Auto-fallback to the big model on invalid actions</label>
-            <label class="checkbox"><input type="checkbox" id="force-fallback-toggle"> Always use the big model</label>
+            <label class="checkbox" data-help="If the active model returns an invalid action, the request is retried with the bigger fallback model. Saved on the server, so it applies to every browser." data-help-label="Auto-fallback" data-help-place="wrap"><input type="checkbox" id="auto-fallback-toggle"> Auto-fallback to the big model on invalid actions</label>
+            <label class="checkbox" data-help="Sends every request to the big fallback model instead of the selected one: slower, but more capable. Saved on the server." data-help-label="Always use the big model" data-help-place="wrap"><input type="checkbox" id="force-fallback-toggle"> Always use the big model</label>
           </div>
         </section>
         <details class="config-section" id="bench-section" open>
-          <summary>Benchmark</summary>
+          <summary data-help="Times and scores every installed chat model so you can compare them. Results stay listed below, including runs started from the command line." data-help-label="Benchmark" data-help-place="inside">Benchmark</summary>
           <div class="config-body">
             <p class="config-note">Measures load time, first-token time, tokens/s, decision latency and
               action-selection accuracy for every installed chat model. Takes several minutes; the
               assistant is slower while it runs.</p>
-            <div class="bench-actions">
+            <div class="bench-actions" data-help="Run benchmark does the full test and takes several minutes. Quick run uses 8 decision prompts and 2 replies per model; both ask you to confirm first." data-help-label="Benchmark buttons" data-help-place="inside">
               <button type="button" id="bench-run-btn" class="btn-voice">Run benchmark</button>
               <button type="button" id="bench-quick-btn" class="secondary btn-voice">Quick run</button>
             </div>
@@ -204,12 +205,12 @@
         </details>
 
         <details class="config-section" open>
-          <summary>Voice commands</summary>
+          <summary data-help="Spoken shortcuts that work while Sahir is speaking or working on a request: if what you say contains a keyword, its action runs. Use the On box to pause a command or Delete to remove it." data-help-label="Voice commands" data-help-place="inside">Voice commands</summary>
           <div class="config-body">
             <p class="config-note">Keyword shortcuts active while speaking or processing.</p>
             <form id="command-form" class="command-form">
-              <input type="text" id="command-keyword" placeholder="Keyword phrase" aria-label="Keyword phrase" required maxlength="120">
-              <select id="command-action" aria-label="Action" required></select>
+              <input type="text" id="command-keyword" placeholder="Keyword phrase" aria-label="Keyword phrase" required maxlength="120" data-help="The word or phrase to listen for, up to 120 characters. Capitals don&#x27;t matter, and each phrase can only be used once." data-help-label="Keyword phrase" data-help-place="wrap">
+              <select id="command-action" aria-label="Action" required data-help="What happens when the keyword is heard: stop speaking, cancel the current request, repeat the last reply, or pause or resume Always listening." data-help-label="Action" data-help-place="wrap"></select>
               <button type="submit" class="small">Add</button>
             </form>
             <div id="command-list" class="command-list" aria-live="polite"></div>
@@ -223,7 +224,7 @@
           <header class="ag-header">
             <h1>Agent Manager</h1>
             <p class="ag-why hint" title="Why these tools live here">Chats, memory, documents, live voice, and delegated tasks share one agent store (<code>agent.db</code>) and orchestrator — they are operator surfaces for the same brain, not separate apps.</p>
-            <button type="button" id="conv-new-top" class="primary small">New chat</button>
+            <button type="button" id="conv-new-top" class="primary small" data-help="Starts a new, empty conversation and opens it. The ＋ button beside the chat search does the same." data-help-label="New chat" data-help-place="wrap">New chat</button>
             <span id="ag-status" class="ag-status">loading…</span>
           </header>
           <nav class="ag-tabs" role="tablist" aria-label="Agent sections">
@@ -237,7 +238,7 @@
             <section id="tab-chats" class="ag-panel active" role="tabpanel" aria-labelledby="ag-tab-chats">
               <aside class="ag-sidebar">
                 <div class="row">
-                  <input id="conv-search" type="search" placeholder="Search chats…" aria-label="Search chats">
+                  <input id="conv-search" type="search" placeholder="Search chats…" aria-label="Search chats" data-help="Filters the chat list to conversations whose title or messages contain your words." data-help-label="Search chats">
                   <button id="conv-new" type="button" title="New chat">＋</button>
                 </div>
                 <ul id="conv-list" class="ag-list" aria-label="Conversations"></ul>
@@ -245,7 +246,7 @@
               <div class="ag-main">
                 <div class="ag-conv-head">
                   <h2 id="conv-title">Select or start a chat</h2>
-                  <div class="row" id="conv-actions" hidden>
+                  <div class="row" id="conv-actions" hidden data-help="Rename changes the title, and the Export links download the chat as Markdown or JSON. Extract memories asks the model to pull long-term facts from this chat into Memory for your review; Delete removes the chat for good after asking." data-help-label="Chat actions" data-help-place="inside">
                     <button type="button" id="conv-rename">Rename</button>
                     <a id="conv-export-md" class="btn">Export .md</a>
                     <a id="conv-export-json" class="btn">Export .json</a>
@@ -256,34 +257,34 @@
                 <div id="agent-activity" class="ag-activity hidden" aria-live="polite" aria-label="Agent activity"></div>
                 <div id="messages" class="ag-messages" role="log" aria-live="polite" aria-relevant="additions" aria-label="Agent conversation"></div>
                 <form id="agent-chat-form" class="ag-composer">
-                  <select id="chat-mode" aria-label="Mode" title="Shared with the Home mode selector">
+                  <select id="chat-mode" aria-label="Mode" title="Shared with the Home mode selector" data-help="Same setting as Home&#x27;s Mode: Agent (orchestrator + tools), Tools (quick router), Chat (plain model) or Cursor (coding agent). Changing it here changes it there too." data-help-label="Mode">
                     <option value="agent" selected>Agent (orchestrator + tools)</option>
             <option value="route">Tools (quick router)</option>
             <option value="stream">Chat (plain model)</option>
             <option value="cursor">Cursor (coding agent)</option>
                   </select>
                   <textarea id="chat-input" rows="2" autocomplete="off" placeholder="Message the agent… (Enter send, Ctrl+Enter → Cursor, Shift+Enter newline)" aria-label="Message"></textarea>
-                  <button type="submit" id="chat-send">Send</button>
+                  <button type="submit" id="chat-send" data-help="Enter sends with the chosen mode and Shift+Enter adds a new line. Ctrl+Enter (Cmd+Enter on Mac) sends this message to Cursor instead." data-help-label="Sending messages">Send</button>
                 </form>
               </div>
             </section>
             <section id="tab-memory" class="ag-panel" role="tabpanel" aria-labelledby="ag-tab-memory">
               <div class="ag-col">
                 <form id="mem-form" class="row">
-                  <select id="mem-category" aria-label="Memory category">
+                  <select id="mem-category" aria-label="Memory category" data-help="Tags the new memory as a fact, preference, person, project, task or other, to keep the list organised." data-help-label="Memory category">
                     <option>fact</option><option>preference</option><option>person</option>
                     <option>project</option><option>task</option><option>other</option>
                   </select>
-                  <input id="mem-content" aria-label="Memory content" placeholder="Add a long-term fact, e.g. “User prefers metric units”" required>
+                  <input id="mem-content" aria-label="Memory content" placeholder="Add a long-term fact, e.g. “User prefers metric units”" required data-help="Something the agent should remember across chats. Memories you add here are active straight away, with no review step." data-help-label="Memory content">
                   <button type="submit">Add</button>
                 </form>
                 <div class="row">
-                  <label>Show <select id="mem-filter">
+                  <label data-help="Which memories to list: active ones the agent uses, pending review ones it extracted and is waiting for you to approve, rejected ones, or all." data-help-label="Show" data-help-place="wrap">Show <select id="mem-filter">
                     <option value="">all</option><option value="pending">pending review</option>
                     <option value="active" selected>active</option><option value="rejected">rejected</option>
                   </select></label>
-                  <input id="mem-search" type="search" placeholder="Filter…" aria-label="Filter memories">
-                  <button type="button" id="mem-test-btn" title="Semantic search over active memories">Test recall</button>
+                  <input id="mem-search" type="search" placeholder="Filter…" aria-label="Filter memories" data-help="Narrows the list to memories whose text contains these words." data-help-label="Filter memories">
+                  <button type="button" id="mem-test-btn" title="Semantic search over active memories" data-help="Asks for a question and shows the 5 active memories that match it best, with similarity scores. A quick way to check what the agent would recall." data-help-label="Test recall">Test recall</button>
                 </div>
                 <p class="hint">Auto-extracted memories land in <b>pending review</b> — approve, edit or reject them.</p>
                 <ul id="mem-list" class="ag-cards"></ul>
@@ -294,12 +295,12 @@
                 <form id="doc-form" class="drop" tabindex="0">
                   <p>Drop .txt / .md / .pdf files here or</p>
                   <input id="doc-files" type="file" multiple accept=".txt,.md,.markdown,.pdf,.rst,.csv,.json,.log,.py,.js,.html">
-                  <button type="submit">Upload &amp; index</button>
+                  <button type="submit" data-help="Drop files on this box or choose them, then Upload &amp; index splits them into chunks and indexes them so the agent can use them in answers. Text, Markdown, PDF, CSV, JSON, logs and code files are accepted." data-help-label="Upload documents">Upload &amp; index</button>
                   <p id="doc-upload-status" class="hint"></p>
                 </form>
                 <div class="row">
                   <input id="rag-query" aria-label="Test retrieval query" placeholder="Test retrieval: ask something about your documents">
-                  <button type="button" id="rag-search-btn">Search</button>
+                  <button type="button" id="rag-search-btn" data-help="Runs a test search over your indexed documents and shows the 5 best-matching chunks with scores. It doesn&#x27;t ask the model anything." data-help-label="Test retrieval">Search</button>
                 </div>
                 <ol id="rag-results" class="ag-cards"></ol>
                 <h3>Indexed documents</h3>
@@ -313,8 +314,8 @@
                   For quick push-to-talk use <b>Home</b>. Starting Live voice turns off Home's Always listening (they share one microphone).</p>
                 <div class="row">
                   <button type="button" id="voice-toggle" class="primary">Start live voice</button>
-                  <button type="button" id="voice-interrupt" disabled>Interrupt</button>
-                  <label><input type="checkbox" id="voice-tts" checked> Speak replies</label>
+                  <button type="button" id="voice-interrupt" disabled data-help="Start live voice opens a streaming talk with the agent (always in Agent mode) and takes the microphone from Home. Interrupt stops the reply being spoken; you can also just start talking." data-help-label="Live voice controls">Interrupt</button>
+                  <label data-help="When on, answers are spoken sentence by sentence; when off you get text only. It&#x27;s read when a session starts, so set it before pressing Start." data-help-label="Speak replies (live voice)" data-help-place="wrap"><input type="checkbox" id="voice-tts" checked> Speak replies</label>
                   <span id="voice-state" class="pill">idle</span>
                 </div>
                 <div class="meter"><div id="voice-meter"></div></div>
@@ -323,7 +324,7 @@
             </section>
             <section id="tab-tasks" class="ag-panel" role="tabpanel" aria-labelledby="ag-tab-tasks">
               <div class="ag-col">
-                <div class="row"><button type="button" id="tasks-refresh">Refresh</button><span id="tasks-info" class="hint"></span></div>
+                <div class="row"><button type="button" id="tasks-refresh" data-help="Reloads the list of jobs the agent handed to background workers such as Cursor, with status, time taken and output. The note beside it shows which workers exist and whether ClickUp is connected." data-help-label="Refresh tasks">Refresh</button><span id="tasks-info" class="hint"></span></div>
                 <table class="ag-table">
                   <thead><tr><th>When</th><th>Type</th><th>Description</th><th>Status</th><th>Time</th><th>Output</th></tr></thead>
                   <tbody id="tasks-body"></tbody>
@@ -344,5 +345,6 @@
   <script src="/static/agent.js?v=20261116ui"></script>
   <script src="/static/models.js?v=20261116ui"></script>
   <script src="/static/tour.js?v=20261116ui"></script>
+  <script src="/static/help.js?v=20261123help"></script>
 </body>
 </html>
