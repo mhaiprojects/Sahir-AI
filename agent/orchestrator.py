@@ -52,8 +52,116 @@ FINAL_SYSTEM = """You are Sahir, a local voice assistant. Using the worker resul
 request directly in 1-3 short spoken sentences, stating the key facts from the results (not just that
 work was done). Mention failures honestly. No markdown. Use a short numbered list (1. 2.) when there are multiple points."""
 
-_RESEARCH_RE = re.compile(r"\b(summari[sz]e|research|my (notes|docs|documents|files)|according to)\b", re.I)
+_RESEARCH_RE = re.compile(
+    r"\b("
+    r"summari[sz]e|research|according to|"
+    r"my (notes|docs|documents|files)|"
+    r"meeting notes\b.*\b(my docs|my documents|my files|in my docs)\b"
+    r")\b",
+    re.I,
+)
 _CLICKUP_RE = re.compile(r"\bclick ?up\b", re.I)
+
+# Block integration heuristics on code/infra/meta requests (not personal mail/calendar).
+_INTEGRATION_HEURISTIC_BLOCK_RE = re.compile(
+    r"\b("
+    r"regex|regular expression|validate|validation|cron|gpu|cpu|ram|availability of|"
+    r"python|javascript|typescript|function|class|script|implement|\.py\b|"
+    r"stack trace|debug"
+    r")\b",
+    re.I,
+)
+
+_SUMMARIZE_VERB_RE = re.compile(r"\b(summari[sz]e|summary of|give me a summary of)\b", re.I)
+_PERSONAL_MAIL_OBJECT_RE = re.compile(
+    r"\b(my (email|inbox|mail)|unread (emails?|mail)|today'?s emails?)\b",
+    re.I,
+)
+_RESEARCH_DOC_SUMMARIZE_RE = re.compile(
+    r"\b(summari[sz]e|summary of|give me a summary of)\b.*\b("
+    r"meeting notes|my (notes|docs|documents|files)|notes in my docs"
+    r")\b",
+    re.I,
+)
+
+_EMAIL_INTENT_RES: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bmy (email|inbox|mail)\b", re.I),
+    re.compile(r"\bunread (emails?|mail)\b", re.I),
+    re.compile(r"\bcheck (my )?(email|inbox|mail)\b", re.I),
+    re.compile(r"\b(draft|write|send)\s+(an?\s+)?(email|reply)\s+to\b", re.I),
+    re.compile(r"\breply to\b.{0,80}\bemail\b", re.I),
+    re.compile(r"\breply to\s+\w[\w'-]*'s email\b", re.I),
+    re.compile(r"\bsearch (my )?(inbox|mail|email)\b", re.I),
+    re.compile(r"\b(read|open)\s+(an?\s+)?(email|message)\b.*\b(inbox|from)\b", re.I),
+    re.compile(r"\b(imap|smtp)\b", re.I),
+    re.compile(
+        r"\b(summari[sz]e|summary of|give me a summary of)\b.*\b("
+        r"my (email|inbox|mail)|unread (emails?|mail)|today'?s emails?"
+        r")\b",
+        re.I,
+    ),
+)
+
+_CALENDAR_INTENT_RES: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bmy calendar\b", re.I),
+    re.compile(r"\bwhat(?:'s| is) on\b.*\b(today|tomorrow|this week)\b", re.I),
+    re.compile(r"\bwhat(?:'s| is) on (today|tomorrow|this week)\b", re.I),
+    re.compile(r"\bam i free\b", re.I),
+    re.compile(r"\b(check|am i)\s+(my )?(free|busy)\b", re.I),
+    re.compile(
+        r"\b(free|busy)\b.*\b(today|tomorrow|this week|at\s+\d{1,2}(:\d{2})?\s*(am|pm)?)\b",
+        re.I,
+    ),
+    re.compile(r"\b(book|create|add)\s+(an?\s+)?(event|meeting|appointment)\b", re.I),
+    re.compile(r"\bschedule\s+(an?\s+)?(event|meeting|appointment)\b", re.I),
+    re.compile(r"\bmove my (meeting|appointment|event)\b", re.I),
+    re.compile(r"\b(upcoming|next)\s+(meeting|appointment|event)s?\b", re.I),
+    re.compile(r"\bcheck my (calendar|schedule)\b", re.I),
+    re.compile(r"\blist\s+(my )?(calendar )?events\b", re.I),
+    re.compile(r"\b(summari[sz]e|summary of|give me a summary of)\b.*\bmy calendar\b", re.I),
+    re.compile(r"\bmy calendar\b.*\b(this week|today|tomorrow)\b", re.I),
+)
+
+
+def _blocks_integration_heuristic(text: str) -> bool:
+    if _INTEGRATION_HEURISTIC_BLOCK_RE.search(text):
+        return True
+    return router._looks_like_code_task(text) or router._looks_like_cursor_cli_query(text)
+
+
+def _email_summarize_intent(text: str) -> bool:
+    if _RESEARCH_DOC_SUMMARIZE_RE.search(text):
+        return False
+    if _SUMMARIZE_VERB_RE.search(text) and _PERSONAL_MAIL_OBJECT_RE.search(text):
+        return True
+    return bool(
+        _SUMMARIZE_VERB_RE.search(text)
+        and re.search(r"\bmy (inbox|mail|email)\b", text, re.I)
+    )
+
+
+def heuristic_email_intent(text: str) -> bool:
+    if _blocks_integration_heuristic(text):
+        return False
+    if _RESEARCH_DOC_SUMMARIZE_RE.search(text):
+        return False
+    if _email_summarize_intent(text):
+        return True
+    return any(p.search(text) for p in _EMAIL_INTENT_RES)
+
+
+def heuristic_calendar_intent(text: str) -> bool:
+    if _blocks_integration_heuristic(text):
+        return False
+    if _RESEARCH_DOC_SUMMARIZE_RE.search(text):
+        return False
+    return any(p.search(text) for p in _CALENDAR_INTENT_RES)
+
+
+def heuristic_research_intent(text: str) -> bool:
+    if heuristic_email_intent(text) or heuristic_calendar_intent(text):
+        return False
+    return bool(_RESEARCH_RE.search(text))
 
 
 @dataclass
@@ -104,7 +212,14 @@ class Orchestrator:
     def _heuristic_delegation(self, text: str) -> list[dict[str, Any]]:
         """Fallback when the model answers but the request clearly needs a worker."""
         calls: list[dict[str, Any]] = []
-        if "research" in self.dispatcher.workers and _RESEARCH_RE.search(text):
+        if "email" in self.dispatcher.workers and heuristic_email_intent(text):
+            entry: dict[str, Any] = {"type": "email", "description": text}
+            if _email_summarize_intent(text):
+                entry["email_action"] = "summarize"
+            calls.append(entry)
+        elif "calendar" in self.dispatcher.workers and heuristic_calendar_intent(text):
+            calls.append({"type": "calendar", "description": text})
+        elif "research" in self.dispatcher.workers and heuristic_research_intent(text):
             calls.append({"type": "research", "description": text})
         if "code" in self.dispatcher.workers and not calls:
             if router._looks_like_cursor_cli_query(text) or router._looks_like_code_task(text):
@@ -129,6 +244,14 @@ class Orchestrator:
             ctx["action"] = args.get("clickup_action") or "create_task"
             if args.get("clickup_task_id"):
                 ctx["task_id"] = args["clickup_task_id"]
+        if args.get("type") == "email":
+            ctx["action"] = args.get("email_action") or ctx.get("action")
+        if args.get("type") == "calendar":
+            ctx["action"] = args.get("calendar_action") or ctx.get("action")
+            if args.get("when"):
+                ctx["when"] = args["when"]
+            if args.get("title"):
+                ctx["title"] = args["title"]
         return Task.create(str(args.get("type")), str(args.get("description") or ""), context=ctx,
                            priority=args.get("priority") or "normal", callback="orchestrator")
 

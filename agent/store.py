@@ -735,6 +735,41 @@ class AgentStore:
         scored.sort(key=lambda c: c.score, reverse=True)
         return scored[:k]
 
+    # ------------------------------------------------------------ email drafts
+    def save_email_draft(
+        self,
+        *,
+        to_addrs: list[str],
+        cc_addrs: list[str],
+        subject: str,
+        body: str,
+        reply_to_uid: str | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> int:
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        cur = self._exec(
+            """INSERT INTO email_drafts (created_at, updated_at, to_addrs, cc_addrs, subject, body, reply_to_uid, meta)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (
+                now,
+                now,
+                json.dumps(to_addrs),
+                json.dumps(cc_addrs),
+                subject[:500],
+                body[:50000],
+                reply_to_uid,
+                json.dumps(meta or {}),
+            ),
+        )
+        return int(cur.lastrowid)
+
+    def get_email_draft(self, draft_id: int) -> dict[str, Any] | None:
+        rows = self._query("SELECT * FROM email_drafts WHERE id=?", (draft_id,))
+        return dict(rows[0]) if rows else None
+
+    def delete_email_draft(self, draft_id: int) -> bool:
+        return self._exec("DELETE FROM email_drafts WHERE id=?", (draft_id,)).rowcount > 0
+
 
 VALID_CHAT_MODES = frozenset({"agent", "route", "chat", "cursor", "tools", "stream"})
 

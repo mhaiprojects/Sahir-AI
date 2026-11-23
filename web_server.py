@@ -982,6 +982,8 @@ def create_app() -> FastAPI:
             "tasks": _get_agent_stack().dispatcher.list_tasks(conversation_id, limit),
             "workers": _get_agent_stack().dispatcher.catalog(),
             "clickup_configured": _get_agent_stack().clickup.configured,
+            "email_configured": _get_agent_stack().email.configured,
+            "calendar_configured": _get_agent_stack().calendar.configured,
         }
 
     @app.get("/api/integrations/clickup/status")
@@ -1003,6 +1005,46 @@ def create_app() -> FastAPI:
 
             msg = str(exc) if isinstance(exc, ClickUpError) else str(exc)
             return {"ok": False, "detail": msg, **client.status_payload()}
+
+    @app.get("/api/integrations/email/status")
+    def email_status() -> dict[str, Any]:
+        return _get_agent_stack().email.status_payload()
+
+    @app.post("/api/integrations/email/verify")
+    def email_verify() -> dict[str, Any]:
+        svc = _get_agent_stack().email
+        if not svc.configured:
+            from agent.email_integration import CONFIGURED_HINT
+
+            return {"ok": False, "detail": CONFIGURED_HINT, **svc.status_payload()}
+        try:
+            details = svc.verify()
+            return {"ok": True, "details": details, **svc.status_payload()}
+        except Exception as exc:
+            from agent.email_integration import EmailError
+
+            msg = str(exc) if isinstance(exc, EmailError) else str(exc)
+            return {"ok": False, "detail": msg, **svc.status_payload()}
+
+    @app.get("/api/integrations/calendar/status")
+    def calendar_status() -> dict[str, Any]:
+        return _get_agent_stack().calendar.status_payload()
+
+    @app.post("/api/integrations/calendar/verify")
+    def calendar_verify() -> dict[str, Any]:
+        svc = _get_agent_stack().calendar
+        if not svc.configured:
+            from agent.calendar_integration import CONFIGURED_HINT
+
+            return {"ok": False, "detail": CONFIGURED_HINT, **svc.status_payload()}
+        try:
+            details = svc.verify()
+            return {"ok": True, "details": details, **svc.status_payload()}
+        except Exception as exc:
+            from agent.calendar_integration import CalendarError
+
+            msg = str(exc) if isinstance(exc, CalendarError) else str(exc)
+            return {"ok": False, "detail": msg, **svc.status_payload()}
 
     @app.get("/agent")
     def agent_page() -> RedirectResponse:

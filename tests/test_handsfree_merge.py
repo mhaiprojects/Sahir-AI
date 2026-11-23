@@ -54,7 +54,13 @@ def client(tmp_path, monkeypatch):
     cfg = AgentConfig(db_path=tmp_path / "agent.db", auto_memory=False)
     store = AgentStore(cfg.db_path)
     agent = Agent(settings, cfg, store, FakeEmbedder(), FakeLLM())
-    stack = AgentStack(agent, None, None)
+    from agent.calendar_integration import CalendarService
+    from agent.clickup import ClickUpClient
+    from agent.email_integration import EmailService
+
+    stack = AgentStack(
+        agent, None, ClickUpClient(token=""), EmailService(settings, store=store), CalendarService(settings)
+    )
     monkeypatch.setattr(web_server, "_settings", settings)
     monkeypatch.setattr(web_server, "_agent_stack", stack)
     monkeypatch.setattr(web_server, "_pipeline", FakePipeline())

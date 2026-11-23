@@ -9,9 +9,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 import web_server
+from agent.calendar_integration import CalendarService
 from agent.clickup import ClickUpClient
 from agent.config import AgentConfig
 from agent.delegation import Dispatcher
+from agent.email_integration import EmailService
 from agent.factory import AgentStack
 from agent.loop import Agent
 from agent.orchestrator import Orchestrator
@@ -47,7 +49,13 @@ def client(tmp_path, monkeypatch):
     d.register(RecWorker("research"))
     agent.orchestrator = Orchestrator(settings, d, client=ScriptedClient([call("answer", reply="Milk and eggs. Also bread.")] * 20))
     monkeypatch.setattr(web_server, "_settings", settings)
-    monkeypatch.setattr(web_server, "_agent_stack", AgentStack(agent, d, ClickUpClient(token="")))
+    email = EmailService(settings, store=store)
+    calendar = CalendarService(settings)
+    monkeypatch.setattr(
+        web_server,
+        "_agent_stack",
+        AgentStack(agent, d, ClickUpClient(token=""), email, calendar),
+    )
     monkeypatch.setattr(web_server, "_pipeline", FakePipeline())
     monkeypatch.setattr(web_server, "_log_store", None)
     from web.commands import VoiceCommandStore

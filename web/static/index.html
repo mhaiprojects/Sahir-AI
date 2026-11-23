@@ -236,6 +236,20 @@
               (see <code>docs/integrations/clickup.md</code> in the repo).
             </p>
             <button type="button" id="clickup-verify-btn" class="secondary small" hidden>Verify</button>
+            <h3 class="config-subhead">Email</h3>
+            <p id="email-status-line" class="config-note" aria-live="polite">Loading email status…</p>
+            <p id="email-help-line" class="config-note muted">
+              Needs credentials: <code>EMAIL_IMAP_HOST</code>, <code>EMAIL_SMTP_HOST</code>, <code>EMAIL_USERNAME</code>, password
+              (see <code>docs/integrations/email.md</code>).
+            </p>
+            <button type="button" id="email-verify-btn" class="secondary small" hidden>Verify</button>
+            <h3 class="config-subhead">Calendar</h3>
+            <p id="calendar-status-line" class="config-note" aria-live="polite">Loading calendar status…</p>
+            <p id="calendar-help-line" class="config-note muted">
+              Needs credentials: <code>CALENDAR_CALDAV_URL</code> or read-only <code>CALENDAR_ICS_URL</code>
+              (see <code>docs/integrations/calendar.md</code>).
+            </p>
+            <button type="button" id="calendar-verify-btn" class="secondary small" hidden>Verify</button>
           </div>
         </details>
 

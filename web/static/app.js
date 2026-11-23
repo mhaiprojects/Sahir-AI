@@ -155,6 +155,22 @@ function actionChipLabel(action) {
     if (sub === "update_status") return `Set status: ${action.status || "complete"}`;
     return `ClickUp ${String(sub).replace(/_/g, " ")}`;
   }
+  if (kind === "email") {
+    const sub = action.action || "search";
+    if (sub === "send_draft") {
+      const dest = Array.isArray(action.to) ? action.to.join(", ") : (action.to || "");
+      const subj = action.subject || "";
+      return `Send email to ${dest}${subj ? ` — “${subj}”` : ""}`;
+    }
+    if (sub === "draft_reply" || sub === "draft_new") return "Draft email";
+    return `Email ${String(sub).replace(/_/g, " ")}`;
+  }
+  if (kind === "calendar") {
+    const sub = action.action || "list";
+    if (sub === "create_event") return `Create event: ${action.title || "meeting"}`;
+    if (sub === "update_event") return `Update event: ${action.title || "meeting"}`;
+    return `Calendar ${String(sub).replace(/_/g, " ")}`;
+  }
   return String(kind).replace(/_/g, " ");
 }
 
@@ -826,6 +842,94 @@ function handleHealthOk(data) {
     loadWebConfig();
     refreshLogs();
     refreshCommands();
+  }
+}
+
+async function refreshEmailIntegration() {
+  const line = document.getElementById("email-status-line");
+  const help = document.getElementById("email-help-line");
+  const btn = document.getElementById("email-verify-btn");
+  if (!line) return;
+  try {
+    const res = await fetch("/api/integrations/email/status", { cache: "no-store" });
+    const data = await res.json();
+    if (!data.configured) {
+      line.textContent = data.needs_credentials_message || "Email: not configured";
+      line.className = "config-note warn";
+      help?.classList.remove("hidden");
+      if (btn) btn.hidden = true;
+      return;
+    }
+    line.textContent = `Email: configured (${data.password_source || "env"})`;
+    line.className = "config-note";
+    help?.classList.add("hidden");
+    if (btn) {
+      btn.hidden = false;
+      btn.onclick = async () => {
+        btn.disabled = true;
+        try {
+          const v = await fetch("/api/integrations/email/verify", { method: "POST" });
+          const body = await v.json();
+          if (body.ok) {
+            line.textContent = "Email verified — IMAP login OK";
+            line.className = "config-note";
+          } else {
+            line.textContent = `Email verify failed: ${body.detail || "unknown error"}`;
+            line.className = "config-note warn";
+          }
+        } finally {
+          btn.disabled = false;
+        }
+      };
+    }
+  } catch (err) {
+    line.textContent = `Email status unavailable: ${err.message}`;
+    line.className = "config-note warn";
+  }
+}
+
+async function refreshCalendarIntegration() {
+  const line = document.getElementById("calendar-status-line");
+  const help = document.getElementById("calendar-help-line");
+  const btn = document.getElementById("calendar-verify-btn");
+  if (!line) return;
+  try {
+    const res = await fetch("/api/integrations/calendar/status", { cache: "no-store" });
+    const data = await res.json();
+    if (!data.configured) {
+      line.textContent = data.needs_credentials_message || "Calendar: not configured";
+      line.className = "config-note warn";
+      help?.classList.remove("hidden");
+      if (btn) btn.hidden = true;
+      return;
+    }
+    const mode = data.caldav_configured ? "CalDAV" : data.ics_configured ? "ICS (read-only)" : "configured";
+    line.textContent = `Calendar: ${mode} · ${data.timezone || ""}`;
+    line.className = "config-note";
+    help?.classList.add("hidden");
+    if (btn) {
+      btn.hidden = false;
+      btn.onclick = async () => {
+        btn.disabled = true;
+        try {
+          const v = await fetch("/api/integrations/calendar/verify", { method: "POST" });
+          const body = await v.json();
+          if (body.ok) {
+            const d = body.details || {};
+            line.textContent = `Calendar verified — ${d.mode || "ok"}`;
+            line.className = "config-note";
+          } else {
+            line.textContent = `Calendar verify failed: ${body.detail || "unknown error"}`;
+            line.className = "config-note warn";
+          }
+        } finally {
+          btn.disabled = false;
+        }
+      };
+    }
+  } catch (err) {
+    line.textContent = `Calendar status unavailable: ${err.message}`;
+    line.className = "config-note warn";
   }
 }
 
@@ -2134,6 +2238,8 @@ function initViewNav() {
     if (viewName === "settings") {
       if (typeof refreshHealth === "function") refreshHealth();
       refreshClickupIntegration();
+      refreshEmailIntegration();
+      refreshCalendarIntegration();
     }
     if (viewName === "chat") focusHomeChatInput();
     if (viewName !== "chat") document.querySelector(".unified-layout")?.classList.remove("rail-open");

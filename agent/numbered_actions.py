@@ -143,6 +143,39 @@ def execute_numbered_action(agent: "Agent", action: dict[str, Any]) -> RouteResu
         except ClickUpError as exc:
             return RouteResult(reply=str(exc), routed=True, action="error", action_details={"clickup": True})
 
+    if kind == "email":
+        from agent.email_integration import EmailError, EmailService, execute_email_action
+
+        service = getattr(agent, "_integration_email", None) or EmailService.from_settings(
+            agent.settings, store=agent.store, llm=agent.llm
+        )
+        try:
+            out = execute_email_action(service, action, llm=agent.llm)
+            return RouteResult(
+                reply=str(out.get("reply") or out.get("summary") or "Email action completed."),
+                routed=True,
+                action="email",
+                action_details={k: v for k, v in out.items() if k not in ("reply", "summary")},
+            )
+        except EmailError as exc:
+            return RouteResult(reply=str(exc), routed=True, action="error", action_details={"email": True})
+
+    if kind == "calendar":
+        from agent.calendar_integration import CalendarError, CalendarService, execute_calendar_action
+
+        service = getattr(agent, "_integration_calendar", None) or CalendarService(agent.settings)
+        act = {**action, "confirmed": True}
+        try:
+            out = execute_calendar_action(service, act)
+            return RouteResult(
+                reply=str(out.get("reply") or out.get("summary") or "Calendar action completed."),
+                routed=True,
+                action="calendar",
+                action_details={k: v for k, v in out.items() if k not in ("reply", "summary")},
+            )
+        except CalendarError as exc:
+            return RouteResult(reply=str(exc), routed=True, action="error", action_details={"calendar": True})
+
     if kind == "supervisor":
         pid = agent.store.general_project_id()
         proj = agent.store.get_project(pid) if pid else None

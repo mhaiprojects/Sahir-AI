@@ -14,7 +14,7 @@ def utcnow() -> str:
 
 logger = logging.getLogger(__name__)
 
-STORE_SCHEMA_VERSION = 4
+STORE_SCHEMA_VERSION = 5
 GENERAL_SLUG = "general"
 GENERAL_NAME = "General"
 
@@ -121,6 +121,26 @@ def migrate_store(conn: sqlite3.Connection, *, default_chat_mode: str = "agent")
     # --- v4: built-in General project + backfill
     _ensure_general_project(conn, default_chat_mode=default_chat_mode)
     _mark_version(conn, 4)
+
+    # --- v5: local email drafts (integration item 25)
+    if _current_version(conn) < 5:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS email_drafts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                to_addrs TEXT NOT NULL DEFAULT '[]',
+                cc_addrs TEXT NOT NULL DEFAULT '[]',
+                subject TEXT NOT NULL DEFAULT '',
+                body TEXT NOT NULL DEFAULT '',
+                reply_to_uid TEXT,
+                meta TEXT NOT NULL DEFAULT '{}'
+            );
+            """
+        )
+        _mark_version(conn, 5)
+
     return STORE_SCHEMA_VERSION
 
 

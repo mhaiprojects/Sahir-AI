@@ -118,6 +118,30 @@ class Settings:
     clickup_token_source: str = "none"
     clickup_token_load_error: str | None = None
 
+    # Email (optional IMAP/SMTP integration)
+    email_imap_host: str = ""
+    email_imap_port: int = 993
+    email_smtp_host: str = ""
+    email_smtp_port: int = 587
+    email_smtp_ssl: bool = False
+    email_username: str = ""
+    email_from: str = ""
+    email_password: str = field(default="", repr=False)
+    email_password_source: str = "none"
+    email_password_load_error: str | None = None
+    email_imap_drafts_folder: str = ""
+    email_send_allowlist: list[str] = field(default_factory=list)
+
+    # Calendar (optional CalDAV / ICS)
+    calendar_caldav_url: str = ""
+    calendar_ics_url: str = ""
+    calendar_username: str = ""
+    calendar_password: str = field(default="", repr=False)
+    calendar_password_source: str = "none"
+    calendar_password_load_error: str | None = None
+    calendar_name: str = ""
+    calendar_timezone: str = "Australia/Melbourne"
+
     @property
     def clickup_has_token(self) -> bool:
         return bool(self.clickup_api_token) and not self.clickup_token_load_error
@@ -229,8 +253,56 @@ class Settings:
                 os.getenv("CLICKUP_TOKEN_FILE", "").strip()
                 or str(Path.home() / ".config" / "jahash-secrets" / "clickup-token.txt")
             ).expanduser(),
+            email_imap_host=os.getenv("EMAIL_IMAP_HOST", "").strip(),
+            email_imap_port=int(os.getenv("EMAIL_IMAP_PORT", "993")),
+            email_smtp_host=os.getenv("EMAIL_SMTP_HOST", "").strip(),
+            email_smtp_port=int(os.getenv("EMAIL_SMTP_PORT", "587")),
+            email_smtp_ssl=os.getenv("EMAIL_SMTP_SSL", "false").lower() in ("1", "true", "yes"),
+            email_username=os.getenv("EMAIL_USERNAME", "").strip(),
+            email_from=os.getenv("EMAIL_FROM", "").strip(),
+            email_imap_drafts_folder=os.getenv("EMAIL_IMAP_DRAFTS_FOLDER", "").strip(),
+            email_send_allowlist=_split_csv(os.getenv("EMAIL_SEND_ALLOWLIST", ""), []),
+            calendar_caldav_url=os.getenv("CALENDAR_CALDAV_URL", "").strip(),
+            calendar_ics_url=os.getenv("CALENDAR_ICS_URL", "").strip(),
+            calendar_username=os.getenv("CALENDAR_USERNAME", "").strip(),
+            calendar_name=os.getenv("CALENDAR_NAME", "").strip(),
+            calendar_timezone=os.getenv("CALENDAR_TIMEZONE", "Australia/Melbourne").strip() or "Australia/Melbourne",
             **_clickup_env_fields(),
+            **_email_env_fields(),
+            **_calendar_env_fields(),
         )
+
+
+def _email_env_fields() -> dict:
+    from agent.integration_secrets import load_secret
+
+    pwd_file = Path(
+        os.getenv("EMAIL_PASSWORD_FILE", "").strip()
+        or str(Path.home() / ".config" / "jahash-secrets" / "email-password.txt")
+    ).expanduser()
+    password, source, err = load_secret(env_var="EMAIL_PASSWORD", file_path=pwd_file, label="Email password")
+    return {
+        "email_password": password,
+        "email_password_source": source,
+        "email_password_load_error": err,
+    }
+
+
+def _calendar_env_fields() -> dict:
+    from agent.integration_secrets import load_secret
+
+    pwd_file = Path(
+        os.getenv("CALENDAR_PASSWORD_FILE", "").strip()
+        or str(Path.home() / ".config" / "jahash-secrets" / "calendar-password.txt")
+    ).expanduser()
+    password, source, err = load_secret(
+        env_var="CALENDAR_PASSWORD", file_path=pwd_file, label="Calendar password"
+    )
+    return {
+        "calendar_password": password,
+        "calendar_password_source": source,
+        "calendar_password_load_error": err,
+    }
 
 
 def _clickup_env_fields() -> dict:

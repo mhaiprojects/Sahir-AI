@@ -88,6 +88,11 @@ def action_requires_confirm(action: dict[str, Any] | None) -> bool:
     if not action:
         return False
     kind = str(action.get("kind") or "")
+    sub = str(action.get("action") or "")
+    if kind == "email" and sub == "send_draft":
+        return True
+    if kind == "calendar" and sub in {"create_event", "update_event"}:
+        return True
     if kind in CONFIRM_ACTION_KINDS:
         if kind == "supervisor":
             tool = str(action.get("tool") or "")
@@ -121,6 +126,24 @@ def action_chip_label(action: dict[str, Any] | None) -> str:
         if sub == "update_status":
             return f"Set status: {action.get('status') or 'complete'}"
         return f"ClickUp {str(sub).replace('_', ' ')}"
+    if kind == "email":
+        sub = action.get("action") or "search"
+        if sub == "send_draft":
+            dest = action.get("to") or action.get("to_addrs") or []
+            if isinstance(dest, list):
+                dest = ", ".join(str(x) for x in dest)
+            subj = action.get("subject") or ""
+            return f"Send email to {dest}" + (f" — “{subj}”" if subj else "")
+        if sub in {"draft_reply", "draft_new"}:
+            return "Draft email"
+        return f"Email {str(sub).replace('_', ' ')}"
+    if kind == "calendar":
+        sub = action.get("action") or "list"
+        if sub == "create_event":
+            return f"Create event: {action.get('title') or 'meeting'}"
+        if sub == "update_event":
+            return f"Update event: {action.get('title') or 'meeting'}"
+        return f"Calendar {str(sub).replace('_', ' ')}"
     return str(kind).replace("_", " ")
 
 
@@ -168,6 +191,31 @@ def _action_from_turn(action: str, details: dict[str, Any], tasks: list[dict[str
     return None
 
 
+def _integration_action_from_tasks(tasks: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+    for ent in tasks or []:
+        task = ent.get("task") or ent
+        wtype = str(task.get("type") or "")
+        if wtype not in {"email", "calendar"}:
+            continue
+        res = ent.get("result") if isinstance(ent, dict) else {}
+        out = (res or {}).get("output") if isinstance(res, dict) else {}
+        if not isinstance(out, dict):
+            continue
+        numbered = out.get("numbered_actions")
+        if isinstance(numbered, list) and numbered:
+            act = dict(numbered[0])
+            act.setdefault("kind", wtype)
+            return act
+        if wtype == "calendar" and out.get("action") == "propose_create_event":
+            return {
+                "kind": "calendar",
+                "action": "create_event",
+                "title": out.get("title"),
+                "when": out.get("when"),
+            }
+    return None
+
+
 def _clickup_action_from_tasks(tasks: list[dict[str, Any]] | None) -> dict[str, Any] | None:
     for ent in tasks or []:
         task = ent.get("task") or ent
@@ -197,7 +245,11 @@ def attach_actions_from_turn(
 ) -> list[dict[str, Any]]:
     """Attach at most one concrete action per item index (from orchestrator/supervisor output only)."""
     details = dict(action_details or {})
-    act = _clickup_action_from_tasks(tasks) or _action_from_turn(action or "", details, tasks)
+    act = (
+        _integration_action_from_tasks(tasks)
+        or _clickup_action_from_tasks(tasks)
+        or _action_from_turn(action or "", details, tasks)
+    )
     if not act:
         if tasks and len(items) >= len(tasks):
             out = []
@@ -280,4 +332,14 @@ def confirm_prompt_for_action(action: dict[str, Any]) -> str:
         args = " ".join(action.get("args") or [])
         spoken = f"{cmd} {args}".strip()
         return f"Run `{spoken}`? Say yes to confirm."
+    if action.get("kind") == "email" and action.get("action") == "send_draft":
+        dest = action.get("to") or []
+        if isinstance(dest, list):
+            dest = ", ".join(str(x) for x in dest)
+        subj = action.get("subject") or ""
+        return f"Send email to {dest}" + (f" with subject “{subj}”" if subj else "") + "? Say yes to confirm."
+    if action.get("kind") == "calendar" and action.get("action") in {"create_event", "update_event"}:
+        title = action.get("title") or "meeting"
+        when = action.get("when") or action.get("start") or ""
+        return f"Create calendar event “{title}”" + (f" ({when})" if when else "") + "? Say yes to confirm."
     return f"{chip}? Say yes to confirm."
