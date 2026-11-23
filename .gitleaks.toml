@@ -1,0 +1,18 @@
+title = "Sahir-AI gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known false positives and example files"
+paths = [
+  '''(?i)\.env\.example$''',
+  '''(?i)\.env\.docker\.example$''',
+  '''(?i)^docs/''',
+  '''(?i)^README\.md$''',
+  '''(?i)^tests/test_ssl_cert_sans\.py$''',
+  '''(?i)scripts/voice_e2e_check\.py$''',
+]
+regexes = [
+  '''(?i)SHA-256: [a-f0-9]{64}''',
+]

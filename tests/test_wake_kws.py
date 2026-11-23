@@ -129,6 +129,7 @@ def test_voice_session_wake_gate_disabled_no_kws(monkeypatch: pytest.MonkeyPatch
 
 @pytest.mark.slow
 @pytest.mark.flaky_kws
+@pytest.mark.flaky_tts_audio
 @pytest.mark.xfail(
     strict=False,
     reason="#30: KWS detection on Piper TTS audio is unreliable at default thresholds; needs real-mic tuning",

@@ -73,10 +73,10 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     if os.getenv("SAHIR_RUN_FLAKY") == "1":
         return
     skip = pytest.mark.skip(
-        reason="#30: flaky KWS/TTS test excluded by default; set SAHIR_RUN_FLAKY=1 to run",
+        reason="Flaky TTS-audio ML test excluded by default; set SAHIR_RUN_FLAKY=1 to run",
     )
     for item in items:
-        if "flaky_kws" in item.keywords:
+        if "flaky_kws" in item.keywords or "flaky_tts_audio" in item.keywords:
             item.add_marker(skip)
 
 

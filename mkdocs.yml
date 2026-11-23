@@ -1,0 +1,67 @@
+site_name: Sahir AI
+site_description: Local-first voice assistant — public documentation
+site_url: https://mhaiprojects.github.io/Sahir-AI/
+repo_url: https://github.com/mhaiprojects/Sahir-AI
+repo_name: mhaiprojects/Sahir-AI
+docs_dir: docs
+site_dir: site
+
+exclude_docs: |
+  README.md
+  plans/*
+  research/*
+  testing/*
+  upgrade-research.md
+  for-ai-agents.md
+  examples/*
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Light mode
+    - scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Dark mode
+  features:
+    - navigation.sections
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Docker quick start: docker-quickstart.md
+      - Deployment: deployment.md
+      - Operations: operations.md
+      - Troubleshooting: troubleshooting.md
+  - Features: features.md
+  - Security: security-public.md
+  - Architecture: architecture.md
+  - Models: models.md
+  - Integrations:
+      - ClickUp: integrations/clickup.md
+      - Email: integrations/email.md
+      - Calendar: integrations/calendar.md
+      - Wyoming (Home Assistant): integrations/wyoming.md
+  - UI layout: ui-layout.md
+  - Publishing this site: publishing.md
+  - Screenshot gallery: gallery.md
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+
+extra:
+  generator: false

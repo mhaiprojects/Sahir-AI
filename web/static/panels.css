@@ -249,7 +249,7 @@ button.wip-jump {
     bottom: auto;
     z-index: 5;
     height: auto;
-    max-height: min(28vh, 11rem);
+    max-height: min(22vh, 9rem);
     flex: 0 0 auto;
     border-left: none;
     border-top: 1px solid var(--border);

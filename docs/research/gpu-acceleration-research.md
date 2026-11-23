@@ -11,8 +11,8 @@ Labels used below:
 
 ## 1. Summary
 
-- **The card has 4 GB of VRAM** (4,278,190,080 bytes, measured; AMD RX 5500 on buspc). Before any model loads, the KDE desktop and Chrome already use about 1.1 GB of it, so only about 2.9 GB is free.
-- **Ollama already uses the GPU through Vulkan** on buspc (AMD RX 5500, 4 GB). Ollama 0.32.15 has Vulkan on by default (`OLLAMA_VULKAN:true`) and detects the card via RADV. Its built-in ROCm is skipped ("dropping ROCm device — no rocblas support for gfx target this RDNA1 chip"). `docs/upgrade-research.md` reflects this as of 2026-11-23 ([#19](https://github.com/mhaiprojects/Sahir-AI/issues/19)).
+- **The card has 4 GB of VRAM** (4,278,190,080 bytes, measured; AMD RX 5500 class GPU on the dev machine). Before any model loads, the desktop and Chrome already use about 1.1 GB of it, so only about 2.9 GB is free.
+- **Ollama already uses the GPU through Vulkan** on the dev machine (AMD RX 5500, 4 GB). Ollama 0.32.15 has Vulkan on by default (`OLLAMA_VULKAN:true`) and detects the card via RADV. Its built-in ROCm is skipped ("dropping ROCm device — no rocblas support for gfx target this RDNA1 chip"). `docs/upgrade-research.md` reflects this as of 2026-11-23 ([#19](https://github.com/mhaiprojects/Sahir-AI/issues/19)).
 - **llama3.1:8b does not fit in VRAM.** Its weights alone are about 4.6 GiB. Ollama currently puts **10 of 33 layers** on the GPU (about 1.56 GiB) and keeps the rest on the CPU. Generation runs at about 4.8–6.8 tokens/s, so the partial offload is barely helping.
 - **Measured latency breakdown:** most of the 8–12 s reply delay is two Ollama calls per turn. The first is the orchestrator call: about 340 prompt tokens at about 104 t/s (about 3.2 s), plus about 25 tokens generated at about 5.9 t/s (about 4 s). The second is a short call of about 2 s. The LLM step is the bottleneck. STT and TTS are not.
 - **The biggest win is a smaller LLM that fits entirely on the GPU**, for example Llama 3.2 3B or Qwen3 4B at Q4_K_M, through the same Ollama Vulkan backend. Estimated LLM time per turn drops from about 9 s to about 2–3 s. The trade-off is weaker tool-calling quality, which needs testing.

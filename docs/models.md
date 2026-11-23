@@ -117,7 +117,7 @@ fallback. Results: `data/bench/<timestamp>.json`, `latest.json`, `latest.md`.
 ## Ollama model storage location (#31)
 
 Pulled models live under **`OLLAMA_MODELS`** on the Ollama **service** (not in the Sahir repo). On
-**buspc** this is already on a large disk: `/mnt/ssd6/ollama/models` via a systemd drop-in.
+**the dev machine** may use a large disk, e.g. `/path/to/large-disk/ollama/models` via a systemd drop-in.
 
 The **Models** page shows that path plus free/total space (from the nearest existing parent of the
 store) before you pull more models. Warnings appear when free space is below **`OLLAMA_MODELS_WARN_FREE_GB`**
@@ -142,24 +142,23 @@ Example drop-in:
 
 ```ini
 [Service]
-Environment="OLLAMA_MODELS=/mnt/ssd6/ollama/models"
-RequiresMountsFor=/mnt/ssd6
+Environment="OLLAMA_MODELS=/path/to/large-disk/ollama/models"
+RequiresMountsFor=/path/to/large-disk
 ```
 
 Then (paths and user vary by distro):
 
 ```bash
-sudo mkdir -p /mnt/ssd6/ollama/models
-sudo rsync -a /usr/share/ollama/.ollama/models/ /mnt/ssd6/ollama/models/
-sudo chown -R ollama:ollama /mnt/ssd6/ollama
+sudo mkdir -p /path/to/large-disk/ollama/models
+sudo rsync -a /usr/share/ollama/.ollama/models/ /path/to/large-disk/ollama/models/
+sudo chown -R ollama:ollama /path/to/large-disk/ollama
 sudo systemctl daemon-reload
 sudo systemctl restart ollama
 ollama list
 systemctl show ollama -p Environment
 ```
 
-On **buspc**, `OLLAMA_MODELS=/mnt/ssd6/ollama/models` is already configured; use the Models page to
-confirm free space before large pulls.
+When `OLLAMA_MODELS` points at a large disk, use the Models page to confirm free space before large pulls.
 
 | Variable | Default | Meaning |
 |----------|---------|---------|

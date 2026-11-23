@@ -48,6 +48,15 @@ def test_index_chat_log_before_composer():
     assert 'conv-actions-menu" id="conv-actions-menu" open' in html
 
 
+def test_mobile_chat_bar_compact_controls():
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    css = (STATIC / "unified.css").read_text(encoding="utf-8")
+    assert 'id="chat-bar-sheet-toggle"' in html
+    assert 'id="chat-bar-mobile-summary"' in html
+    assert "min-height: 56px" in css and "#mic-btn" in css
+    assert "min-height: 180px" in css
+
+
 def test_conv_actions_menu_sync():
     js = (STATIC / "chatbar.js").read_text(encoding="utf-8")
     assert "syncConvActionsMenu" in js

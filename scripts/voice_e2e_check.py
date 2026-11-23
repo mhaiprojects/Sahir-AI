@@ -3,7 +3,7 @@
 
 Default: starts a throwaway ``bot.py --web`` on a free port with a temp agent DB (like
 ``scripts/test_web.py``). Use ``--use-running`` to hit the server from``.env`` (e.g.
-``https://127.0.0.1:8765``). When reachable, also runs against ``https://192.168.1.220:8765``.
+``https://127.0.0.1:8765``). When reachable, optionally also runs against ``SAHIR_LAN_URL`` (e.g. ``https://192.0.2.10:8765``).
 
 Auth: bearer token from ``WEB_AUTH_TOKEN_FILE`` / env when ``WEB_AUTH_ENABLED`` is on.
 """
@@ -58,7 +58,7 @@ CONTEXT_NEEDLE = "platypus"
 CONTEXT_PROMPT_ANCHOR = "Australian animals"
 _CONTEXT_PARTIAL_TYPES = frozenset({"reply", "audio", "tts_started", "tts_done", "status"})
 PTT_PHRASE = "what is two plus two"
-LAN_URL = "https://192.168.1.220:8765"
+LAN_URL = os.environ.get("SAHIR_LAN_URL", "").strip()
 CHUNK_SLEEP_S = 0.064  # ~realtime for 1024-sample frames
 
 

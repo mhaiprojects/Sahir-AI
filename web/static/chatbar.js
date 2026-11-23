@@ -35,6 +35,59 @@
     else menu.setAttribute("open", "");
   }
 
+  const mobileSummary = document.getElementById("chat-bar-mobile-summary");
+  const sheetToggle = document.getElementById("chat-bar-sheet-toggle");
+  const sheetPanel = document.getElementById("chat-bar-expandable");
+  const chatBar = document.getElementById("chat-bar");
+
+  function modeLabel(ui) {
+    if (ui === "route") return "Tools";
+    if (ui === "stream") return "Chat";
+    if (ui === "cursor") return "Cursor";
+    return "Agent";
+  }
+
+  function updateMobileSummary(conv) {
+    if (!mobileSummary || !conv) return;
+    const proj = conv.project_name || "General";
+    const mode = document.getElementById("chat-mode");
+    const ui = mode?.value || uiMode(conv.mode);
+    mobileSummary.textContent = `${proj} · ${modeLabel(ui)}`;
+  }
+
+  function setChatBarSheetOpen(open) {
+    if (!chatBar || !sheetToggle || !sheetPanel) return;
+    const narrow = window.matchMedia("(max-width: 980px)").matches;
+    chatBar.classList.toggle("chat-bar-sheet-open", open);
+    sheetToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    if (narrow) {
+      if (open) sheetPanel.removeAttribute("hidden");
+      else sheetPanel.setAttribute("hidden", "");
+    } else {
+      sheetPanel.removeAttribute("hidden");
+    }
+  }
+
+  sheetToggle?.addEventListener("click", () => {
+    const open = !chatBar?.classList.contains("chat-bar-sheet-open");
+    setChatBarSheetOpen(open);
+  });
+  document.getElementById("chat-mode")?.addEventListener("change", () => {
+    const cur = convs.find((c) => c.id === homeConversationId);
+    if (cur) updateMobileSummary({ ...cur, mode: document.getElementById("chat-mode")?.value });
+  });
+
+  function syncChatBarSheetLayout() {
+    const narrow = window.matchMedia("(max-width: 980px)").matches;
+    if (!narrow) {
+      sheetPanel?.removeAttribute("hidden");
+      chatBar?.classList.remove("chat-bar-sheet-open");
+      sheetToggle?.setAttribute("aria-expanded", "false");
+    } else if (!chatBar?.classList.contains("chat-bar-sheet-open")) {
+      sheetPanel?.setAttribute("hidden", "");
+    }
+  }
+
   function updateContextUi(conv) {
     const proj = document.getElementById("breadcrumb-project");
     const chat = document.getElementById("breadcrumb-chat");
@@ -62,6 +115,8 @@
     applyProjectSelectValue(conv.project_id);
     window.sahirSetCurrentProject?.(conv.project_id);
     syncConvActionsMenu();
+    updateMobileSummary(conv);
+    setChatBarSheetOpen(false);
   }
 
   async function refreshProjects() {
@@ -309,7 +364,11 @@
   window.sahirSyncConvActionsMenu = syncConvActionsMenu;
   window.sahirRefreshChatBar = () => Promise.all([refreshProjects(), refreshChats(), refreshModels()]);
   syncConvActionsMenu();
-  window.addEventListener("resize", syncConvActionsMenu);
+  window.addEventListener("resize", () => {
+    syncConvActionsMenu();
+    syncChatBarSheetLayout();
+  });
+  syncChatBarSheetLayout();
   refreshModels();
   refreshProjects()
     .then(() => {

@@ -1121,6 +1121,9 @@ def run_web_server(settings: Settings | None = None) -> None:
             "Run scripts/generate_web_cert.sh and set WEB_SSL_CERT/WEB_SSL_KEY."
         )
 
+    from log_redaction import install_log_redaction
+
+    install_log_redaction()
     uvicorn.run(
         app,
         host=settings.web_host,

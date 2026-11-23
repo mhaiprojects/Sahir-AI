@@ -1,6 +1,6 @@
 # Upgrade research — local-first voice agent (Nov 2026)
 
-Research date: 2026-11-14 (GPU facts refreshed 2026-11-23). Target machine (**buspc**): **8-core desktop
+Research date: 2026-11-14 (GPU facts refreshed 2026-11-23). Target machine (**the dev machine**): **8-core desktop
 CPU, ample system RAM, AMD Radeon RX 5500 (Navi 14 / RDNA1, 4 GB VRAM), no NVIDIA/CUDA**. ROCm does not
 officially support this GPU (`gfx1012`); Ollama's bundled ROCm backend drops it. **LLM inference already
 runs on the GPU through Ollama's Vulkan backend** (RADV; enabled by default in 0.32.x). STT (faster-whisper),
@@ -101,7 +101,7 @@ https://github.com/KoljaB/RealtimeSTT · https://github.com/KoljaB/RealtimeTTS �
 
 | Option | License | Fit for this PC |
 |--------|---------|-----------------|
-| **Ollama** (current) | MIT | **Vulkan backend in use on buspc** (`library=Vulkan`, 4.0 GiB total VRAM). `llama3.1:8b` does **not** fit: ~10/33 layers on GPU, generation ~4.8–6.8 tok/s (~70% of weights on CPU). **Keep Ollama**; switch the default orchestrator to a 3–4B Q4 model that fits entirely on the GPU for ~30–60 tok/s generation (see gpu-acceleration research). |
+| **Ollama** (current) | MIT | **Vulkan backend in use on the dev machine** (`library=Vulkan`, 4.0 GiB total VRAM). `llama3.1:8b` does **not** fit: ~10/33 layers on GPU, generation ~4.8–6.8 tok/s (~70% of weights on CPU). **Keep Ollama**; switch the default orchestrator to a 3–4B Q4 model that fits entirely on the GPU for ~30–60 tok/s generation (see gpu-acceleration research). |
 | llama.cpp `llama-server` | MIT | Same Vulkan stack as Ollama (ggml). Optional alternate OpenAI-compatible server if we need flags Ollama hides; reported ~30 tok/s gen for 9B Q4_K_M on an **8 GB** RDNA1 card—not achievable with 8B on this **4 GB** card. |
 | vLLM | Apache-2.0 | GPU-first (CUDA/ROCm supported cards); CPU backend exists but not worthwhile here |
 | LM Studio | **Proprietary** (free) | Not OSS |

@@ -54,28 +54,42 @@
         </header>
 
         <section class="chat-bar" id="chat-bar" aria-label="Project, chat, mode and model">
-          <div class="chat-bar-field chat-bar-project">
-            <label class="chat-bar-label" for="chat-project-select">Project</label>
-            <select id="chat-project-select" aria-label="Project" title="Current project; browse all chats in the left rail"><option value="">Loading…</option></select>
+          <div class="chat-bar-mobile-row">
+            <button
+              type="button"
+              id="chat-bar-sheet-toggle"
+              class="chat-bar-context-btn"
+              aria-expanded="false"
+              aria-controls="chat-bar-expandable"
+            >
+              <span id="chat-bar-mobile-summary" class="chat-bar-mobile-summary">General · Agent</span>
+              <span class="chat-bar-gear" aria-hidden="true">⚙</span>
+            </button>
+            <span id="chat-mic-state" class="chat-mic-state" aria-live="polite">Mic: …</span>
           </div>
-          <div class="chat-bar-field chat-bar-chat">
-            <label class="chat-bar-label" for="home-chat-select">Chat</label>
-            <select id="home-chat-select" data-help="Quick switch between recent chats; the rail lists every chat by project." data-help-label="Chat" data-help-place="wrap"><option value="">Loading chats…</option></select>
+          <div class="chat-bar-expandable" id="chat-bar-expandable">
+            <div class="chat-bar-field chat-bar-project">
+              <label class="chat-bar-label" for="chat-project-select">Project</label>
+              <select id="chat-project-select" aria-label="Project" title="Current project; browse all chats in the left rail"><option value="">Loading…</option></select>
+            </div>
+            <div class="chat-bar-field chat-bar-chat">
+              <label class="chat-bar-label" for="home-chat-select">Chat</label>
+              <select id="home-chat-select" data-help="Quick switch between recent chats; the rail lists every chat by project." data-help-label="Chat" data-help-place="wrap"><option value="">Loading chats…</option></select>
+            </div>
+            <label class="chat-bar-field" for="chat-mode" data-help="Chooses who answers: Agent (orchestrator + tools), Tools (quick router), Chat (plain model), or Cursor (coding agent). Saved on this chat." data-help-label="Mode" data-help-place="wrap">
+              <span class="chat-bar-label">Mode</span>
+              <select id="chat-mode" aria-label="Mode" title="Mode for this chat">
+                <option value="agent">Agent (orchestrator + tools)</option>
+                <option value="route">Tools (quick router)</option>
+                <option value="stream">Chat (plain model)</option>
+                <option value="cursor">Cursor (coding agent)</option>
+              </select>
+            </label>
+            <label class="chat-bar-field" for="home-model-select" data-help="The local model that writes replies. Sahir auto-picks the smallest installed model until you choose one here or on Models." data-help-label="Model" data-help-place="wrap">
+              <span class="chat-bar-label">Model</span>
+              <select id="home-model-select"><option value="">Loading models…</option></select>
+            </label>
           </div>
-          <label class="chat-bar-field" for="chat-mode" data-help="Chooses who answers: Agent (orchestrator + tools), Tools (quick router), Chat (plain model), or Cursor (coding agent). Saved on this chat." data-help-label="Mode" data-help-place="wrap">
-            <span class="chat-bar-label">Mode</span>
-            <select id="chat-mode" aria-label="Mode" title="Mode for this chat">
-              <option value="agent">Agent (orchestrator + tools)</option>
-              <option value="route">Tools (quick router)</option>
-              <option value="stream">Chat (plain model)</option>
-              <option value="cursor">Cursor (coding agent)</option>
-            </select>
-          </label>
-          <label class="chat-bar-field" for="home-model-select" data-help="The local model that writes replies. Sahir auto-picks the smallest installed model until you choose one here or on Models." data-help-label="Model" data-help-place="wrap">
-            <span class="chat-bar-label">Model</span>
-            <select id="home-model-select"><option value="">Loading models…</option></select>
-          </label>
-          <span id="chat-mic-state" class="chat-mic-state" aria-live="polite">Mic: …</span>
         </section>
 
         <div class="chat-context-head">
@@ -376,7 +390,7 @@
   <script src="/static/agent.js?v=20261124hf"></script>
   <script src="/static/models.js?v=20261124storage"></script>
   <script src="/static/tour.js?v=20261124layout"></script>
-  <script src="/static/chatbar.js?v=20261124layout2"></script>
+  <script src="/static/chatbar.js?v=20261124mobile2"></script>
   <script src="/static/rail.js?v=20261124shell"></script>
   <script src="/static/wip.js?v=20261124layout2"></script>
   <script src="/static/help.js?v=20261123help"></script>

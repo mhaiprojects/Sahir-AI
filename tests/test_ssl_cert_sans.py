@@ -19,11 +19,16 @@ from web.ssl_cert_check import (
     parse_san_extension_text,
 )
 
+EXAMPLE_LAN_IP = "192.0.2.10"
+EXAMPLE_TAILSCALE_IP = "100.64.0.10"
+EXAMPLE_HOST = "myhost"
+EXAMPLE_TAILNET_DNS = "host.tailnet.example"
+
 
 def test_parse_extra_sans() -> None:
-    got = parse_extra_sans("DNS:phone.local,IP:192.168.1.50,extra")
+    got = parse_extra_sans(f"DNS:phone.local,IP:{EXAMPLE_LAN_IP},extra")
     assert SanEntry("DNS", "phone.local") in got
-    assert SanEntry("IP", "192.168.1.50") in got
+    assert SanEntry("IP", EXAMPLE_LAN_IP) in got
     assert SanEntry("DNS", "extra") in got
 
 
@@ -31,15 +36,15 @@ def test_collect_desired_sans_with_mocked_interfaces() -> None:
     fake_ip = [
         {
             "ifname": "wlp5s0",
-            "addr_info": [{"family": "inet", "local": "192.168.1.220", "scope": "global"}],
+            "addr_info": [{"family": "inet", "local": EXAMPLE_LAN_IP, "scope": "global"}],
         }
     ]
-    with patch("web.ssl_cert_check._interface_addresses", return_value=[SanEntry("IP", "192.168.1.220")]):
-        with patch("web.ssl_cert_check._tailscale_sans", return_value=[SanEntry("IP", "100.65.107.40")]):
-            with patch("web.ssl_cert_check._hostname_names", return_value=[SanEntry("DNS", "buspc")]):
+    with patch("web.ssl_cert_check._interface_addresses", return_value=[SanEntry("IP", EXAMPLE_LAN_IP)]):
+        with patch("web.ssl_cert_check._tailscale_sans", return_value=[SanEntry("IP", EXAMPLE_TAILSCALE_IP)]):
+            with patch("web.ssl_cert_check._hostname_names", return_value=[SanEntry("DNS", EXAMPLE_HOST)]):
                 sans = collect_desired_sans(cn="voice-assistant.local")
-    assert SanEntry("IP", "192.168.1.220") in sans
-    assert SanEntry("IP", "100.65.107.40") in sans
+    assert SanEntry("IP", EXAMPLE_LAN_IP) in sans
+    assert SanEntry("IP", EXAMPLE_TAILSCALE_IP) in sans
     assert SanEntry("DNS", "localhost") in sans
     assert SanEntry("IP", "127.0.0.1") in sans
 
@@ -49,40 +54,40 @@ def test_format_openssl_san_stable() -> None:
     assert format_openssl_san(s) == "DNS:localhost,IP:127.0.0.1"
 
 
-BUSPC_SAN_EXT = (
+SAMPLE_SAN_EXT = (
     "X509v3 Subject Alternative Name: \n"
-    "    DNS:buspc, DNS:buspc.local, DNS:buspc.tail0e2353.ts.net, DNS:localhost, "
-    "DNS:voice-assistant.local, IP Address:127.0.0.1, IP Address:192.168.1.220, "
-    "IP Address:100.65.107.40\n"
+    f"    DNS:{EXAMPLE_HOST}, DNS:{EXAMPLE_HOST}.local, DNS:{EXAMPLE_TAILNET_DNS}, DNS:localhost, "
+    "DNS:voice-assistant.local, IP Address:127.0.0.1, "
+    f"IP Address:{EXAMPLE_LAN_IP}, IP Address:{EXAMPLE_TAILSCALE_IP}\n"
 )
 
 
 def test_parse_san_extension_ip_address_casing() -> None:
-    got = parse_san_extension_text(BUSPC_SAN_EXT)
+    got = parse_san_extension_text(SAMPLE_SAN_EXT)
     assert SanEntry("IP", "127.0.0.1") in got
-    assert SanEntry("IP", "192.168.1.220") in got
-    assert SanEntry("IP", "100.65.107.40") in got
-    assert SanEntry("DNS", "buspc.tail0e2353.ts.net") in got
+    assert SanEntry("IP", EXAMPLE_LAN_IP) in got
+    assert SanEntry("IP", EXAMPLE_TAILSCALE_IP) in got
+    assert SanEntry("DNS", EXAMPLE_TAILNET_DNS) in got
 
 
 def test_parse_cert_sans_openssl_output() -> None:
     with patch("subprocess.run") as run:
         run.return_value.returncode = 0
-        run.return_value.stdout = BUSPC_SAN_EXT
+        run.return_value.stdout = SAMPLE_SAN_EXT
         run.return_value.stderr = ""
         got = parse_cert_sans(Path("/tmp/x.crt"))
     assert SanEntry("DNS", "localhost") in got
-    assert SanEntry("IP", "192.168.1.220") in got
+    assert SanEntry("IP", EXAMPLE_LAN_IP) in got
 
 
-def test_check_not_stale_for_buspc_san_blob(tmp_path: Path) -> None:
+def test_check_not_stale_for_sample_san_blob(tmp_path: Path) -> None:
     cert = tmp_path / "web.crt"
     cert.write_bytes(b"dummy")
-    hostname = [SanEntry("DNS", "buspc"), SanEntry("DNS", "buspc.local")]
-    iface = [SanEntry("IP", "192.168.1.220")]
+    hostname = [SanEntry("DNS", EXAMPLE_HOST), SanEntry("DNS", f"{EXAMPLE_HOST}.local")]
+    iface = [SanEntry("IP", EXAMPLE_LAN_IP)]
     ts = [
-        SanEntry("IP", "100.65.107.40"),
-        SanEntry("DNS", "buspc.tail0e2353.ts.net"),
+        SanEntry("IP", EXAMPLE_TAILSCALE_IP),
+        SanEntry("DNS", EXAMPLE_TAILNET_DNS),
         SanEntry("IP", "fd7a:115c:a1e0::dc01:6bfe"),
     ]
 
@@ -90,7 +95,7 @@ def test_check_not_stale_for_buspc_san_blob(tmp_path: Path) -> None:
         from types import SimpleNamespace
 
         if "-ext" in cmd and "subjectAltName" in cmd:
-            return SimpleNamespace(returncode=0, stdout=BUSPC_SAN_EXT, stderr="")
+            return SimpleNamespace(returncode=0, stdout=SAMPLE_SAN_EXT, stderr="")
         if "-enddate" in cmd:
             return SimpleNamespace(
                 returncode=0, stdout="notAfter=Dec 31 23:59:59 2027 GMT\n", stderr=""
@@ -108,18 +113,18 @@ def test_check_not_stale_for_buspc_san_blob(tmp_path: Path) -> None:
 
 
 def test_required_check_sans_omit_optional_ipv6_and_legacy() -> None:
-    with patch("web.ssl_cert_check._hostname_names", return_value=[SanEntry("DNS", "buspc")]):
+    with patch("web.ssl_cert_check._hostname_names", return_value=[SanEntry("DNS", EXAMPLE_HOST)]):
         with patch(
             "web.ssl_cert_check._interface_addresses",
             return_value=[
-                SanEntry("IP", "192.168.1.220"),
+                SanEntry("IP", EXAMPLE_LAN_IP),
                 SanEntry("IP", "fd7a:115c:a1e0::dc01:6bfe"),
             ],
         ):
             with patch(
                 "web.ssl_cert_check._tailscale_sans",
                 return_value=[
-                    SanEntry("IP", "100.65.107.40"),
+                    SanEntry("IP", EXAMPLE_TAILSCALE_IP),
                     SanEntry("IP", "fd7a:115c:a1e0::dc01:6bfe"),
                 ],
             ):
@@ -127,14 +132,14 @@ def test_required_check_sans_omit_optional_ipv6_and_legacy() -> None:
     assert SanEntry("DNS", "voice-assistant") not in req
     assert SanEntry("IP", "::1") not in req
     assert SanEntry("IP", "fd7a:115c:a1e0::dc01:6bfe") not in req
-    assert SanEntry("IP", "192.168.1.220") in req
-    assert SanEntry("IP", "100.65.107.40") in req
+    assert SanEntry("IP", EXAMPLE_LAN_IP) in req
+    assert SanEntry("IP", EXAMPLE_TAILSCALE_IP) in req
 
 
 def test_missing_from_cert() -> None:
     cert = {SanEntry("DNS", "localhost"), SanEntry("IP", "127.0.0.1")}
-    want = {SanEntry("IP", "192.168.1.220"), SanEntry("DNS", "localhost")}
-    assert missing_from_cert(cert, want) == {SanEntry("IP", "192.168.1.220")}
+    want = {SanEntry("IP", EXAMPLE_LAN_IP), SanEntry("DNS", "localhost")}
+    assert missing_from_cert(cert, want) == {SanEntry("IP", EXAMPLE_LAN_IP)}
 
 
 def test_check_certificate_missing_file(tmp_path: Path) -> None:

@@ -77,7 +77,7 @@ After regenerating: restart the web service (`systemctl --user restart voice-ass
 
 Build args: `PRELOAD_WHISPER`, `PRELOAD_PIPER`
 
-Full details: [DOCKER.md](../DOCKER.md)
+Full details: [DOCKER.md](DOCKER.md)
 
 ## Native vs Docker
 

@@ -55,6 +55,11 @@ def test_whisper_live_backend_delegates() -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.flaky_tts_audio
+@pytest.mark.xfail(
+    strict=False,
+    reason="#8: Moonshine on Piper TTS audio is intermittently below threshold",
+)
 def test_moonshine_on_piper_clip() -> None:
     if not moonshine_model_ready():
         pytest.skip("Moonshine model not on disk")

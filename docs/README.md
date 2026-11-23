@@ -1,6 +1,6 @@
 # Sahir — documentation index
 
-Internal docs extracted from development sessions for programmers and AI agents.
+**Start here:** [index.md](index.md) · **Security:** [security-public.md](security-public.md) · **Publish:** [publishing.md](publishing.md) · **Gallery:** [gallery.md](gallery.md)
 
 | Document | Purpose |
 |----------|---------|
@@ -26,6 +26,6 @@ Internal docs extracted from development sessions for programmers and AI agents.
 
 **Tasks** are tracked as [GitHub issues](https://github.com/mhaiprojects/Sahir-AI/issues) on the [Sahir project board](https://github.com/users/mhaiprojects/projects/1), not in these docs.
 
-**Public docs:** [README.md](../README.md) (user-facing), [DOCKER.md](../DOCKER.md) (container deploy).
+**Public docs:** [README on GitHub](https://github.com/mhaiprojects/Sahir-AI/blob/main/README.md), [DOCKER.md](DOCKER.md).
 
 **Repository:** https://github.com/mhaiprojects/Sahir-AI

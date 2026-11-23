@@ -125,7 +125,7 @@ Stop: `kill $(cat data/logs/loop.pid)` (if PID saved there).
 Chat model blobs are stored under **`OLLAMA_MODELS`** on the Ollama systemd unit (not in the Sahir
 repo). The **Models** view shows that path and free space before you run `ollama pull`.
 
-On **buspc**, models already live on `/mnt/ssd6/ollama/models` (`systemctl show ollama -p Environment`).
+On the dev machine, models may live on a large disk, e.g. `/path/to/large-disk/ollama/models` (`systemctl show ollama -p Environment`).
 To **move** storage off the root disk you need **sudo**: systemd drop-in with
 `Environment="OLLAMA_MODELS=/path"`, `RequiresMountsFor=…`, copy existing blobs, `chown -R ollama:ollama`,
 `systemctl restart ollama`, then verify with `ollama list`. Step-by-step: [models.md](./models.md).

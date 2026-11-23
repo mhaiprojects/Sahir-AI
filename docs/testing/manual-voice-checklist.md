@@ -5,7 +5,7 @@ coverage lives in `scripts/voice_e2e_check.py` (Piper → PCM → `/ws/voice`, P
 Synthetic Piper audio should show **live partials** on utterances longer than ~1.5s; short clips may
 still show `partials=0`. Verify caption smoothness on a real mic below.
 
-**LAN URL (buspc):** `https://192.168.1.220:8765`  
+**LAN URL (example):** `https://192.0.2.10:8765` (replace with your host IP)  
 **Local:** `https://127.0.0.1:8765` (or your `WEB_PORT` / Tailscale Serve URL)
 
 Before testing on a phone: trust the HTTPS cert, open the login link, complete web auth, then grant mic permission when prompted.
@@ -51,7 +51,7 @@ _No automated errors._
 
 ## Phone — iOS Safari
 
-Use **LAN HTTPS** (`https://192.168.1.220:8765`). In Settings → Certificate Trust, enable full trust for the self-signed cert if WSS/mic fails.
+Use **LAN HTTPS** (`https://<host-ip>:8765`). In Settings → Certificate Trust, enable full trust for the self-signed cert if WSS/mic fails.
 
 | Step | What to verify | Pass? | Notes |
 | --- | --- | --- | --- |

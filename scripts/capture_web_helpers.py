@@ -28,12 +28,11 @@ _LAYOUT_PROBE_JS = """(() => {
   const more = document.querySelector(".conv-actions-more");
   const rename = document.getElementById("conv-rename");
   let actionsOk = false;
-  if (actions && !actions.hidden) {
-    if (narrow) {
-      actionsOk = !!more && more.getBoundingClientRect().width > 0;
-    } else {
-      actionsOk = !!rename && rename.getBoundingClientRect().width > 0;
-    }
+  if (narrow) {
+    const ctxBtn = document.getElementById("chat-bar-sheet-toggle");
+    actionsOk = !!ctxBtn && ctxBtn.getBoundingClientRect().width > 0;
+  } else if (actions && !actions.hidden) {
+    actionsOk = !!rename && rename.getBoundingClientRect().width > 0;
   }
   const rect = form?.getBoundingClientRect();
   const composerBottom = rect ? rect.bottom : 0;

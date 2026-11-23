@@ -12,9 +12,9 @@ tasks to agents. Repository: `Sahir-AI`.
 
 Custom local voice assistant using trusted open-source components:
 
-- **STT:** faster-whisper
-- **TTS:** Piper
-- **Router:** Ollama (local)
+- **STT:** faster-whisper (+ optional Moonshine live partials)
+- **TTS:** Piper (default); optional Kokoro via sherpa-onnx
+- **Router:** Ollama (local); optional OpenAI-compatible HTTP backend
 - **Dev tasks:** Cursor CLI (`cursor-agent -p`)
 - **Activation (desktop app only, `python bot.py`):** push-to-talk (Right Ctrl) + wake word
   (`hey_jarvis` for now; a custom "Hey Sahir" wake word is planned). **Not available in the browser.**
@@ -73,15 +73,38 @@ Docs: [docs/architecture.md](docs/architecture.md) · [docs/upgrade-research.md]
 
 ### New machine (recommended)
 
+**Docker (Debian/Ubuntu, Arch, or any host with Docker)** — fastest path:
+
+```bash
+git clone https://github.com/mhaiprojects/Sahir-AI.git
+cd Sahir-AI
+cp .env.docker.example .env
+bash setup.sh docker    # TLS certs + docker compose up --build
+```
+
+See [DOCKER.md](DOCKER.md) and [docs/docker-quickstart.md](docs/docker-quickstart.md).
+
+**Native (Arch/Manjaro)** — full desktop + web stack:
+
 ```bash
 git clone git@github.com:mhaiprojects/Sahir-AI.git
 cd Sahir-AI
-bash setup.sh native    # Arch/Manjaro: venv + Ollama + models + TLS certs
-# or
-bash setup.sh docker    # Docker Compose stack (Ollama + web UI)
+bash setup.sh native    # venv + Ollama + models + TLS certs
 ```
 
-Certs and `.env` are generated locally (never committed). Regenerate TLS: `FORCE=1 bash scripts/generate_web_cert.sh`
+**Debian/Ubuntu (native, no Docker):** install Python 3.12+, `ffmpeg`, PortAudio, and Ollama from upstream docs, then:
+
+```bash
+python3 -m venv venv
+venv/bin/pip install -r requirements.txt
+cp .env.example .env
+bash scripts/setup_models.sh
+bash scripts/generate_web_cert.sh
+bash scripts/generate_web_token.sh
+python bot.py --web
+```
+
+Certs, tokens, and `.env` are generated locally (never committed). Regenerate TLS: `FORCE=1 bash scripts/generate_web_cert.sh`
 
 ### Manual install (Arch/Manjaro)
 
@@ -120,7 +143,7 @@ Configure `WEB_HOST`, `WEB_PORT`, and `WEB_DB_PATH` in `.env`. Web access uses a
 1. Create the token file (once per machine): `bash scripts/generate_web_token.sh`
 2. Default path: `~/.config/jahash-secrets/sahir-web-token.txt` (mode `600`). Show it with `bash scripts/generate_web_token.sh --show` or `cat ~/.config/jahash-secrets/sahir-web-token.txt` on the server.
 3. **Desktop browser:** open the web UI → you are redirected to `/login` → paste the token once → session cookie lasts ~30 days.
-4. **Phone (HTTPS):** on the server, build a one-time link (do not share in chat logs): `https://<this-pc-ip>:8765/login?token=<paste-token>` — opens Sahir and drops the token from the URL.
+4. **Phone (HTTPS):** prefer opening `/login` and pasting the token (POST). One-time `?token=` links work but may appear in browser history and access logs (redacted in new logs; see `scripts/scrub_log_secrets.py`).
 5. **Scripts / `test_web.py`:** `Authorization: Bearer <token>` or set `WEB_AUTH_TOKEN` in the environment (not in committed `.env`).
 6. **Rotate:** `bash scripts/generate_web_token.sh --rotate` — invalidates old cookies; log in again on each device. Use **Settings → Log out** to end a session on one browser.
 
@@ -181,20 +204,6 @@ Coding and workspace tasks are routed to:
 cursor-agent -p --trust --workspace "$CURSOR_WORKSPACE" --model composer-2.5 "<prompt>"
 ```
 
-### Persistent Cursor CLI chat
-
-This repository uses one long-running Cursor CLI session for coding work (JW-12, created 2026-11-23):
-
-- **Chat ID:** `1374f8df-2e7e-48a1-a739-6820ebe9d905`
-
-Resume that chat instead of starting a new one:
-
-```bash
-cursor-agent --resume 1374f8df-2e7e-48a1-a739-6820ebe9d905 -p --trust --workspace "$(pwd)"
-```
-
-Use the repository root as `--workspace` (or your configured `CURSOR_WORKSPACE`). Do **not** open a second parallel coding chat for this repo—keep context in this session so prior work stays connected.
-
 ## Systemd user service
 
 ```bash
@@ -208,9 +217,21 @@ The unit files in `systemd/` use an `@ROOT@` placeholder, so the checkout can li
 
 Run in your graphical user session so push-to-talk hotkeys work.
 
+## Security (read before LAN use)
+
+- **LAN only** by default — do not expose port 8765 to the internet without extra hardening.
+- **Token login** on by default — `bash scripts/generate_web_token.sh`; see [Logging in](#logging-in).
+- **HTTPS** for microphone access — self-signed cert via `scripts/generate_web_cert.sh`.
+- **Optional Tailscale** — see [docs/deployment.md](docs/deployment.md); Wyoming stays on loopback unless you opt in.
+- **Integrations** (ClickUp, email, CalDAV, OpenAI-compatible API) need credentials in `.env` or `*_FILE` paths — never commit them.
+
+Full checklist: [docs/security-public.md](docs/security-public.md). Before pushing to GitHub: `bash scripts/secret_scan.sh`.
+
 ## Documentation
 
-Detailed internal docs for developers and AI agents: **[docs/README.md](docs/README.md)** (architecture, operations, troubleshooting, deployment, UI layout).
+- **Public docs site (local build):** `venv/bin/mkdocs build` → `site/` (see [docs/publishing.md](docs/publishing.md))
+- **In-repo:** [docs/index.md](docs/index.md) · [architecture](docs/architecture.md) · [features](docs/features.md) · [operations](docs/operations.md)
+- **AI contributors:** [docs/for-ai-agents.md](docs/for-ai-agents.md)
 
 ## Configuration
 
