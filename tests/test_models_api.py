@@ -225,3 +225,58 @@ def test_orchestrator_valid_small_model_no_escalation(manager: ModelManager) -> 
     res = Orchestrator(manager.settings, _Dispatcher(), client=client).run("hello", history=[])
     assert client.models == ["qwen3:0.6b"]
     assert res.action_details["model"] == "qwen3:0.6b" and "escalated" not in res.action_details
+
+
+# --------------------------------------------------------------- default = smallest installed model
+def _auto_manager(tmp_path: Path, fake: FakeOllama, model: str = "llama3.1:8b") -> ModelManager:
+    settings = Settings(ollama_host="http://localhost:11434", ollama_model=model)
+    return ModelManager(settings, state_path=tmp_path / "model_state.json", http=fake, auto_default=True)
+
+
+def test_auto_default_picks_smallest_on_start(tmp_path: Path, fake: FakeOllama, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("FALLBACK_MODEL", raising=False)
+    mgr = _auto_manager(tmp_path, fake)
+    assert mgr.active_model == "qwen3:0.6b" and mgr.active_source == "auto"
+    state = json.loads((tmp_path / "model_state.json").read_text())
+    assert state["active_model"] == "qwen3:0.6b" and state["active_source"] == "auto"
+    status = mgr.status()
+    assert status["smallest_model"] == "qwen3:0.6b" and status["active_source"] == "auto"
+
+
+def test_auto_default_keeps_user_pick_and_follows_new_smaller_model(tmp_path: Path, fake: FakeOllama) -> None:
+    mgr = _auto_manager(tmp_path, fake)
+    mgr.select("llama3.2:1b")
+    again = _auto_manager(tmp_path, fake)
+    assert again.active_model == "llama3.2:1b" and again.active_source == "user"
+    # A newly pulled smaller model doesn't override the user's pick ...
+    fake.tags.insert(0, {"name": "tiny:100m", "size": 100_000_000, "details": {}})
+    again.status()
+    assert again.active_model == "llama3.2:1b"
+    # ... but an auto choice follows the smallest model.
+    fresh_path = tmp_path / "other"
+    fresh_path.mkdir()
+    auto = _auto_manager(fresh_path, fake)
+    assert auto.active_model == "tiny:100m"
+
+
+def test_auto_default_replaces_removed_user_pick(tmp_path: Path, fake: FakeOllama) -> None:
+    mgr = _auto_manager(tmp_path, fake)
+    mgr.select("llama3.2:1b")
+    fake.tags = [t for t in fake.tags if t["name"] != "llama3.2:1b"]
+    mgr.status()
+    assert mgr.active_model == "qwen3:0.6b" and mgr.active_source == "auto"
+
+
+def test_auto_default_legacy_state(tmp_path: Path, fake: FakeOllama) -> None:
+    (tmp_path / "model_state.json").write_text(json.dumps({"active_model": "llama3.2:1b"}))
+    assert _auto_manager(tmp_path, fake).active_model == "llama3.2:1b"  # differs from env default: a user pick
+    (tmp_path / "model_state.json").write_text(json.dumps({"active_model": "llama3.1:8b"}))
+    assert _auto_manager(tmp_path, fake).active_model == "qwen3:0.6b"   # same as env default: not a pick
+
+
+def test_auto_default_survives_ollama_down(tmp_path: Path) -> None:
+    def down(*_a, **_k):
+        raise OSError("connection refused")
+    settings = Settings(ollama_host="http://localhost:11434", ollama_model="llama3.1:8b")
+    mgr = ModelManager(settings, state_path=tmp_path / "s.json", http=down, auto_default=True)
+    assert mgr.active_model == "llama3.1:8b"

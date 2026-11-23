@@ -5,6 +5,13 @@ The active model is applied by mutating the shared ``Settings.ollama_model`` so 
 caller (router, orchestrator, OllamaChat) picks it up without extra plumbing. The
 ``OLLAMA_MODEL`` env value stays the default; the runtime choice is persisted in
 ``data/model_state.json`` (gitignored with the rest of ``data/``).
+
+Default model (``auto_default=True``, used by the web server): when the app starts and
+whenever the model list is read, the smallest installed (downloaded) chat model becomes
+active unless the user picked one (``active_source == "user"``) that is still installed.
+A user pick that has been removed from Ollama falls back to the smallest model.
+Legacy state files without ``active_source`` count as a user pick when their model
+differs from the ``OLLAMA_MODEL`` default.
 """
 
 from __future__ import annotations
@@ -20,6 +27,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable
 
+from activity import publish
 from config import Settings
 
 logger = logging.getLogger(__name__)
@@ -68,7 +76,8 @@ def _default_http(method: str, url: str, payload: dict[str, Any] | None, timeout
 
 class ModelManager:
     def __init__(self, settings: Settings, *, state_path: Path | None = None,
-                 fallback_model: str | None = None, http: HttpFn | None = None) -> None:
+                 fallback_model: str | None = None, http: HttpFn | None = None,
+                 auto_default: bool = False) -> None:
         self.settings = settings
         self.default_model = settings.ollama_model
         self.fallback_model = fallback_model or os.getenv("FALLBACK_MODEL", DEFAULT_FALLBACK)
@@ -78,7 +87,15 @@ class ModelManager:
         self._lock = threading.Lock()
         self.auto_fallback = True
         self.force_fallback = False
+        self.auto_default = auto_default
+        # "user" = picked in the UI/API, "auto" = chosen as the smallest model, "env" = OLLAMA_MODEL.
+        self.active_source = "env"
         self._load_state()
+        if self.auto_default:
+            try:
+                self.ensure_default()
+            except Exception as exc:  # Ollama down at startup: retried on the next model-list read
+                logger.warning("Default model check skipped: %s", exc)
 
     # ------------------------------------------------------------ state
     @property
@@ -95,6 +112,11 @@ class ModelManager:
             return
         if state.get("active_model"):
             self.settings.ollama_model = str(state["active_model"])
+            source = state.get("active_source")
+            if source in ("user", "auto"):
+                self.active_source = source
+            else:  # legacy file: a model other than the env default must have been picked by hand
+                self.active_source = "user" if self.settings.ollama_model != self.default_model else "env"
         self.auto_fallback = bool(state.get("auto_fallback", True))
         self.force_fallback = bool(state.get("force_fallback", False))
         if state.get("fallback_model") and not os.getenv("FALLBACK_MODEL"):
@@ -104,7 +126,8 @@ class ModelManager:
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.state_path.with_suffix(".tmp")
         tmp.write_text(json.dumps({
-            "active_model": self.active_model, "fallback_model": self.fallback_model,
+            "active_model": self.active_model, "active_source": self.active_source,
+            "fallback_model": self.fallback_model,
             "auto_fallback": self.auto_fallback, "force_fallback": self.force_fallback,
             "updated_at": int(time.time()),
         }, indent=2))
@@ -123,8 +146,45 @@ class ModelManager:
     def chat_model_names(self) -> list[str]:
         return [m.get("name", "") for m in self.installed() if not _EMBED_RE.search(m.get("name", ""))]
 
+    @staticmethod
+    def _smallest(installed: list[dict[str, Any]]) -> str | None:
+        chat = [m for m in installed if m.get("name") and not _EMBED_RE.search(m["name"])]
+        if not chat:
+            return None
+        return min(chat, key=lambda m: (int(m.get("size") or 0) or 1 << 62, m["name"]))["name"]
+
+    def ensure_default(self, installed: list[dict[str, Any]] | None = None) -> str | None:
+        """Make the smallest installed chat model active unless the user's pick is still installed.
+
+        Returns the newly selected model name when it changed, else None.
+        """
+        if not self.auto_default:
+            return None
+        installed = self.installed() if installed is None else installed
+        smallest = self._smallest(installed)
+        if not smallest:
+            return None
+        names = {m.get("name") for m in installed}
+        current = self.active_model
+        if self.active_source == "user" and current in names:
+            return None
+        if current == smallest and self.active_source == "auto":
+            return None
+        reason = ("saved model %r is no longer installed" % current) if current not in names else "no model picked yet"
+        with self._lock:
+            self.settings.ollama_model = smallest
+            self.active_source = "auto"
+            self._save_state()
+        if current != smallest:
+            logger.info("Default chat model -> %s (smallest installed; %s)", smallest, reason)
+        return smallest if current != smallest else None
+
     def status(self) -> dict[str, Any]:
         installed = self.installed()
+        try:
+            self.ensure_default(installed)
+        except Exception as exc:
+            logger.warning("Default model check failed: %s", exc)
         running = {m.get("name"): m for m in self.running()}
         models = []
         for m in installed:
@@ -153,7 +213,9 @@ class ModelManager:
             {"name": n, "size": int(r.get("size") or 0), "size_vram": int(r.get("size_vram") or 0)}
             for n, r in running.items() if _EMBED_RE.search(n or "")
         ]
-        return {"active_model": self.active_model, "fallback_model": self.fallback_model,
+        return {"active_model": self.active_model, "active_source": self.active_source,
+                "smallest_model": self._smallest(installed),
+                "fallback_model": self.fallback_model,
                 "default_model": self.default_model, "auto_fallback": self.auto_fallback,
                 "force_fallback": self.force_fallback, "keep_alive": self.keep_alive,
                 "models": models, "other_loaded": other_loaded}
@@ -166,8 +228,9 @@ class ModelManager:
         self._require_installed(name)
         with self._lock:
             self.settings.ollama_model = name
+            self.active_source = "user"
             self._save_state()
-        logger.info("Active chat model -> %s", name)
+        logger.info("Active chat model -> %s (picked by user)", name)
         return {"active_model": name}
 
     def set_options(self, *, auto_fallback: bool | None = None, force_fallback: bool | None = None,
@@ -187,6 +250,7 @@ class ModelManager:
 
     def load(self, name: str, keep_alive: str | None = None) -> dict[str, Any]:
         self._require_installed(name)
+        publish("model", f"loading {name} into memory…", source="models")
         t0 = time.monotonic()
         resp = self._http("POST", self._url("/api/generate"),
                           {"model": name, "prompt": "", "stream": False, "keep_alive": keep_alive or self.keep_alive},
@@ -195,6 +259,7 @@ class ModelManager:
                 "load_duration_ms": round((resp.get("load_duration") or 0) / 1e6)}
 
     def eject(self, name: str) -> dict[str, Any]:
+        publish("model", f"ejecting {name} from memory", source="models")
         self._http("POST", self._url("/api/generate"), {"model": name, "prompt": "", "stream": False,
                                                         "keep_alive": 0}, 60)
         return {"model": name, "loaded": False}
