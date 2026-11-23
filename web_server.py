@@ -34,7 +34,7 @@ from tools.router import (
     route_utterance_detailed,
     run_cursor_task_detailed,
 )
-from agent.dispatcher import agent_reply_as_route, dispatch_voice_or_text
+from agent.dispatcher import agent_reply_as_route, dispatch_routed, dispatch_voice_or_text, legacy_route_tier0
 from agent.factory import AgentStack, build_agent_stack
 from agent.loop import AgentReply
 from agent.vad import speech_seconds
@@ -580,12 +580,21 @@ def create_app() -> FastAPI:
                     history=history,
                 )
             elif body.route:
-                result = route_utterance_detailed(
+                early = legacy_route_tier0(
+                    _get_agent_stack().agent,
                     text,
-                    settings,
-                    history=history,
-                    context=_agent_context(text),
+                    conversation_id=body.conversation_id,
+                    command_store=_get_command_store(),
                 )
+                if early is not None:
+                    result = early
+                else:
+                    result = route_utterance_detailed(
+                        text,
+                        settings,
+                        history=history,
+                        context=_agent_context(text),
+                    )
             else:
                 result = chat_text_only_detailed(
                     text,
@@ -885,10 +894,12 @@ def create_app() -> FastAPI:
 
             hist = _parse_history_json(history)
             if route:
-                raw, _loop_mode = dispatch_voice_or_text(
+                raw, _loop_mode, _dec = dispatch_routed(
                     _get_agent_stack().agent,
                     transcript,
                     conversation_id=conversation_id,
+                    input_type="voice",
+                    command_store=_get_command_store(),
                     force_cursor=force_cursor,
                     history=hist,
                     extra_meta={"input_type": "voice", "listening_mode": mode},
@@ -980,7 +991,11 @@ def create_app() -> FastAPI:
         return Response(content=wav, media_type="audio/wav")
 
     app.include_router(
-        create_agent_router(lambda: _get_agent_stack().agent, _request_lock)
+        create_agent_router(
+            lambda: _get_agent_stack().agent,
+            _request_lock,
+            get_command_store=_get_command_store,
+        )
     )
     app.include_router(create_models_router(_get_model_manager, _request_lock))
     register_voice_ws(
@@ -988,6 +1003,7 @@ def create_app() -> FastAPI:
         get_settings=_get_settings,
         get_pipeline=_get_pipeline,
         get_agent=lambda: _get_agent_stack().agent,
+        get_command_store=_get_command_store,
         request_lock=_request_lock,
     )
 

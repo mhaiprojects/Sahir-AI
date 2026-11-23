@@ -12,6 +12,7 @@ from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from agent.dispatcher import dispatch_agent_chat, execute_route_decision, plan_route, route_fields
 from agent.loop import MODES, Agent
 from agent.rag import SUPPORTED_EXTENSIONS, IngestError
 from agent.supervisor import SupervisorService
@@ -104,9 +105,16 @@ def _md_export(conv: dict[str, Any], messages: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def create_agent_router(get_agent: Callable[[], Agent], request_lock: threading.Lock | None = None) -> APIRouter:
+def create_agent_router(
+    get_agent: Callable[[], Agent],
+    request_lock: threading.Lock | None = None,
+    get_command_store: Callable[[], object | None] | None = None,
+) -> APIRouter:
     api = APIRouter()
     lock = request_lock or threading.Lock()
+
+    def command_store():
+        return get_command_store() if get_command_store else None
 
     def supervisor_svc() -> SupervisorService:
         agent = get_agent()
@@ -418,7 +426,31 @@ def create_agent_router(get_agent: Callable[[], Agent], request_lock: threading.
         if not lock.acquire(blocking=False):
             raise HTTPException(429, "Assistant is busy with another request. Try again shortly.")
         try:
-            r = get_agent().respond(body.message, conversation_id=body.conversation_id, mode=body.mode)
+            agent = get_agent()
+            raw, decision = dispatch_agent_chat(
+                agent,
+                body.message,
+                conversation_id=body.conversation_id,
+                mode=body.mode,
+                command_store=command_store(),
+            )
+            from tools.router import RouteResult
+
+            if isinstance(raw, RouteResult):
+                rr = raw
+                conv_id = decision.target_chat_id or body.conversation_id
+                return {
+                    "reply": rr.reply,
+                    "action": rr.action,
+                    "action_details": rr.action_details,
+                    "routed": rr.routed,
+                    "conversation_id": conv_id,
+                    "user_message_id": 0,
+                    "assistant_message_id": 0,
+                    "sources": {},
+                    **route_fields(decision),
+                }
+            r = raw
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         finally:
@@ -427,6 +459,7 @@ def create_agent_router(get_agent: Callable[[], Agent], request_lock: threading.
             "reply": r.reply, "action": r.action, "action_details": r.action_details, "routed": r.routed,
             "conversation_id": r.conversation_id, "user_message_id": r.user_message_id,
             "assistant_message_id": r.assistant_message_id, "sources": r.sources,
+            **route_fields(decision),
         }
 
     @api.post("/api/agent/chat/stream")
@@ -439,10 +472,59 @@ def create_agent_router(get_agent: Callable[[], Agent], request_lock: threading.
                 yield f"data: {json.dumps({'type': 'error', 'error': 'Assistant is busy. Try again shortly.'})}\n\n"
                 return
             try:
+                decision, ctx = plan_route(
+                    agent,
+                    body.message,
+                    conversation_id=body.conversation_id,
+                    input_type="text",
+                    command_store=command_store(),
+                    legacy_route=False,
+                )
+                route_ev = {"type": "route", **route_fields(decision)}
+                yield f"data: {json.dumps(route_ev, ensure_ascii=False)}\n\n"
+
+                if decision.label == "S" and decision.command:
+                    raw, _loop = execute_route_decision(
+                        agent, body.message, decision, ctx, input_type="text", ui_mode=body.mode,
+                    )
+                    from tools.router import RouteResult
+
+                    if isinstance(raw, RouteResult):
+                        done = {
+                            "type": "done",
+                            "reply": raw.reply,
+                            "conversation_id": body.conversation_id,
+                            "action": raw.action,
+                            "action_details": raw.action_details,
+                            "routed": raw.routed,
+                            "sources": {},
+                            **route_fields(decision),
+                        }
+                    else:
+                        done = {
+                            "type": "done",
+                            "reply": raw.reply,
+                            "conversation_id": raw.conversation_id,
+                            "action": raw.action,
+                            "action_details": raw.action_details,
+                            "routed": raw.routed,
+                            "sources": raw.sources,
+                            "assistant_message_id": raw.assistant_message_id,
+                            **route_fields(decision),
+                        }
+                    yield f"data: {json.dumps(done, ensure_ascii=False)}\n\n"
+                    return
+
+                from agent.route_exec import target_conversation_id
+
+                conv_id = target_conversation_id(decision, ctx)  # type: ignore[arg-type]
+                utterance = (decision.utterance or body.message).strip()
                 mode = "chat" if body.mode == "stream" else body.mode
                 for ev in agent.respond_events(
-                    body.message, conversation_id=body.conversation_id, mode=mode
+                    utterance, conversation_id=conv_id, mode=mode, input_type="text", auto_session=True,
                 ):
+                    if ev.get("type") == "done":
+                        ev = {**ev, **route_fields(decision)}
                     yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
             except Exception as exc:  # pragma: no cover - defensive
                 yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"

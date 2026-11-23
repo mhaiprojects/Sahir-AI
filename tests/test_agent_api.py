@@ -50,7 +50,9 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(web_server, "_agent_stack", AgentStack(agent, d, ClickUpClient(token="")))
     monkeypatch.setattr(web_server, "_pipeline", FakePipeline())
     monkeypatch.setattr(web_server, "_log_store", None)
-    monkeypatch.setattr(web_server, "_command_store", None)
+    from web.commands import VoiceCommandStore
+
+    monkeypatch.setattr(web_server, "_command_store", VoiceCommandStore(tmp_path / "cmds.db"))
     return TestClient(web_server.create_app())
 
 
@@ -115,7 +117,7 @@ def test_rag_endpoints(client):
 def test_stream_endpoint(client):
     with client.stream("POST", "/api/agent/chat/stream", json={"message": "hi"}) as resp:
         events = [json.loads(line[6:]) for line in resp.iter_lines() if line.startswith("data: ")]
-    assert events[0]["type"] == "meta" and events[-1]["type"] == "done"
+    assert events[0]["type"] == "route" and events[-1]["type"] == "done"
     assert events[-1]["reply"] == "Milk and eggs. Also bread."
 
 
@@ -151,6 +153,134 @@ def test_agent_page_served(client):
     assert 'id="conv-actions" hidden' in html
     css = client.get("/static/agent.css").text
     assert "[hidden]" in css and "display:none" in css
+
+
+def test_legacy_chat_run_command_tier0(client, monkeypatch):
+    monkeypatch.setattr(
+        "tools.pc_control.run_command",
+        lambda cmd, args, _s: type("R", (), {"message": "2 users", "success": True})(),
+    )
+    r = client.post("/api/chat", json={"message": "run uptime", "route": True}).json()
+    assert r["action"] == "run_command"
+    assert r["routed"] is True
+
+
+def test_agent_chat_typed_switch(client):
+    a = client.post("/api/conversations", json={"title": "Alpha"}).json()
+    b = client.post("/api/conversations", json={"title": "Beta"}).json()
+    with client.stream("POST", "/api/agent/chat/stream", json={
+        "message": "/switch Beta",
+        "conversation_id": a["id"],
+        "mode": "agent",
+    }) as resp:
+        events = [json.loads(line[6:]) for line in resp.iter_lines() if line.startswith("data: ")]
+    route_ev = next(e for e in events if e.get("type") == "route")
+    assert route_ev["route_label"] == "S" and route_ev["route_command"] == "switch_chat"
+    assert route_ev["route_target_chat_id"] == b["id"]
+    done = events[-1]
+    assert done["type"] == "done"
+    assert done["action"] == "switch_chat"
+    assert done["conversation_id"] == b["id"]
+
+
+def test_agent_chat_typed_sup_address(client, monkeypatch):
+    data = client.get("/api/projects").json()
+    sup_id = next(p["supervisor_conversation_id"] for p in data["projects"] if p.get("supervisor_conversation_id"))
+    sub = client.post("/api/conversations", json={"title": "Work"}).json()
+    with client.stream(
+        "POST",
+        "/api/agent/chat/stream",
+        json={"message": "/sup hello supervisor", "conversation_id": sub["id"], "mode": "agent"},
+    ) as resp:
+        events = [json.loads(line[6:]) for line in resp.iter_lines() if line.startswith("data: ")]
+    route_ev = next(e for e in events if e.get("type") == "route")
+    assert route_ev["route_label"] == "D"
+    assert route_ev["route_target_chat_id"] == sup_id
+    done = events[-1]
+    assert done["conversation_id"] == sup_id
+
+
+def test_agent_chat_at_mention_routes(client):
+    a = client.post("/api/conversations", json={"title": "Groceries"}).json()
+    proj = client.get("/api/projects").json()
+    pid = proj["general_project_id"]
+    spawned = client.post(
+        "/api/supervisor/spawn",
+        json={"project_id": pid, "title": "API", "brief": "", "aliases": ["api"]},
+    ).json()
+    api_id = spawned["id"]
+    with client.stream(
+        "POST",
+        "/api/agent/chat/stream",
+        json={"message": "@api status check", "conversation_id": a["id"], "mode": "agent"},
+    ) as resp:
+        events = [json.loads(line[6:]) for line in resp.iter_lines() if line.startswith("data: ")]
+    route_ev = next(e for e in events if e.get("type") == "route")
+    assert route_ev["route_label"] == "C"
+    assert route_ev["route_target_chat_id"] == api_id
+
+
+def test_agent_chat_typed_plain_skips_tier0(client):
+    a = client.post("/api/conversations", json={"title": "Plain"}).json()
+    r = client.post(
+        "/api/agent/chat",
+        json={"message": "switch to nowhere", "conversation_id": a["id"], "mode": "agent"},
+    ).json()
+    assert r["route_label"] == "C"
+    assert r["route_tier"] == 0
+    assert r["conversation_id"] == a["id"]
+
+
+def test_voice_ws_router_scenarios(client, monkeypatch):
+    from agent.vad import Endpointer
+
+    a = client.post("/api/conversations", json={"title": "One"}).json()
+    b = client.post("/api/conversations", json={"title": "Two"}).json()
+    data = client.get("/api/projects").json()
+    sup_id = next(p["supervisor_conversation_id"] for p in data["projects"] if p.get("supervisor_conversation_id"))
+    transcripts = iter([f"switch to {b['title']}", "Supervisor, ping", "what's on my list"])
+
+    class RoutingPipeline(FakePipeline):
+        def transcribe_final(self, audio):
+            return next(transcripts, "what's on my list")
+
+    monkeypatch.setattr(web_server, "_pipeline", RoutingPipeline())
+    monkeypatch.setattr(Endpointer, "flush", lambda self: np.zeros(16000, dtype=np.float32))
+
+    def await_reply(ws):
+        for _ in range(30):
+            msg = ws.receive()
+            if msg.get("bytes") is not None:
+                continue
+            ev = json.loads(msg["text"])
+            if ev["type"] == "reply":
+                return ev
+            if ev["type"] == "error":
+                raise AssertionError(ev)
+        raise AssertionError("timed out waiting for voice reply")
+
+    def flush_turn(ws):
+        ws.send_text(json.dumps({"type": "flush"}))
+        return await_reply(ws)
+
+    with client.websocket_connect("/ws/voice") as ws:
+        ws.receive_json()
+        ws.send_text(json.dumps({"type": "hello", "conversation_id": a["id"], "mode": "agent", "tts": False}))
+        ws.receive_json()
+        reply = flush_turn(ws)
+        assert reply["action"] == "switch_chat"
+        assert reply["conversation_id"] == b["id"]
+
+        ws.send_text(json.dumps({"type": "hello", "conversation_id": a["id"], "mode": "agent", "tts": False}))
+        ws.receive_json()
+        reply = flush_turn(ws)
+        assert reply["conversation_id"] == sup_id
+
+        ws.send_text(json.dumps({"type": "hello", "conversation_id": b["id"], "mode": "agent", "tts": False}))
+        ws.receive_json()
+        reply = flush_turn(ws)
+        assert reply.get("conversation_id") == b["id"]
+        assert "Milk" in reply.get("text", "")
 
 
 def test_voice_ws_text_turn_and_tts(client):

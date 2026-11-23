@@ -212,7 +212,20 @@ function isCursorSendChord(e) {
   return e.key === "Enter" && (e.ctrlKey || e.metaKey);
 }
 
-async function consumeAgentSse(res, { onToken, onMeta } = {}) {
+async function applyComposerRoute(ev, { userMessage } = {}) {
+  const target = Number(ev.route_target_chat_id || ev.conversation_id) || null;
+  const shouldSwitch =
+    ev.route_command === "switch_chat" ||
+    ev.route_label === "D" ||
+    (ev.route_target_chat_id && target !== homeConversationId);
+  if (!shouldSwitch || !target || !window.sahirOpenConversation) return false;
+  if (target === homeConversationId) return false;
+  await window.sahirOpenConversation(target);
+  if (userMessage) addMessage("user", userMessage, { skipRemember: true });
+  return true;
+}
+
+async function consumeAgentSse(res, { onToken, onMeta, userMessage } = {}) {
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   let buf = "";
@@ -232,6 +245,10 @@ async function consumeAgentSse(res, { onToken, onMeta } = {}) {
       } catch {
         continue;
       }
+      if (ev.type === "route") {
+        await applyComposerRoute(ev, { userMessage });
+        onMeta?.(ev);
+      }
       if (ev.type === "meta" && ev.conversation_id) {
         homeConversationId = ev.conversation_id;
         localStorage.setItem(CONV_ID_KEY, String(homeConversationId));
@@ -243,6 +260,7 @@ async function consumeAgentSse(res, { onToken, onMeta } = {}) {
       }
       if (ev.type === "done") {
         reply = ev.reply || reply;
+        await applyComposerRoute(ev, { userMessage });
         if (ev.conversation_id) {
           homeConversationId = ev.conversation_id;
           localStorage.setItem(CONV_ID_KEY, String(homeConversationId));
@@ -1786,6 +1804,7 @@ async function sendChat(message, { forceCursor = false } = {}) {
     }
 
     const data = await consumeAgentSse(res, {
+      userMessage: message,
       onToken: (partial) => {
         if (typeof renderMarkdown === "function") {
           pendingBody.innerHTML = renderMarkdown(partial);

@@ -19,6 +19,7 @@ _UNARCHIVE = re.compile(r"(?is)^(?:please\s+)?(?:unarchive|restore)\s+(?:chat\s+
 _RENAME = re.compile(r"(?is)^(?:please\s+)?rename\s+(.+?)\s+to\s+(.+?)\s*\.?$")
 _MOVE = re.compile(r"(?is)^(?:please\s+)?move\s+(.+?)\s+to\s+project\s+(.+?)\s*\.?$")
 _BRIEF_CHAT = re.compile(r"(?is)^(?:please\s+)?(?:set\s+)?brief\s+(?:for\s+)?(.+?)\s*:\s*(.+)$")
+_CHAT_NOTE = re.compile(r"(?is)^(?:please\s+)?(.+?)\s+note\s*:\s*(.+)$")
 _INJECT = re.compile(
     r"(?is)^(?:please\s+)?(?:inject|give)\s+(?:chat\s+)?(.+?)\s+(?:background|context)\s+(?:on|about)\s+(.+?)\s*\.?$"
 )
@@ -161,6 +162,14 @@ def parse_directive(utterance: str) -> dict[str, Any] | None:
     if m:
         return {"tool": "update_brief", "target": m.group(1).strip(), "brief": m.group(2).strip()[:4000]}
 
+    m = _CHAT_NOTE.match(text)
+    if m:
+        return {
+            "tool": "append_brief",
+            "target": m.group(1).strip(),
+            "brief": m.group(2).strip()[:4000],
+        }
+
     m = _INJECT.match(text)
     if m:
         return {
@@ -179,6 +188,7 @@ STRUCTURAL_TOOLS = frozenset({
     "unarchive_sub_chat",
     "rename_sub_chat",
     "update_brief",
+    "append_brief",
     "inject_context",
     "summarise_sub_chat",
     "summarise_all",
@@ -197,6 +207,8 @@ def utterance_has_verb(utterance: str, tool: str) -> bool:
         return bool(re.search(r"\brename\b", u, re.I))
     if tool == "update_brief":
         return bool(re.search(r"\bbrief\b", u, re.I))
+    if tool == "append_brief":
+        return bool(re.search(r"\bnote\b", u, re.I))
     if tool == "inject_context":
         return bool(re.search(r"\b(?:inject|give)\b", u, re.I))
     if tool == "summarise_sub_chat":
@@ -263,6 +275,7 @@ def normalize_tool(
         "unarchive_sub_chat",
         "rename_sub_chat",
         "update_brief",
+        "append_brief",
         "inject_context",
         "summarise_sub_chat",
     }
@@ -282,6 +295,8 @@ def normalize_tool(
             return None, "What should I rename it to?"
         if name == "update_brief" and not (tool.get("brief") or "").strip():
             return None, "What should the brief say?"
+        if name == "append_brief" and not (tool.get("brief") or "").strip():
+            return None, "What should the note say?"
         if name == "inject_context" and not (tool.get("content") or "").strip():
             return None, "What background should I inject?"
         return out, None

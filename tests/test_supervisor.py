@@ -151,6 +151,37 @@ def test_parse_directive_api_refactor_spawn() -> None:
     assert d["brief"] == "move endpoints to v2"
 
 
+def test_parse_directive_chat_note() -> None:
+    d = parse_directive("refactor note: start with auth")
+    assert d and d["tool"] == "append_brief"
+    assert d["target"] == "refactor"
+    assert d["brief"] == "start with auth"
+
+
+def test_supervisor_append_brief_note(store: AgentStore) -> None:
+    p2 = store.create_project("P2")
+    sup_id = int(p2["supervisor_conversation_id"])
+    svc = SupervisorService(store, FakeLLM(), Settings())
+    svc.spawn_sub_chat(
+        int(p2["id"]),
+        title="API refactor",
+        brief="move endpoints to v2",
+        supervisor_conv_id=sup_id,
+    )
+    reply = svc.run_turn(
+        "refactor note: start with auth",
+        project_id=int(p2["id"]),
+        supervisor_conv_id=sup_id,
+        history=[],
+    )
+    assert reply.action == "append_brief"
+    subs = store.list_sub_chats(int(p2["id"]))
+    ref = next(c for c in subs if c["title"] == "API refactor")
+    brief = ref.get("brief") or ""
+    assert "move endpoints to v2" in brief
+    assert "start with auth" in brief
+
+
 def test_supervisor_spawn_beats_llm_move(store: AgentStore) -> None:
     general = store.get_project_by_slug("general")
     stray = store.create_conversation("Can you hear me? Can you hear me?", project_id=int(general["id"]))

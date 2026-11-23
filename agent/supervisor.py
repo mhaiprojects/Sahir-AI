@@ -135,6 +135,17 @@ class SupervisorService:
         publish("supervisor", "", source="supervisor", state="idle")
         return out
 
+    def append_brief(self, conv_id: int, note: str) -> dict[str, Any]:
+        conv = self.store.get_conversation(conv_id)
+        if not conv:
+            raise ValueError("Conversation not found")
+        note = (note or "").strip()
+        if not note:
+            raise ValueError("Note is empty")
+        old = (conv.get("brief") or "").strip()
+        combined = f"{old}\n• {note}" if old else note
+        return self.update_brief(conv_id, combined[:4000])
+
     def archive_sub_chat(self, conv_id: int) -> dict[str, Any]:
         conv = self.store.get_conversation(conv_id)
         if not conv or conv.get("kind") == "supervisor":
@@ -326,6 +337,13 @@ class SupervisorService:
         if name == "update_brief":
             conv = self.update_brief(int(tool["conversation_id"]), str(tool.get("brief") or ""))
             return SupervisorReply(reply="Brief updated.", action_details={"conversation": conv})
+        if name == "append_brief":
+            conv = self.append_brief(int(tool["conversation_id"]), str(tool.get("brief") or ""))
+            return SupervisorReply(
+                reply=f"Added a note to “{conv['title']}”.",
+                action="append_brief",
+                action_details={"conversation": conv},
+            )
         if name == "rename_sub_chat":
             conv = self.rename_sub_chat(int(tool["conversation_id"]), str(tool.get("title") or ""))
             return SupervisorReply(reply=f"Renamed to “{conv['title']}”.", action_details={"conversation": conv})

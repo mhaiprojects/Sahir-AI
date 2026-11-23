@@ -38,11 +38,12 @@ logger = logging.getLogger(__name__)
 
 class VoiceSession:
     def __init__(self, ws: WebSocket, *, get_settings: Callable, get_pipeline: Callable, get_agent: Callable,
-                 request_lock: threading.Lock) -> None:
+                 get_command_store: Callable | None, request_lock: threading.Lock) -> None:
         self.ws = ws
         self.settings = get_settings()
         self.get_pipeline = get_pipeline
         self.get_agent = get_agent
+        self.get_command_store = get_command_store
         self.request_lock = request_lock
         self.endpointer = Endpointer(threshold=self.settings.vad_threshold,
                                      end_silence_ms=self.settings.voice_end_silence_ms, vad=SileroVAD())
@@ -86,6 +87,7 @@ class VoiceSession:
     async def run_turn(self, gen: int, *, audio: np.ndarray | None, text: str | None) -> None:
         self.busy = True
         t0 = time.monotonic()
+        input_type = "text" if text is not None else "voice"
         try:
             pipeline = self.get_pipeline()
             if text is None:
@@ -100,18 +102,52 @@ class VoiceSession:
             await self.send({"type": "status", "state": "thinking"})
 
             def respond():
+                from agent.dispatcher import dispatch_routed
+                from agent.loop import AgentReply
+                from tools.router import RouteResult
+
                 if not self.request_lock.acquire(timeout=120):
                     raise RuntimeError("Assistant is busy")
                 try:
-                    return self.get_agent().respond(text, conversation_id=self.conversation_id, mode=self.mode,
-                                                    source="voice", input_type="voice")
+                    agent = self.get_agent()
+                    cmd_store = self.get_command_store() if self.get_command_store else None
+                    raw, _mode, _decision = dispatch_routed(
+                        agent,
+                        text,
+                        conversation_id=self.conversation_id,
+                        input_type=input_type,
+                        command_store=cmd_store,
+                    )
+                    if isinstance(raw, RouteResult):
+                        return AgentReply(
+                            reply=raw.reply,
+                            action=raw.action,
+                            action_details=raw.action_details,
+                            routed=raw.routed,
+                            conversation_id=self.conversation_id or 0,
+                            user_message_id=0,
+                            assistant_message_id=0,
+                            sources={},
+                        )
+                    return raw
                 finally:
                     self.request_lock.release()
 
             r = await asyncio.to_thread(respond)
-            self.conversation_id = r.conversation_id
+            if r.action in {"stop_speech", "cancel_request"}:
+                self.generation += 1
+            elif r.action == "switch_chat" and r.conversation_id:
+                self.conversation_id = r.conversation_id
+            elif r.conversation_id:
+                self.conversation_id = r.conversation_id
             if not self._alive(gen):
                 logger.info("Dropping stale reply (barge-in)")
+                return
+            if r.action in {"stop_speech", "cancel_request", "pause_listening"}:
+                await self.send({"type": "reply", "text": r.reply, "action": r.action,
+                                 "conversation_id": r.conversation_id, "action_details": r.action_details,
+                                 "sources": r.sources, "latency_ms": int((time.monotonic() - t0) * 1000)})
+                await self.send({"type": "tts_done", "interrupted": True})
                 return
             await self.send({"type": "reply", "text": r.reply, "action": r.action,
                              "conversation_id": r.conversation_id, "action_details": r.action_details,
@@ -197,12 +233,12 @@ class VoiceSession:
 
 
 def register_voice_ws(app: FastAPI, *, get_settings: Callable, get_pipeline: Callable, get_agent: Callable,
-                      request_lock: threading.Lock) -> None:
+                      get_command_store: Callable | None = None, request_lock: threading.Lock) -> None:
     @app.websocket("/ws/voice")
     async def voice_ws(ws: WebSocket) -> None:
         await ws.accept()
         session = VoiceSession(ws, get_settings=get_settings, get_pipeline=get_pipeline, get_agent=get_agent,
-                               request_lock=request_lock)
+                               get_command_store=get_command_store, request_lock=request_lock)
         try:
             await session.run()
         except WebSocketDisconnect:
