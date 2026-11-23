@@ -128,6 +128,21 @@ def execute_numbered_action(agent: "Agent", action: dict[str, Any]) -> RouteResu
             agent.settings,
             history=[],
         )
+    if kind == "clickup":
+        from agent.clickup import ClickUpClient, ClickUpError, execute_clickup_action
+
+        client = ClickUpClient.from_settings(agent.settings)
+        try:
+            out = execute_clickup_action(client, action)
+            return RouteResult(
+                reply=str(out.get("reply") or out.get("summary") or "ClickUp action completed."),
+                routed=True,
+                action="clickup",
+                action_details={k: v for k, v in out.items() if k not in ("reply", "summary")},
+            )
+        except ClickUpError as exc:
+            return RouteResult(reply=str(exc), routed=True, action="error", action_details={"clickup": True})
+
     if kind == "supervisor":
         pid = agent.store.general_project_id()
         proj = agent.store.get_project(pid) if pid else None

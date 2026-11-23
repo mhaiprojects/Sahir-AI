@@ -112,6 +112,15 @@ def action_chip_label(action: dict[str, Any] | None) -> str:
         return "Cursor task"
     if kind == "supervisor":
         return f"Supervisor: {action.get('tool') or 'action'}"
+    if kind == "clickup":
+        sub = action.get("action") or action.get("clickup_action") or "create_task"
+        if sub == "create_task":
+            return f"Create task: {action.get('name') or 'task'}"
+        if sub == "add_comment":
+            return "Add ClickUp comment"
+        if sub == "update_status":
+            return f"Set status: {action.get('status') or 'complete'}"
+        return f"ClickUp {str(sub).replace('_', ' ')}"
     return str(kind).replace("_", " ")
 
 
@@ -137,7 +146,45 @@ def _action_from_turn(action: str, details: dict[str, Any], tasks: list[dict[str
     if action == "cursor" or details.get("cursor"):
         return {"kind": "cursor", "prompt": details.get("prompt") or details.get("message") or ""}
     if action == "clickup" or details.get("clickup"):
-        return {"kind": "clickup", **{k: v for k, v in details.items() if v is not None}}
+        payload = {k: v for k, v in details.items() if v is not None and k != "clickup"}
+        if details.get("clickup_action"):
+            payload["action"] = details["clickup_action"]
+        elif details.get("action") and details.get("action") not in ("clickup", "delegated"):
+            payload.setdefault("action", details["action"])
+        elif isinstance(details.get("results"), list):
+            for row in details["results"]:
+                if row.get("type") == "clickup" and isinstance(row.get("summary"), str):
+                    m = re.search(r"https://app\.clickup\.com/\S+", row["summary"])
+                    if m:
+                        payload.setdefault("name", row.get("summary", "")[:80])
+        if details.get("name"):
+            payload.setdefault("name", details["name"])
+        if details.get("url"):
+            payload.setdefault("url", details["url"])
+        if details.get("task_id"):
+            payload.setdefault("task_id", details["task_id"])
+        payload.setdefault("action", payload.get("action") or "create_task")
+        return {"kind": "clickup", **payload}
+    return None
+
+
+def _clickup_action_from_tasks(tasks: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+    for ent in tasks or []:
+        task = ent.get("task") or ent
+        if task.get("type") != "clickup":
+            continue
+        res = ent.get("result") if isinstance(ent, dict) else {}
+        out = (res or {}).get("output") if isinstance(res, dict) else {}
+        if not isinstance(out, dict):
+            continue
+        return {
+            "kind": "clickup",
+            "action": out.get("action") or "create_task",
+            "name": out.get("name") or task.get("description"),
+            "task_id": out.get("task_id"),
+            "url": out.get("url"),
+            "description": task.get("description") or "",
+        }
     return None
 
 
@@ -150,7 +197,7 @@ def attach_actions_from_turn(
 ) -> list[dict[str, Any]]:
     """Attach at most one concrete action per item index (from orchestrator/supervisor output only)."""
     details = dict(action_details or {})
-    act = _action_from_turn(action or "", details, tasks)
+    act = _clickup_action_from_tasks(tasks) or _action_from_turn(action or "", details, tasks)
     if not act:
         if tasks and len(items) >= len(tasks):
             out = []

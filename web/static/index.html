@@ -227,6 +227,19 @@
         </details>
 
         <details class="config-section" open>
+          <summary>Integrations</summary>
+          <div class="config-body">
+            <h3 class="config-subhead">ClickUp</h3>
+            <p id="clickup-status-line" class="config-note" aria-live="polite">Loading ClickUp status…</p>
+            <p id="clickup-help-line" class="config-note muted">
+              Needs credentials: add <code>CLICKUP_API_TOKEN</code> and <code>CLICKUP_LIST_ID</code>
+              (see <code>docs/integrations/clickup.md</code> in the repo).
+            </p>
+            <button type="button" id="clickup-verify-btn" class="secondary small" hidden>Verify</button>
+          </div>
+        </details>
+
+        <details class="config-section" open>
           <summary data-help="Spoken shortcuts that work while Sahir is speaking or working on a request: if what you say contains a keyword, its action runs. Use the On box to pause a command or Delete to remove it." data-help-label="Voice commands" data-help-place="inside">Voice commands</summary>
           <div class="config-body">
             <p class="config-note">Keyword shortcuts active while speaking or processing.</p>

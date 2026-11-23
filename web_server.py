@@ -984,6 +984,26 @@ def create_app() -> FastAPI:
             "clickup_configured": _get_agent_stack().clickup.configured,
         }
 
+    @app.get("/api/integrations/clickup/status")
+    def clickup_status() -> dict[str, Any]:
+        return _get_agent_stack().clickup.status_payload()
+
+    @app.post("/api/integrations/clickup/verify")
+    def clickup_verify() -> dict[str, Any]:
+        client = _get_agent_stack().clickup
+        if not client.configured:
+            from agent.clickup import CONFIGURED_HINT
+
+            return {"ok": False, "detail": CONFIGURED_HINT, **client.status_payload()}
+        try:
+            details = client.verify_connection()
+            return {"ok": True, "details": details, **client.status_payload()}
+        except Exception as exc:
+            from agent.clickup import ClickUpError
+
+            msg = str(exc) if isinstance(exc, ClickUpError) else str(exc)
+            return {"ok": False, "detail": msg, **client.status_payload()}
+
     @app.get("/agent")
     def agent_page() -> RedirectResponse:
         return RedirectResponse(url="/?view=chat", status_code=302)

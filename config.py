@@ -108,6 +108,24 @@ class Settings:
     allowed_commands: list[str] = field(default_factory=list)
     allowed_directories: list[Path] = field(default_factory=list)
 
+    # ClickUp (optional integration)
+    clickup_api_token: str = field(default="", repr=False)
+    clickup_list_id: str = ""
+    clickup_team_id: str = ""
+    clickup_token_file: Path = field(
+        default_factory=lambda: Path.home() / ".config" / "jahash-secrets" / "clickup-token.txt"
+    )
+    clickup_token_source: str = "none"
+    clickup_token_load_error: str | None = None
+
+    @property
+    def clickup_has_token(self) -> bool:
+        return bool(self.clickup_api_token) and not self.clickup_token_load_error
+
+    @property
+    def clickup_configured(self) -> bool:
+        return self.clickup_has_token and bool(self.clickup_list_id)
+
     @classmethod
     def from_env(cls) -> "Settings":
         piper_voice = os.getenv("PIPER_VOICE", "en_US-lessac-medium")
@@ -205,4 +223,26 @@ class Settings:
                     [str(Path.home())],
                 )
             ],
+            clickup_list_id=os.getenv("CLICKUP_LIST_ID", "").strip(),
+            clickup_team_id=os.getenv("CLICKUP_TEAM_ID", "").strip(),
+            clickup_token_file=Path(
+                os.getenv("CLICKUP_TOKEN_FILE", "").strip()
+                or str(Path.home() / ".config" / "jahash-secrets" / "clickup-token.txt")
+            ).expanduser(),
+            **_clickup_env_fields(),
         )
+
+
+def _clickup_env_fields() -> dict:
+    from agent.clickup import load_clickup_token
+
+    token_path = Path(
+        os.getenv("CLICKUP_TOKEN_FILE", "").strip()
+        or str(Path.home() / ".config" / "jahash-secrets" / "clickup-token.txt")
+    ).expanduser()
+    token, source, err = load_clickup_token(token_file=token_path)
+    return {
+        "clickup_api_token": token,
+        "clickup_token_source": source,
+        "clickup_token_load_error": err,
+    }

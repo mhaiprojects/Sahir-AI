@@ -33,7 +33,7 @@ def build_agent_stack(settings: Settings, config: AgentConfig | None = None, *,
     llm = OllamaChat(settings.ollama_host, settings.ollama_model, model_getter=lambda: settings.ollama_model)
     agent = Agent(settings, config, store, embedder, llm)
     dispatcher = Dispatcher(store)
-    clickup = clickup or ClickUpClient()
+    clickup = clickup or ClickUpClient.from_settings(settings)
     dispatcher.register(ResearchWorker(agent.rag, llm))
     dispatcher.register(CodeWorker(settings))
     dispatcher.register(ClickUpWorker(clickup))

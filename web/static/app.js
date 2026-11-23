@@ -148,6 +148,13 @@ function actionChipLabel(action) {
   if (kind === "delegate") return `Delegate: ${action.type || "worker"}`;
   if (kind === "cursor") return "Cursor task";
   if (kind === "supervisor") return `Supervisor: ${action.tool || "action"}`;
+  if (kind === "clickup") {
+    const sub = action.action || action.clickup_action || "create_task";
+    if (sub === "create_task") return `Create task: ${action.name || "task"}`;
+    if (sub === "add_comment") return "Add ClickUp comment";
+    if (sub === "update_status") return `Set status: ${action.status || "complete"}`;
+    return `ClickUp ${String(sub).replace(/_/g, " ")}`;
+  }
   return String(kind).replace(/_/g, " ");
 }
 
@@ -819,6 +826,51 @@ function handleHealthOk(data) {
     loadWebConfig();
     refreshLogs();
     refreshCommands();
+  }
+}
+
+async function refreshClickupIntegration() {
+  const line = document.getElementById("clickup-status-line");
+  const help = document.getElementById("clickup-help-line");
+  const btn = document.getElementById("clickup-verify-btn");
+  if (!line) return;
+  try {
+    const res = await fetch("/api/integrations/clickup/status", { cache: "no-store" });
+    const data = await res.json();
+    if (!data.configured) {
+      line.textContent = data.needs_credentials_message || "ClickUp: not configured";
+      line.className = "config-note warn";
+      help?.classList.remove("hidden");
+      if (btn) btn.hidden = true;
+      return;
+    }
+    const src = data.token_source ? ` (token: ${data.token_source})` : "";
+    line.textContent = `ClickUp: configured — list ${data.list_id_set ? "set" : "missing"}${src}`;
+    line.className = "config-note";
+    help?.classList.add("hidden");
+    if (btn) {
+      btn.hidden = false;
+      btn.onclick = async () => {
+        btn.disabled = true;
+        try {
+          const v = await fetch("/api/integrations/clickup/verify", { method: "POST" });
+          const body = await v.json();
+          if (body.ok) {
+            const d = body.details || {};
+            line.textContent = `ClickUp verified — ${d.username || "user"} · list “${d.list_name || d.list_id}”`;
+            line.className = "config-note";
+          } else {
+            line.textContent = `ClickUp verify failed: ${body.detail || "unknown error"}`;
+            line.className = "config-note warn";
+          }
+        } finally {
+          btn.disabled = false;
+        }
+      };
+    }
+  } catch (err) {
+    line.textContent = `ClickUp status unavailable: ${err.message}`;
+    line.className = "config-note warn";
   }
 }
 
@@ -2079,7 +2131,10 @@ function initViewNav() {
     if (viewName === "memory") window.sahirOnView?.("memory");
     if (viewName === "docs") window.sahirOnView?.("docs");
     if (viewName === "tasks") window.sahirOnView?.("tasks");
-    if (viewName === "settings" && typeof refreshHealth === "function") refreshHealth();
+    if (viewName === "settings") {
+      if (typeof refreshHealth === "function") refreshHealth();
+      refreshClickupIntegration();
+    }
     if (viewName === "chat") focusHomeChatInput();
     if (viewName !== "chat") document.querySelector(".unified-layout")?.classList.remove("rail-open");
   }
