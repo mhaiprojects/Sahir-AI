@@ -56,8 +56,41 @@
     return vramBannerEl;
   }
 
+  let storageEl = document.getElementById("models-storage");
+
+  function renderStorage(storage) {
+    if (!storageEl) return;
+    if (!storage || !storage.path) {
+      storageEl.hidden = true;
+      storageEl.textContent = "";
+      storageEl.classList.remove("warn");
+      return;
+    }
+    const free = storage.disk_free_bytes;
+    const total = storage.disk_total_bytes;
+    const freeTxt = free == null ? "?" : fmtBytes(free);
+    const totalTxt = total == null ? "?" : fmtBytes(total);
+    const src = {
+      env: "Sahir .env",
+      systemd: "Ollama systemd unit",
+      system_default: "system Ollama default",
+      user_default: "user Ollama default",
+    }[storage.resolved_from] || storage.resolved_from;
+    storageEl.hidden = false;
+    storageEl.classList.toggle(
+      "warn",
+      !!(storage.warn_low_space || storage.warn_on_root || (storage.warnings || []).length),
+    );
+    let text = `Model store: ${storage.path} · ${freeTxt} free / ${totalTxt} (${src})`;
+    if (storage.warnings && storage.warnings.length) {
+      text += ` — ${storage.warnings.join(" ")}`;
+    }
+    storageEl.textContent = text;
+  }
+
   function render(data) {
     listEl.innerHTML = "";
+    renderStorage(data.model_storage);
     const banner = ensureVramBanner();
     const warn = data.vram_active_warning;
     if (warn && warn.message) {

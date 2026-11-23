@@ -167,6 +167,7 @@
           (GPU first, overflow in RAM); Eject frees it. The fallback model answers when a small model
           returns an invalid action, or when you say "think harder" / "use the big model".</p>
         <div id="models-status" class="models-status" aria-live="polite">Loading models…</div>
+        <div id="models-storage" class="models-storage" aria-live="polite" hidden></div>
         <div id="models-list" class="models-list" role="radiogroup" aria-label="Chat models"></div>
         <section class="config-section models-options">
           <div class="config-body">
@@ -334,7 +335,7 @@
   <script src="/static/voice_client.js?v=20261124hf"></script>
   <script src="/static/app.js?v=20261124auth"></script>
   <script src="/static/agent.js?v=20261124hf"></script>
-  <script src="/static/models.js?v=20261116ui"></script>
+  <script src="/static/models.js?v=20261124storage"></script>
   <script src="/static/tour.js?v=20261124shell"></script>
   <script src="/static/chatbar.js?v=20261124shell"></script>
   <script src="/static/rail.js?v=20261124shell"></script>

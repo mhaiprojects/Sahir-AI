@@ -38,6 +38,9 @@ class Settings:
     # Local pipeline
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "llama3.1:8b"
+    # Optional override for Models page storage display (else systemd / Ollama defaults).
+    ollama_models_dir: Path | None = None
+    ollama_models_warn_free_gb: float = 10.0
     whisper_model: str = "base"
     whisper_live_model: str = "tiny"
     whisper_final_model: str = "base"
@@ -117,6 +120,12 @@ class Settings:
             sample_rate=int(os.getenv("SAMPLE_RATE", "16000")),
             ollama_host=os.getenv("OLLAMA_HOST", "http://localhost:11434"),
             ollama_model=os.getenv("OLLAMA_MODEL", "llama3.1:8b"),
+            ollama_models_dir=(
+                Path(p) if (p := os.getenv("OLLAMA_MODELS_DIR", "").strip()) else None
+            ),
+            ollama_models_warn_free_gb=float(
+                os.getenv("OLLAMA_MODELS_WARN_FREE_GB", "10")
+            ),
             whisper_model=os.getenv("WHISPER_MODEL", "base"),
             whisper_live_model=os.getenv("WHISPER_LIVE_MODEL", "tiny"),
             whisper_final_model=os.getenv("WHISPER_FINAL_MODEL") or os.getenv(

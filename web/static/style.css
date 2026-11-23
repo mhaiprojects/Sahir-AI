@@ -965,6 +965,13 @@ button.secondary.listening {
 .view-models { overflow-y: auto; gap: 0.75rem; }
 .models-status { color: var(--muted); font-size: 0.85rem; min-height: 1.2em; }
 .models-status.error { color: var(--bad); }
+.models-storage {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  margin: 0.25rem 0 0.6rem;
+}
+.models-storage.warn { color: var(--warn, #c9a227); }
 .models-list { display: flex; flex-direction: column; gap: 0.6rem; }
 .model-card {
   background: var(--surface);

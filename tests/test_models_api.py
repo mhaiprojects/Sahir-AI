@@ -87,6 +87,8 @@ def test_list_models_excludes_embeddings_and_reports_split(client: TestClient) -
     assert data["vram_budget"]["chat_budget_gb"] == 1.9
     assert data["vram_active_warning"] is not None
     assert data["embed_on_cpu"] is True
+    store = data.get("model_storage") or {}
+    assert "path" in store and "disk_free_bytes" in store
 
 
 def test_select_persists_and_updates_settings(client: TestClient, manager: ModelManager, tmp_path: Path,

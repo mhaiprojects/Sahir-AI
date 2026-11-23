@@ -83,6 +83,8 @@ Open the ◈ **Models** item in the left nav rail:
 - Saying "think harder", "use the big model" or "smarter model" uses the fallback for that turn.
 - Every reply in the chat shows a small tag with the model that answered (and why it escalated);
   the same data is in `action_details.model` / `action_details.escalated`.
+- **Model store** — path to Ollama's `OLLAMA_MODELS` directory and free/total disk space on that
+  volume; warns when space is low or the store is on the root filesystem (before you `ollama pull`).
 - **Run benchmark / Quick run** — runs `scripts/bench_models.py` in the background and shows the
   results table (full report in `data/bench/latest.md`).
 
@@ -90,7 +92,7 @@ Open the ◈ **Models** item in the left nav rail:
 
 | Method | Path | Body | Purpose |
 |--------|------|------|---------|
-| GET | `/api/models` | – | Installed chat models, loaded state, `default_selection`, `vram_budget`, VRAM warnings |
+| GET | `/api/models` | – | Installed chat models, loaded state, `model_storage`, `default_selection`, `vram_budget`, VRAM warnings |
 | POST | `/api/models/select` | `{"model": "qwen3:1.7b"}` | Set the active chat model |
 | POST | `/api/models/load` | `{"model": "...", "keep_alive": "30m"}` | Preload into memory |
 | POST | `/api/models/eject` | `{"model": "..."}` | Unload from memory |
@@ -112,9 +114,60 @@ over the labelled prompts in `scripts/bench_prompts.json`. Nothing is executed; 
 only inspected. "Correct w/ heuristic" also applies the orchestrator's production keyword
 fallback. Results: `data/bench/<timestamp>.json`, `latest.json`, `latest.md`.
 
+## Ollama model storage location (#31)
+
+Pulled models live under **`OLLAMA_MODELS`** on the Ollama **service** (not in the Sahir repo). On
+**buspc** this is already on a large disk: `/mnt/ssd6/ollama/models` via a systemd drop-in.
+
+The **Models** page shows that path plus free/total space (from the nearest existing parent of the
+store) before you pull more models. Warnings appear when free space is below **`OLLAMA_MODELS_WARN_FREE_GB`**
+(default **10**) or when the store sits on the **root** filesystem.
+
+Sahir resolves the path read-only in order:
+
+1. `OLLAMA_MODELS_DIR` in Sahir `.env` (override for display only)
+2. `OLLAMA_MODELS=…` from `systemctl show ollama -p Environment` (no sudo)
+3. `/usr/share/ollama/.ollama/models` if the `ollama` unit is loaded
+4. `~/.ollama/models` for a user-run daemon
+
+### Moving model storage off the root disk (admin / sudo)
+
+Requires **root**: Sahir does not change Ollama or systemd.
+
+```bash
+sudo systemctl edit ollama
+```
+
+Example drop-in:
+
+```ini
+[Service]
+Environment="OLLAMA_MODELS=/mnt/ssd6/ollama/models"
+RequiresMountsFor=/mnt/ssd6
+```
+
+Then (paths and user vary by distro):
+
+```bash
+sudo mkdir -p /mnt/ssd6/ollama/models
+sudo rsync -a /usr/share/ollama/.ollama/models/ /mnt/ssd6/ollama/models/
+sudo chown -R ollama:ollama /mnt/ssd6/ollama
+sudo systemctl daemon-reload
+sudo systemctl restart ollama
+ollama list
+systemctl show ollama -p Environment
+```
+
+On **buspc**, `OLLAMA_MODELS=/mnt/ssd6/ollama/models` is already configured; use the Models page to
+confirm free space before large pulls.
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `OLLAMA_MODELS_DIR` | (unset) | Override path shown in the UI (optional) |
+| `OLLAMA_MODELS_WARN_FREE_GB` | `10` | Warn when free space on the store volume is below this |
+
 ## Notes
 
-- Ollama keeps models in its own store (`OLLAMA_MODELS`, default under the service user's home).
-  Check free space on that filesystem before pulling several models.
+- Check free space on the model store volume before pulling several models (Models page or `df`).
 - On a GPU with little VRAM, keep only one chat model loaded at a time; a second loaded model pushes the
   first partly into system RAM and slows it down.

@@ -253,6 +253,12 @@ class ModelManager:
         cfg = get_gpu_config()
         active_row = next((m for m in models if m["active"]), None)
         auto_name, _ = self.recommend_auto_default(installed)
+        from web.ollama_storage import inspect_model_storage
+
+        storage = inspect_model_storage(
+            override_dir=self.settings.ollama_models_dir,
+            warn_free_gb=self.settings.ollama_models_warn_free_gb,
+        )
         return {"active_model": self.active_model, "active_source": self.active_source,
                 "smallest_model": auto_name,  # legacy key: recommended auto default
                 "auto_default_model": auto_name,
@@ -264,6 +270,7 @@ class ModelManager:
                 "router_model": cfg.router_model,
                 "vram_active_warning": active_row.get("vram_warning") if active_row else None,
                 "embed_on_cpu": cfg.embed_on_cpu,
+                "model_storage": storage,
                 "models": models, "other_loaded": other_loaded}
 
     def _require_installed(self, name: str) -> None:
