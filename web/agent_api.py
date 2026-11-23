@@ -466,6 +466,23 @@ def create_agent_router(
     @api.post("/api/agent/chat")
     def agent_chat(body: AgentChatRequest) -> dict[str, Any]:
         if not lock.acquire(blocking=False):
+            from agent.voice_turn import is_text_composer_continuation
+            from web.turn_inflight import try_request_text_fold
+
+            if is_text_composer_continuation(body.message) and try_request_text_fold(
+                body.conversation_id, body.message
+            ):
+                return {
+                    "reply": "",
+                    "action": "context_added",
+                    "action_details": {"folded": True, "addition": body.message.strip()},
+                    "routed": True,
+                    "conversation_id": body.conversation_id,
+                    "user_message_id": 0,
+                    "assistant_message_id": 0,
+                    "sources": {},
+                    "numbered_items": [],
+                }
             raise HTTPException(429, "Assistant is busy with another request. Try again shortly.")
         try:
             agent = get_agent()

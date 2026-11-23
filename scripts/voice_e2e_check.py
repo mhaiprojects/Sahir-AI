@@ -49,6 +49,14 @@ BARGE_PROMPT_TEXT = (
     "Supervisor, list every chat in this project with a full sentence about each one, "
     "including titles and what we last discussed."
 )
+CONTEXT_LONG_PROMPT = (
+    "Give a long answer about Australian animals: describe habitat, diet and behaviour "
+    "for at least five native species in detail."
+)
+CONTEXT_FOLD_ADD = "also mention platypuses"
+CONTEXT_NEEDLE = "platypus"
+CONTEXT_PROMPT_ANCHOR = "Australian animals"
+_CONTEXT_PARTIAL_TYPES = frozenset({"reply", "audio", "tts_started", "tts_done", "status"})
 PTT_PHRASE = "what is two plus two"
 LAN_URL = "https://192.168.1.220:8765"
 CHUNK_SLEEP_S = 0.064  # ~realtime for 1024-sample frames
@@ -196,7 +204,7 @@ async def _voice_turn(
                     ev["_t_pcm_done"] = pcm_done_t
                 events.append(ev)
                 kind = ev.get("type")
-                if kind in ("audio",) or (
+                if kind in ("audio", "tts_started") or (
                     kind == "status" and ev.get("state") == "speaking"
                 ):
                     await _maybe_barge()
@@ -281,6 +289,17 @@ async def _voice_text_turn(
     return events
 
 
+def _print_barge_timeline(
+    server_traces: list[dict[str, Any]],
+    client_marks: list[tuple[str, float]],
+) -> None:
+    print("barge-in timeline (server voice_trace + client):")
+    for tr in server_traces:
+        print(f"  server +{tr.get('ms', '?'):>5}ms  {tr.get('event')}")
+    for name, t in client_marks:
+        print(f"  client +{int(t * 1000):>5}ms  {name}")
+
+
 async def _barge_in_test(
     ws_url: str,
     *,
@@ -288,7 +307,7 @@ async def _barge_in_test(
     conversation_id: int | None,
     tw,
 ) -> list[str]:
-    """Long supervisor answer via text inject; stream barge PCM on first TTS chunk."""
+    """Long supervisor answer via text inject; stream barge PCM after ``barge_listen`` ack."""
     headers = {"Authorization": f"Bearer {token}"} if token else None
     ssl_arg = _ssl_ctx() if ws_url.startswith("wss") else None
     errors: list[str] = []
@@ -296,6 +315,9 @@ async def _barge_in_test(
     barge_speech, _ = wav_bytes_to_pcm16_mono(barge_wav)
     barge_pcm = pad_utterance_pcm(barge_speech, lead_silence_s=0.05, trail_silence_s=0.6)
     types: list[str] = []
+    server_traces: list[dict[str, Any]] = []
+    client_marks: list[tuple[str, float]] = []
+    t0 = time.monotonic()
 
     async with websockets.connect(
         ws_url,
@@ -326,44 +348,204 @@ async def _barge_in_test(
             )
         )
         sent_barge = False
+        got_barge_in = False
+        barge_stream_task: asyncio.Task | None = None
 
         async def _stream_barge() -> None:
-            for chunk in pcm16_stream_chunks(barge_pcm):
-                await ws.send(chunk)
-                await asyncio.sleep(CHUNK_SLEEP_S)
-
-        def _kick_barge() -> None:
             nonlocal sent_barge
             if sent_barge:
                 return
             sent_barge = True
-            asyncio.create_task(_stream_barge())
+            client_marks.append(("first_barge_pcm_chunk", time.monotonic() - t0))
+            for chunk in pcm16_stream_chunks(barge_pcm):
+                await ws.send(chunk)
+                await asyncio.sleep(CHUNK_SLEEP_S)
 
-        deadline = time.monotonic() + 120.0
+        deadline = time.monotonic() + 180.0
         while time.monotonic() < deadline:
-            msg = await asyncio.wait_for(ws.recv(), timeout=min(30.0, deadline - time.monotonic()))
+            try:
+                msg = await asyncio.wait_for(
+                    ws.recv(), timeout=min(45.0, max(0.5, deadline - time.monotonic()))
+                )
+            except TimeoutError:
+                if sent_barge and not got_barge_in:
+                    continue
+                if time.monotonic() >= deadline:
+                    break
+                continue
             if isinstance(msg, bytes):
-                _kick_barge()
                 continue
             ev = json.loads(msg)
             types.append(ev.get("type", ""))
-            if ev.get("type") in ("audio", "reply"):
-                _kick_barge()
-            elif ev.get("type") == "status" and ev.get("state") == "speaking":
-                _kick_barge()
+            if ev.get("type") == "voice_trace":
+                server_traces.append(ev)
+            if ev.get("type") == "tts_started":
+                client_marks.append(("tts_started_received", time.monotonic() - t0))
+            if ev.get("type") == "barge_listen":
+                client_marks.append(("barge_listen_received", time.monotonic() - t0))
+                if barge_stream_task is None:
+                    barge_stream_task = asyncio.create_task(_stream_barge())
             if ev.get("type") == "barge_in":
-                break
-            if ev.get("type") == "tts_done" and sent_barge:
+                got_barge_in = True
+                client_marks.append(("barge_in_received", time.monotonic() - t0))
                 break
             if ev.get("type") == "error":
                 errors.append(f"barge-in: {ev.get('error')}")
                 break
+            if ev.get("type") == "tts_done" and sent_barge and not got_barge_in:
+                client_marks.append(("tts_done_before_barge_in", time.monotonic() - t0))
+                continue
+        if barge_stream_task is not None and not barge_stream_task.done():
+            barge_stream_task.cancel()
+            try:
+                await barge_stream_task
+            except asyncio.CancelledError:
+                pass
 
-    if "barge_in" not in types:
+    if not got_barge_in:
         errors.append("barge-in: no barge_in event (long TTS + inject)")
+        _print_barge_timeline(server_traces, client_marks)
     else:
         print("barge-in: ok (text-inject long TTS)")
+        _print_barge_timeline(server_traces, client_marks)
     return errors
+
+
+def _fetch_conversation_messages(
+    base_url: str,
+    token: str | None,
+    conversation_id: int,
+) -> list[dict[str, Any]]:
+    url = base_url.rstrip("/") + f"/api/conversations/{conversation_id}"
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    try:
+        with urlopen(Request(url, headers=headers), timeout=15) as resp:
+            data = json.loads(resp.read().decode())
+            return list(data.get("messages") or [])
+    except (HTTPError, URLError, OSError, TimeoutError, json.JSONDecodeError):
+        return []
+
+
+async def _context_add_test(
+    ws_url: str,
+    *,
+    token: str | None,
+    conversation_id: int | None,
+    base_url: str,
+) -> tuple[list[str], bool]:
+    headers = {"Authorization": f"Bearer {token}"} if token else None
+    ssl_arg = _ssl_ctx() if ws_url.startswith("wss") else None
+    errors: list[str] = []
+    types: list[str] = []
+    reply_text = ""
+    folded = False
+    out_conv: int | None = conversation_id
+    partial_before_fold = False
+    llm_input_ok = False
+    expected_folded = f"(added: {CONTEXT_FOLD_ADD.strip()})"
+
+    async with websockets.connect(
+        ws_url,
+        ssl=ssl_arg,
+        additional_headers=headers,
+        max_size=2**24,
+        open_timeout=30,
+    ) as ws:
+        await ws.recv()
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "hello",
+                    "conversation_id": conversation_id,
+                    "mode": "agent",
+                    "tts": False,
+                }
+            )
+        )
+        await ws.recv()
+        await ws.send(
+            json.dumps({"type": "text", "text": CONTEXT_LONG_PROMPT, "as_voice": True})
+        )
+        saw_thinking = False
+        fold_sent = False
+        deadline = time.monotonic() + 180.0
+        while time.monotonic() < deadline:
+            try:
+                msg = await asyncio.wait_for(
+                    ws.recv(), timeout=min(45.0, max(0.5, deadline - time.monotonic()))
+                )
+            except TimeoutError:
+                if fold_sent:
+                    continue
+                continue
+            if isinstance(msg, bytes):
+                continue
+            ev = json.loads(msg)
+            types.append(ev.get("type", ""))
+            kind = ev.get("type", "")
+            if not folded and kind in _CONTEXT_PARTIAL_TYPES:
+                if kind == "status" and ev.get("state") == "thinking":
+                    pass
+                elif kind == "status" and ev.get("state") in ("listening", "transcribing"):
+                    pass
+                else:
+                    partial_before_fold = True
+            if kind == "voice_trace" and ev.get("event") == "context_fold_llm_input":
+                ut = str(ev.get("user_text") or "")
+                if expected_folded in ut and CONTEXT_PROMPT_ANCHOR in ut:
+                    llm_input_ok = True
+            if kind == "status" and ev.get("state") == "thinking":
+                saw_thinking = True
+                if not fold_sent:
+                    await ws.send(
+                        json.dumps({"type": "text", "text": CONTEXT_FOLD_ADD, "as_voice": False})
+                    )
+                    fold_sent = True
+            if kind == "context_added":
+                folded = True
+            if kind == "reply":
+                reply_text = str(ev.get("text") or "")
+                if ev.get("conversation_id"):
+                    out_conv = int(ev["conversation_id"])
+                break
+            if kind == "error":
+                errors.append(f"context-add: {ev.get('error')}")
+                break
+        # (a) context_added
+        if not fold_sent:
+            errors.append("context-add(a): never reached thinking / fold not sent")
+        if not folded:
+            errors.append("context-add(a): no context_added event")
+        # (b) one persisted user row with original + (added: …)
+        folded_user_rows = 0
+        if out_conv:
+            msgs = _fetch_conversation_messages(base_url, token, out_conv)
+            for m in msgs:
+                if m.get("role") != "user":
+                    continue
+                body = str(m.get("content") or "")
+                if CONTEXT_PROMPT_ANCHOR in body and "(added:" in body:
+                    folded_user_rows += 1
+                    if expected_folded not in body:
+                        errors.append("context-add(b): user message missing expected folded note")
+        if folded_user_rows != 1:
+            errors.append(
+                f"context-add(b): expected exactly 1 folded user message, got {folded_user_rows}"
+            )
+        # (c) LLM input on restarted turn (voice_trace on throwaway)
+        if not llm_input_ok:
+            errors.append("context-add(c): no context_fold_llm_input trace with folded user text")
+        # (d) no partial first answer
+        if partial_before_fold:
+            errors.append("context-add(d): partial answer emitted before context_added")
+        model_mentioned = CONTEXT_NEEDLE in reply_text.lower()
+        if not errors:
+            print("context-add: ok (a–d server/harness checks)")
+        if model_mentioned:
+            print(f"context-add (info): model reply mentions {CONTEXT_NEEDLE!r}")
+        else:
+            print(f"context-add (info): model reply does not mention {CONTEXT_NEEDLE!r}")
+    return errors, model_mentioned
 
 
 def _timing_from_events(label: str, expected: str, events: list[dict]) -> TurnTiming:
@@ -489,11 +671,12 @@ async def _run_suite(
     tw,
     *,
     include_barge: bool,
-) -> tuple[list[TurnTiming], list[str]]:
+) -> tuple[list[TurnTiming], list[str], bool | None]:
     errors: list[str] = []
     ws_url = base_url.replace("https://", "wss://").replace("http://", "ws://") + "/ws/voice"
     rows: list[TurnTiming] = []
     conversation_id: int | None = None
+    model_mentioned: bool | None = None
 
     for phrase in DEFAULT_UTTERANCES:
         wav = _synthesize_wav(tw, phrase)
@@ -533,6 +716,11 @@ async def _run_suite(
         errors.extend(
             await _barge_in_test(ws_url, token=token, conversation_id=conversation_id, tw=tw)
         )
+        ctx_errors, model_hit = await _context_add_test(
+            ws_url, token=token, conversation_id=conversation_id, base_url=base_url
+        )
+        errors.extend(ctx_errors)
+        model_mentioned = model_hit
 
     ptt_wav = _synthesize_wav(tw, PTT_PHRASE)
     try:
@@ -550,7 +738,7 @@ async def _run_suite(
         errors.append(f"PTT: {exc}")
 
     _print_timing_table(rows, base_url)
-    return rows, errors
+    return rows, errors, model_mentioned
 
 
 def _markdown_baseline(base: str, rows: list[TurnTiming], errors: list[str]) -> str:
@@ -603,6 +791,8 @@ def main(argv: list[str] | None = None) -> int:
                 tw._set_base_url(args.base_url)
             primary = tw._base_url()
         else:
+            os.environ["SAHIR_VOICE_TRACE"] = "1"
+            os.environ["SAHIR_VOICE_E2E"] = "1"
             proc, temp_dir, primary = tw._start_throwaway_server()
             tw._set_base_url(primary)
 
@@ -621,14 +811,16 @@ def main(argv: list[str] | None = None) -> int:
             print("LAN URL skipped (throwaway server is localhost only; use --use-running)")
 
         first_rows: list[TurnTiming] = []
+        last_model_mentioned: bool | None = None
         for i, base in enumerate(bases):
             if i > 0:
                 tw._set_base_url(base)
             print(f"\n--- Testing {base} ---")
-            rows, errs = asyncio.run(_run_suite(base, token, tw, include_barge=(i == 0)))
+            rows, errs, model_hit = asyncio.run(_run_suite(base, token, tw, include_barge=(i == 0)))
             if i == 0:
                 first_rows = rows
                 baseline_md = _markdown_baseline(base, rows, errs)
+                last_model_mentioned = model_hit
             all_errors.extend(f"[{base}] {e}" for e in errs)
 
         if args.write_baseline and baseline_md:
@@ -654,7 +846,17 @@ def main(argv: list[str] | None = None) -> int:
                 )
             path.write_text(text)
 
+        primary_tag = f"[{primary}]"
+        barge_errors = [e for e in all_errors if primary_tag in e and "barge-in" in e]
+        ctx_errors = [e for e in all_errors if primary_tag in e and "context-add" in e]
         print(f"\nSummary: {len(all_errors)} error(s)")
+        print(f"Barge-in e2e: {'PASS' if not barge_errors else 'FAIL'}")
+        print(f"Context-add e2e (a–d): {'PASS' if not ctx_errors else 'FAIL'}")
+        if last_model_mentioned is not None:
+            print(
+                f"Model mentioned {CONTEXT_NEEDLE!r} (informational, not pass/fail): "
+                f"{'yes' if last_model_mentioned else 'no'}"
+            )
         for e in all_errors:
             print(" -", e)
         exit_code = 1 if all_errors else 0

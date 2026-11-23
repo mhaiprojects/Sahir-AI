@@ -194,7 +194,8 @@ class Agent:
     # --------------------------------------------------------------- main
     def respond(self, text: str, *, conversation_id: int | None = None, mode: str = "agent",
                 source: str = "web", input_type: str = "text", auto_session: bool = False,
-                extra_meta: dict[str, Any] | None = None, on_progress: ProgressFn | None = None) -> AgentReply:
+                extra_meta: dict[str, Any] | None = None, on_progress: ProgressFn | None = None,
+                replace_user_message_id: int | None = None) -> AgentReply:
         text = text.strip()
         if not text:
             raise ValueError("Message is empty")
@@ -226,8 +227,13 @@ class Agent:
             on_progress({"type": "progress", "stage": "context",
                          "message": f"Found {len(ctx.chunks)} document excerpts"})
         block = ctx.to_block()
-        user_id = self.store.add_message(conv["id"], "user", text, {"input_type": input_type, **(extra_meta or {})})
-        self._auto_title(conv, text)
+        if replace_user_message_id:
+            self.store.set_message_content(replace_user_message_id, text)
+            user_id = replace_user_message_id
+        else:
+            user_id = self.store.add_message(conv["id"], "user", text, {"input_type": input_type, **(extra_meta or {})})
+        if not replace_user_message_id:
+            self._auto_title(conv, text)
 
         if conv.get("kind") == "supervisor":
             if self.supervisor is None:

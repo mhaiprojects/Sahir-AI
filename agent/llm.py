@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import time
 from typing import Any, Callable, Iterator, Protocol
 
 import ollama
@@ -86,3 +88,44 @@ class OllamaChat:
             token = (part.get("message", {}) or {}).get("content", "")
             if token:
                 yield token
+
+
+class VoiceE2EChat:
+    """Throwaway-server-only LLM wrapper (``SAHIR_VOICE_E2E=1``).
+
+    Inserts a short delay before each inner ``chat`` / ``chat_stream`` call so voice
+  e2e can fold context mid-generation. Model output is passed through unchanged.
+    """
+
+    def __init__(self, inner: ChatLLM, *, delay_s: float) -> None:
+        self._inner = inner
+        self._delay_s = max(0.0, delay_s)
+
+    @property
+    def model(self) -> str:
+        return self._inner.model
+
+    @model.setter
+    def model(self, value: str) -> None:
+        self._inner.model = value
+
+    def _maybe_delay(self) -> None:
+        if self._delay_s > 0:
+            time.sleep(self._delay_s)
+
+    def chat(self, messages: list[dict[str, str]], **kwargs: Any) -> dict[str, Any]:
+        self._maybe_delay()
+        return self._inner.chat(messages, **kwargs)
+
+    def chat_stream(self, messages: list[dict[str, str]], **kwargs: Any) -> Iterator[str]:
+        self._maybe_delay()
+        yield from self._inner.chat_stream(messages, **kwargs)
+
+
+def maybe_voice_e2e_chat(llm: ChatLLM) -> ChatLLM:
+    if os.getenv("SAHIR_VOICE_E2E", "").lower() not in ("1", "true", "yes"):
+        return llm
+    delay = float(os.getenv("SAHIR_VOICE_E2E_GENERATION_DELAY", "2.5") or "2.5")
+    if isinstance(llm, OllamaChat):
+        return VoiceE2EChat(llm, delay_s=delay)
+    return llm

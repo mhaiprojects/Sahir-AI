@@ -72,6 +72,7 @@ def dispatch_voice_or_text(
     force_cursor: bool = False,
     history: list[dict[str, str]] | None = None,
     extra_meta: dict | None = None,
+    replace_user_message_id: int | None = None,
 ) -> tuple[AgentReply | RouteResult, str]:
     """Return (result, agent_loop_mode). Uses orchestrator for ``agent`` mode (JW-8 fix)."""
     if force_cursor:
@@ -88,6 +89,7 @@ def dispatch_voice_or_text(
             input_type=extra_meta.get("input_type", "text") if extra_meta else "text",
             auto_session=True,
             extra_meta=extra_meta,
+            replace_user_message_id=replace_user_message_id,
         )
         return reply, mode
 
@@ -193,6 +195,7 @@ def execute_route_decision(
     history: list[dict[str, str]] | None = None,
     extra_meta: dict | None = None,
     ui_mode: str | None = None,
+    replace_user_message_id: int | None = None,
 ) -> tuple[AgentReply | RouteResult, str]:
     """Run S commands or dispatch C/D to the right chat."""
     if decision.label == "S" and decision.command:
@@ -218,6 +221,7 @@ def execute_route_decision(
             input_type=input_type,
             auto_session=True,
             extra_meta=meta,
+            replace_user_message_id=replace_user_message_id,
         )
         return reply, loop_mode
 
@@ -228,6 +232,7 @@ def execute_route_decision(
         force_cursor=force_cursor,
         history=history,
         extra_meta=meta,
+        replace_user_message_id=replace_user_message_id,
     )
     return raw, mode
 

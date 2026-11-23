@@ -10,7 +10,7 @@ from agent.clickup import ClickUpClient, ClickUpSync, ClickUpWorker
 from agent.config import AgentConfig
 from agent.delegation import Dispatcher
 from agent.email_integration import EmailService, EmailWorker
-from agent.llm import OllamaChat, OllamaEmbedder
+from agent.llm import OllamaChat, OllamaEmbedder, maybe_voice_e2e_chat
 from agent.loop import Agent
 from agent.orchestrator import Orchestrator
 from agent.store import AgentStore
@@ -40,7 +40,9 @@ def build_agent_stack(
     config = config or AgentConfig.from_env()
     store = AgentStore(config.db_path)
     embedder = OllamaEmbedder(settings.ollama_host, config.embed_model)
-    llm = OllamaChat(settings.ollama_host, settings.ollama_model, model_getter=lambda: settings.ollama_model)
+    llm = maybe_voice_e2e_chat(
+        OllamaChat(settings.ollama_host, settings.ollama_model, model_getter=lambda: settings.ollama_model)
+    )
     agent = Agent(settings, config, store, embedder, llm)
     dispatcher = Dispatcher(store)
     clickup = clickup or ClickUpClient.from_settings(settings)

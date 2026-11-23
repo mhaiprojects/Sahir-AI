@@ -398,8 +398,10 @@ function ensureHandsFreeClient() {
       }
       updateMicUi();
     },
-    onBargeIn: () => {
-      addMessage("system", "Barge-in — stopped reply.");
+    onBargeIn: () => {},
+    onContextAdded: (text) => {
+      const snippet = (text || "").trim();
+      if (snippet) addMessage("system", `Added: ${snippet}`);
     },
     onTtsDone: () => {
       resetLiveTranscript();

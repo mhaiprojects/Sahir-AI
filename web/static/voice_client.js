@@ -116,6 +116,10 @@
           } else if (t === "barge_in") {
             this.stopPlayback();
             this.hooks.onBargeIn?.(m);
+          } else if (t === "tts_started") {
+            this.hooks.onTtsStarted?.(m);
+          } else if (t === "context_added") {
+            this.hooks.onContextAdded?.(m.text || "", m);
           } else if (t === "status") {
             this.hooks.onState?.(m.state || "listening", m);
           } else if (t === "transcript_partial") {

@@ -9,13 +9,12 @@ Protocol (``/ws/voice``):
     {"type":"flush"}                   : force end-of-utterance now
     {"type":"interrupt"}               : stop the current reply (manual barge-in)
   server → client (JSON unless noted)
-    ready, speech_start, barge_in, status{state}, transcript{text}, reply{text,action,...},
-    audio{seq,text,sample_rate,bytes} followed by ONE binary WAV frame, tts_done{interrupted}, error
+    ready, speech_start, barge_in, tts_started, context_added{text}, status{state}, transcript{text},
+    reply{text,action,...}, audio{seq,...} + binary WAV, tts_done{interrupted}, error
 
-Barge-in: if the VAD detects the user speaking while a reply is being generated or spoken, the server
-cancels the in-flight reply (stops sending TTS sentences, drops a late LLM result) and emits
-``barge_in`` so the client stops playback immediately. Replies are spoken sentence-by-sentence, so
-the first audio arrives after one sentence of synthesis, not the whole reply.
+Mid-turn utterances while a reply is generating are classified (stop / add context / new command).
+Additions fold into the same user turn (up to 3 adds, 1000 chars). ``barge_in`` stops client TTS
+during classification; ``tts_started`` is emitted before the first audio chunk.
 """
 
 from __future__ import annotations
@@ -23,14 +22,25 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import threading
 import time
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
 import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
+import activity
 from agent.chat_router import build_route_context
+from agent.voice_barge_trace import BargeTrace, trace_ws_enabled
+from agent.voice_turn import (
+    MidTurnKind,
+    can_fold_more,
+    classify_mid_turn,
+    fold_turn_text,
+    is_text_composer_continuation,
+)
 from agent.dispatcher import execute_route_decision, plan_route
 from agent.router_partials import VoiceRouteState, prefix_meaning_changed
 from agent.speculative import (
@@ -44,6 +54,14 @@ from markdown_speech import strip_markdown_for_speech
 from tts_backends import split_sentences
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ActiveTurn:
+    combined_text: str
+    fold_count: int = 0
+    char_count: int = 0
+    user_message_id: int | None = None
 
 
 class VoiceSession:
@@ -68,6 +86,38 @@ class VoiceSession:
         self._partial_task: asyncio.Task | None = None
         self._in_speech = False
         self._speculative_gen = 0
+        self._phase = "listening"
+        self._active_turn: ActiveTurn | None = None
+        self._discard_reply = False
+        self._pending_text_fold: str | None = None
+        self._tts_armed = False
+        self._barge_trace = BargeTrace()
+        self._barge_pcm_chunks_while_armed = 0
+        self._trace_ws = trace_ws_enabled()
+
+    async def _trace(self, name: str, **data: object) -> None:
+        entry = self._barge_trace.mark(name, **data)
+        if self._trace_ws:
+            await self.send({"type": "voice_trace", **entry})
+
+    def _feed_pcm(self, pcm: np.ndarray) -> list[tuple[str, np.ndarray | None]]:
+        ep = self.endpointer
+        if self.busy and self._tts_armed:
+            if self._barge_pcm_chunks_while_armed == 0:
+                self._barge_trace.mark("first_barge_pcm_candidate")
+                try:
+                    asyncio.get_running_loop().create_task(self._trace("first_barge_pcm_received"))
+                except RuntimeError:
+                    pass
+            self._barge_pcm_chunks_while_armed += 1
+            old_th, old_min = ep.threshold, ep.min_speech_ms
+            ep.threshold = min(old_th, 0.4)
+            ep.min_speech_ms = min(old_min, 120)
+            try:
+                return ep.feed(pcm)
+            finally:
+                ep.threshold, ep.min_speech_ms = old_th, old_min
+        return ep.feed(pcm)
 
     async def send(self, payload: dict[str, Any]) -> None:
         async with self._send_lock:
@@ -90,10 +140,37 @@ class VoiceSession:
         self.route_state.stabilizer.reset()
         self.route_state.speculative_draft = None
         self.route_state.speculative_partial = ""
-        self._partial_task = asyncio.create_task(self._partial_router_loop())
-        if self.cancel_current():
-            logger.info("Barge-in: user spoke during reply; cancelling generation")
+        if not self.busy:
+            self._partial_task = asyncio.create_task(self._partial_router_loop())
+            return
+        if self.busy and (self._phase == "speaking" or self._tts_armed):
+            if self._phase == "speaking":
+                self.generation += 1
+                await self._trace("tts_producer_cancelled", reason="vad_speech_start")
+            await self._trace("vad_speech_start", phase=self._phase)
             await self.send({"type": "barge_in"})
+            await self._trace("barge_in_sent")
+            logger.info("Barge-in: user spoke during reply (phase=%s)", self._phase)
+
+    def _halt_turn(self) -> None:
+        self.generation += 1
+        self._discard_reply = True
+
+    def request_text_fold(self, text: str) -> bool:
+        if not self.busy or not self._active_turn:
+            return False
+        if not is_text_composer_continuation(text):
+            return False
+        addition = text.strip()
+        if not can_fold_more(
+            fold_count=self._active_turn.fold_count,
+            char_count=self._active_turn.char_count,
+            addition=addition,
+        ):
+            return False
+        self._pending_text_fold = addition
+        self._halt_turn()
+        return True
 
     def start_turn(
         self,
@@ -101,10 +178,120 @@ class VoiceSession:
         audio: np.ndarray | None = None,
         text: str | None = None,
         as_voice: bool = False,
+        replace_user_message_id: int | None = None,
+        reuse_turn: bool = False,
     ) -> None:
         self.generation += 1
         gen = self.generation
-        self.task = asyncio.create_task(self.run_turn(gen, audio=audio, text=text, as_voice=as_voice))
+        self._discard_reply = False
+        self.busy = True
+        self.task = asyncio.create_task(
+            self.run_turn(
+                gen,
+                audio=audio,
+                text=text,
+                as_voice=as_voice,
+                replace_user_message_id=replace_user_message_id,
+                reuse_turn=reuse_turn,
+            )
+        )
+
+    async def _handle_mid_turn_utterance(self, audio: np.ndarray) -> None:
+        from agent.chat_router import normalize_voice_control_stt
+        from web.turn_inflight import register_inflight
+
+        pipeline = self.get_pipeline()
+        self._in_speech = False
+        if self._partial_task:
+            self._partial_task.cancel()
+            self._partial_task = None
+        text = normalize_voice_control_stt(
+            (await asyncio.to_thread(pipeline.transcribe_final, audio)).strip()
+        )
+        await self._trace("final_utterance", text=text[:80], mid_turn=True)
+        await self.send(
+            {
+                "type": "transcript",
+                "text": text,
+                "discarded": not text,
+                "audio_seconds": round(len(audio) / 16000, 2),
+                "mid_turn": True,
+            }
+        )
+        if not text:
+            return
+        cmd_store = self.get_command_store() if self.get_command_store else None
+        kind = classify_mid_turn(text, command_store=cmd_store)
+        if kind == MidTurnKind.STOP:
+            self._halt_turn()
+            self._active_turn = None
+            await self.send({"type": "barge_in"})
+            self.start_turn(text=text, as_voice=True)
+            return
+        if kind == MidTurnKind.NEW_COMMAND:
+            self._halt_turn()
+            self._active_turn = None
+            await self.send({"type": "barge_in"})
+            self.start_turn(text=text, as_voice=True)
+            return
+        if self._active_turn is None:
+            self.start_turn(text=text, as_voice=True)
+            return
+        if not can_fold_more(
+            fold_count=self._active_turn.fold_count,
+            char_count=self._active_turn.char_count,
+            addition=text,
+        ):
+            self._halt_turn()
+            self._active_turn = None
+            self.start_turn(text=text, as_voice=True)
+            return
+        combined = fold_turn_text(self._active_turn.combined_text, text)
+        self._active_turn.combined_text = combined
+        self._active_turn.fold_count += 1
+        self._active_turn.char_count = len(combined)
+        self._halt_turn()
+        if self._active_turn.user_message_id is None and self.conversation_id:
+            uid = self.get_agent().store.last_user_message_id(self.conversation_id)
+            self._active_turn.user_message_id = uid
+        await self.send({"type": "context_added", "text": text})
+        activity.publish("step", "context added to turn", source="voice")
+        replace_id = self._active_turn.user_message_id
+        self.start_turn(
+            text=combined,
+            as_voice=True,
+            replace_user_message_id=replace_id,
+            reuse_turn=True,
+        )
+        register_inflight(self.conversation_id, self)
+
+    async def _apply_pending_text_fold(self, addition: str) -> None:
+        if not self._active_turn:
+            return
+        if not can_fold_more(
+            fold_count=self._active_turn.fold_count,
+            char_count=self._active_turn.char_count,
+            addition=addition,
+        ):
+            self.start_turn(text=addition, as_voice=False)
+            return
+        combined = fold_turn_text(self._active_turn.combined_text, addition)
+        self._active_turn.combined_text = combined
+        self._active_turn.fold_count += 1
+        self._active_turn.char_count = len(combined)
+        if self._active_turn.user_message_id is None and self.conversation_id:
+            self._active_turn.user_message_id = self.get_agent().store.last_user_message_id(
+                self.conversation_id
+            )
+        await self.send({"type": "context_added", "text": addition})
+        activity.publish("step", "context added to turn", source="voice")
+        replace_id = self._active_turn.user_message_id
+        self.start_turn(
+            text=combined,
+            as_voice=False,
+            replace_user_message_id=replace_id,
+            reuse_turn=True,
+        )
 
     def _alive(self, gen: int) -> bool:
         return gen == self.generation
@@ -199,9 +386,26 @@ class VoiceSession:
         audio: np.ndarray | None,
         text: str | None,
         as_voice: bool = False,
+        replace_user_message_id: int | None = None,
+        reuse_turn: bool = False,
     ) -> None:
+        from web.turn_inflight import register_inflight, unregister_inflight
+
         self.busy = True
+        self._phase = "thinking"
         t0 = time.monotonic()
+        if text and not reuse_turn:
+            self._active_turn = ActiveTurn(
+                combined_text=text,
+                char_count=len(text),
+                user_message_id=replace_user_message_id,
+            )
+        elif text and reuse_turn and self._active_turn:
+            self._active_turn.combined_text = text
+            self._active_turn.char_count = len(text)
+            if replace_user_message_id:
+                self._active_turn.user_message_id = replace_user_message_id
+        register_inflight(self.conversation_id, self)
         if text is not None:
             from agent.chat_router import normalize_voice_control_stt
 
@@ -209,6 +413,14 @@ class VoiceSession:
             input_type = "voice" if as_voice else "text"
         else:
             input_type = "voice"
+        if reuse_turn and text and self._trace_ws:
+            trace_payload: dict[str, object] = {
+                "chars": len(text),
+                "has_added_block": "(added:" in text,
+            }
+            if os.getenv("SAHIR_VOICE_E2E", "").lower() in ("1", "true", "yes"):
+                trace_payload["user_text"] = text
+            await self._trace("context_fold_llm_input", **trace_payload)
         try:
             pipeline = self.get_pipeline()
             self._in_speech = False
@@ -235,6 +447,7 @@ class VoiceSession:
                 from agent.loop import AgentReply
                 from tools.router import RouteResult
 
+                fold_user_id = replace_user_message_id
                 draft_snapshot = self.route_state.speculative_draft
                 draft_gen = self._cancel_speculative_workers()
 
@@ -273,6 +486,7 @@ class VoiceSession:
                             ctx,
                             input_type=input_type,
                             extra_meta={"input_type": input_type, "route_label": decision.label},
+                            replace_user_message_id=fold_user_id,
                         )
                         if isinstance(raw, RouteResult):
                             raw = AgentReply(
@@ -328,8 +542,8 @@ class VoiceSession:
                 self.conversation_id = r.conversation_id
             elif r.conversation_id:
                 self.conversation_id = r.conversation_id
-            if not self._alive(gen):
-                logger.info("Dropping stale reply (barge-in)")
+            if not self._alive(gen) or self._discard_reply:
+                logger.info("Dropping stale reply (barge-in or context fold)")
                 return
             if r.action in {"stop_speech", "cancel_request", "pause_listening"}:
                 route_ms = (
@@ -368,9 +582,22 @@ class VoiceSession:
                              "sources": r.sources, "latency_ms": int((time.monotonic() - t0) * 1000),
                              "route_tier": route_decision.tier if route_decision else None,
                              "route_timing": timing, "route_final_ms": e2e_ms, "route_ms": route_ms})
+            if self._active_turn and getattr(r, "user_message_id", None):
+                self._active_turn.user_message_id = int(r.user_message_id)
             if not self.tts:
+                self._active_turn = None
+                unregister_inflight(self.conversation_id, self)
                 return
             await self.send({"type": "status", "state": "speaking"})
+            self._phase = "speaking"
+            self.endpointer.reset()
+            self._tts_armed = True
+            self._barge_pcm_chunks_while_armed = 0
+            self._barge_trace = BargeTrace()
+            await self.send({"type": "tts_started"})
+            await self._trace("tts_started_sent")
+            await self.send({"type": "barge_listen"})
+            await self._trace("barge_listen_sent")
             interrupted = False
             if getattr(r, "tts_text", None):
                 spoken_sentences = split_sentences(r.tts_text)
@@ -379,17 +606,23 @@ class VoiceSession:
             for seq, sentence in enumerate(spoken_sentences):
                 if not self._alive(gen):
                     interrupted = True
+                    await self._trace("tts_producer_cancelled", reason="generation", seq=seq)
                     break
                 wav, sr = await asyncio.to_thread(pipeline.synthesize_wav, sentence)
                 if not self._alive(gen):
                     interrupted = True
+                    await self._trace("tts_producer_cancelled", reason="generation", seq=seq)
                     break
                 if wav:
                     await self.send_audio({"type": "audio", "seq": seq, "text": sentence, "sample_rate": sr,
                                            "bytes": len(wav),
                                            "first_audio_ms": int((time.monotonic() - t0) * 1000) if seq == 0 else None},
                                           wav)
+            self._tts_armed = False
             await self.send({"type": "tts_done", "interrupted": interrupted})
+            await self._trace("tts_done_sent", interrupted=interrupted)
+            self._active_turn = None
+            unregister_inflight(self.conversation_id, self)
         except WebSocketDisconnect:
             pass
         except Exception as exc:
@@ -399,12 +632,16 @@ class VoiceSession:
             except Exception:
                 pass
         finally:
-            if self._alive(gen):
-                self.busy = False
-                try:
-                    await self.send({"type": "status", "state": "listening"})
-                except Exception:
-                    pass
+            self._phase = "listening"
+            pending = self._pending_text_fold
+            self._pending_text_fold = None
+            self.busy = False
+            try:
+                await self.send({"type": "status", "state": "listening"})
+            except Exception:
+                pass
+            if pending:
+                await self._apply_pending_text_fold(pending)
 
     async def handle_text(self, raw: str) -> None:
         try:
@@ -421,10 +658,15 @@ class VoiceSession:
                              "vad": self.endpointer.vad.backend, "sample_rate": 16000,
                              "tts_backend": self.get_pipeline().tts_backend})
         elif kind == "text" and str(msg.get("text", "")).strip():
-            if self.cancel_current():
-                await self.send({"type": "barge_in"})
+            body = str(msg["text"]).strip()
             as_voice = bool(msg.get("as_voice"))
-            self.start_turn(text=str(msg["text"]).strip(), as_voice=as_voice)
+            if self.busy and self._active_turn and is_text_composer_continuation(body):
+                if self.request_text_fold(body):
+                    return
+            if self.busy:
+                self._halt_turn()
+                await self.send({"type": "barge_in"})
+            self.start_turn(text=body, as_voice=as_voice)
         elif kind == "flush":
             audio = self.endpointer.flush()
             if audio is not None:
@@ -443,11 +685,14 @@ class VoiceSession:
                 break
             if msg.get("bytes") is not None:
                 pcm = np.frombuffer(msg["bytes"], dtype=np.int16).astype(np.float32) / 32768.0
-                for event, audio in self.endpointer.feed(pcm):
+                for event, audio in self._feed_pcm(pcm):
                     if event == "speech_start":
                         await self.on_speech_start()
                     elif event == "utterance" and audio is not None:
-                        self.start_turn(audio=audio)
+                        if self.busy:
+                            await self._handle_mid_turn_utterance(audio)
+                        else:
+                            self.start_turn(audio=audio)
             elif msg.get("text") is not None:
                 await self.handle_text(msg["text"])
         self.generation += 1  # cancel anything in flight

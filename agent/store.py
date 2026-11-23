@@ -770,6 +770,34 @@ class AgentStore:
     def delete_email_draft(self, draft_id: int) -> bool:
         return self._exec("DELETE FROM email_drafts WHERE id=?", (draft_id,)).rowcount > 0
 
+    def set_message_content(self, message_id: int, content: str) -> bool:
+        content = content[:50000]
+        row = self._query("SELECT id, content FROM messages WHERE id=?", (message_id,))
+        if not row:
+            return False
+        updated = self._exec("UPDATE messages SET content=? WHERE id=?", (content, message_id)).rowcount > 0
+        if updated:
+            self._reindex_message_fts(message_id, old_content=row[0]["content"], new_content=content)
+        return updated > 0
+
+    def _reindex_message_fts(self, message_id: int, *, old_content: str, new_content: str) -> None:
+        """Keep messages_fts in sync when content is updated outside a full row replace."""
+        self._exec(
+            "INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', ?, ?)",
+            (message_id, old_content),
+        )
+        self._exec(
+            "INSERT INTO messages_fts(rowid, content) VALUES (?, ?)",
+            (message_id, new_content),
+        )
+
+    def last_user_message_id(self, conversation_id: int) -> int | None:
+        rows = self._query(
+            "SELECT id FROM messages WHERE conversation_id=? AND role='user' ORDER BY id DESC LIMIT 1",
+            (conversation_id,),
+        )
+        return int(rows[0]["id"]) if rows else None
+
 
 VALID_CHAT_MODES = frozenset({"agent", "route", "chat", "cursor", "tools", "stream"})
 
